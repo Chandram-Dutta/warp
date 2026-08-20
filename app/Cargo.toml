@@ -23,6 +23,12 @@ path = "src/bin/oss.rs"
 test = false
 
 [[bin]]
+name = "warp-local-only"
+path = "src/bin/local_only.rs"
+required-features = ["local_only"]
+test = false
+
+[[bin]]
 name = "warp"
 path = "src/bin/local.rs"
 test = false
@@ -800,6 +806,37 @@ list_skills = []
 local_tty = []
 local_computer_use = []
 local_claude_codex_child_harnesses = []
+# Product profile for the local-only terminal. Build with `--no-default-features` so the
+# feature list below is the complete compile-time allow-list rather than an additive overlay.
+local_only = [
+    "clear_autosuggestion_on_escape",
+    "command_correction_key",
+    "completions_v2",
+    "directory_tab_colors",
+    "full_screen_zen_mode",
+    "grouped_tabs",
+    "kitty_images",
+    "kitty_keyboard_protocol",
+    "ligatures",
+    "minimalist_ui",
+    "new_tab_styling",
+    "osc_hyperlinks",
+    "partial_next_command_suggestions",
+    "pinned_tabs",
+    "pluggable_notifications",
+    "rect_selection",
+    "settings_file",
+    "shell_selector",
+    "skip_firebase_anonymous_user",
+    "tab_configs",
+    "terminal_lifecycle_recovery",
+    "ui_zoom",
+    "validate_autosuggestions",
+    "vertical_tabs",
+    "vertical_tabs_summary_mode",
+    "warp_core/local_only",
+    "warp_server_auth/local_only",
+]
 # This feature is enabled in build.rs when compiling for platforms which
 # have APIs for interacting with a local filesystem.  It can be used to
 # conditionally include dependencies that should only exist in such

@@ -2285,6 +2285,12 @@ impl AISettings {
     }
 
     pub fn is_intelligent_autosuggestions_enabled(&self, app: &warpui::AppContext) -> bool {
+        if cfg!(feature = "local_only") {
+            return *self.is_any_ai_enabled
+                && *self.is_active_ai_enabled_internal
+                && *self.intelligent_autosuggestions_enabled_internal
+                && AppExecutionMode::as_ref(app).allows_active_ai();
+        }
         self.is_active_ai_enabled(app) && *self.intelligent_autosuggestions_enabled_internal
     }
 

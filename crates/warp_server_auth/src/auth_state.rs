@@ -161,6 +161,11 @@ impl AuthState {
         state
     }
 
+    /// Creates an auth compatibility state without reading persisted Warp credentials.
+    pub fn initialize_logged_out(ctx: &AppContext) -> Self {
+        Self::new(ctx)
+    }
+
     /// Creates auth state for a client that must validate an explicit credential
     /// before making it available to shared authenticated clients.
     ///
@@ -258,6 +263,9 @@ impl AuthState {
     /// side-effects are handled properly (e.g. notifying other models, persisting
     /// the user to secure storage, etc.).
     pub fn set_user(&self, user: Option<User>) {
+        if cfg!(feature = "local_only") && user.is_some() {
+            return;
+        }
         *self.user.write() = user;
     }
 
@@ -268,6 +276,9 @@ impl AuthState {
 
     /// Sets the credentials. Should only be called within the auth module.
     pub fn set_credentials(&self, credentials: Option<Credentials>) {
+        if cfg!(feature = "local_only") && credentials.is_some() {
+            return;
+        }
         *self.credentials.write() = credentials;
     }
 
@@ -282,6 +293,9 @@ impl AuthState {
         user_id: String,
         user_email: String,
     ) {
+        if cfg!(feature = "local_only") {
+            return;
+        }
         self.set_remote_server_bearer_token(auth_token);
         self.set_remote_server_user(user_id, user_email);
     }
@@ -616,3 +630,7 @@ impl Entity for AuthStateProvider {
 }
 
 impl SingletonEntity for AuthStateProvider {}
+
+#[cfg(all(test, feature = "local_only"))]
+#[path = "auth_state_tests.rs"]
+mod tests;

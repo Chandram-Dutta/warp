@@ -8,6 +8,7 @@ license.workspace = true
 
 [features]
 integration_tests = []
+local_only = ["warp_core/local_only"]
 skip_login = []
 test-util = []
 

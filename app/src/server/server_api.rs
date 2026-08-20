@@ -1036,25 +1036,36 @@ impl ServerApi {
         request: &GenerateAIInputSuggestionsRequest,
     ) -> Result<generate_ai_input_suggestions::GenerateAIInputSuggestionsResponseV2, AIApiError>
     {
-        let auth_token = self.get_or_refresh_access_token().await?;
-
-        let request_builder = self.base_client.http_client().post(format!(
-            "{}/ai/generate_input_suggestions",
-            ChannelState::server_root_url()
-        ));
-        let response = if let Some(token) = auth_token.as_bearer_token() {
-            request_builder.bearer_auth(token)
-        } else {
-            request_builder
+        #[cfg(feature = "local_only")]
+        {
+            let _ = request;
+            return Err(AIApiError::Other(anyhow!(
+                "Direct Next Command provider is not configured"
+            )));
         }
-        .json(request)
-        .send()
-        .await?
-        .error_for_status_with_body()
-        .await?
-        .json()
-        .await?;
-        Ok(response)
+
+        #[cfg(not(feature = "local_only"))]
+        {
+            let auth_token = self.get_or_refresh_access_token().await?;
+
+            let request_builder = self.base_client.http_client().post(format!(
+                "{}/ai/generate_input_suggestions",
+                ChannelState::server_root_url()
+            ));
+            let response = if let Some(token) = auth_token.as_bearer_token() {
+                request_builder.bearer_auth(token)
+            } else {
+                request_builder
+            }
+            .json(request)
+            .send()
+            .await?
+            .error_for_status_with_body()
+            .await?
+            .json()
+            .await?;
+            Ok(response)
+        }
     }
 
     pub async fn get_relevant_files(

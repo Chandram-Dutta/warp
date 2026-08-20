@@ -7017,9 +7017,9 @@ impl Input {
             return;
         }
 
-        // Don't generate any next command suggestions if there is no internet.
-        // This is needed to prevent generating history-based suggestions.
-        if !NetworkStatus::as_ref(ctx).is_online() {
+        // Hosted suggestions require connectivity. Local-only suggestions can use persisted
+        // history, completions, or a local provider without it.
+        if !cfg!(feature = "local_only") && !NetworkStatus::as_ref(ctx).is_online() {
             return;
         }
 

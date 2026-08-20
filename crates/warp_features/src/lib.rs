@@ -991,6 +991,56 @@ static USER_PREFERENCE_MAP: [AtomicTriState; cardinality::<FeatureFlag>()] =
 #[cfg(debug_assertions)]
 static FEATURES_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
+/// Runtime features available in the local-only terminal product.
+///
+/// This is an allow-list rather than a list of defaults: features absent from it remain disabled
+/// even if a channel, debug menu, experiment, or user preference attempts to enable them.
+pub const LOCAL_ONLY_FLAGS: &[FeatureFlag] = &[
+    FeatureFlag::AlacrittySettingsImport,
+    FeatureFlag::AsyncFind,
+    FeatureFlag::BoxDrawingGlyphs,
+    FeatureFlag::ClearAutosuggestionOnEscape,
+    FeatureFlag::CommandCorrectionKey,
+    FeatureFlag::CommandCorrectionsHistoryRule,
+    FeatureFlag::DirectoryTabColors,
+    FeatureFlag::DragTabsToWindows,
+    FeatureFlag::FullScreenZenMode,
+    FeatureFlag::GroupedTabs,
+    FeatureFlag::ITermImages,
+    FeatureFlag::ImeMarkedText,
+    FeatureFlag::InBandGeneratorsForSSH,
+    FeatureFlag::KittyImages,
+    FeatureFlag::KittyKeyboardProtocol,
+    FeatureFlag::Ligatures,
+    FeatureFlag::MaximizeFlatStorage,
+    FeatureFlag::MinimalistUI,
+    FeatureFlag::MSYS2Shells,
+    FeatureFlag::MultiWorkspace,
+    FeatureFlag::NativeShellCompletions,
+    FeatureFlag::NewTabStyling,
+    FeatureFlag::OscHyperlinks,
+    FeatureFlag::PartialNextCommandSuggestions,
+    FeatureFlag::PinnedTabs,
+    FeatureFlag::PluggableNotifications,
+    FeatureFlag::RectSelection,
+    FeatureFlag::RemoveAutosuggestionDuringTabCompletions,
+    FeatureFlag::ResizeFix,
+    FeatureFlag::RunGeneratorsWithCmdExe,
+    FeatureFlag::SelectablePrompt,
+    FeatureFlag::SettingsFile,
+    FeatureFlag::ShellSelector,
+    FeatureFlag::SkipFirebaseAnonymousUser,
+    FeatureFlag::TabCloseButtonOnLeft,
+    FeatureFlag::TabConfigs,
+    FeatureFlag::TerminalLifecycleRecovery,
+    FeatureFlag::ThinStrokes,
+    FeatureFlag::UIZoom,
+    FeatureFlag::UndoClosedPanes,
+    FeatureFlag::ValidateAutosuggestions,
+    FeatureFlag::VerticalTabs,
+    FeatureFlag::VerticalTabsSummaryMode,
+];
+
 /// Features used in debugging.
 pub const DEBUG_FLAGS: &[FeatureFlag] = &[FeatureFlag::DebugMode, FeatureFlag::RuntimeFeatureFlags];
 /// Features enabled only for the WarpLocal developer build.
@@ -1079,6 +1129,11 @@ pub const RUNTIME_FEATURE_FLAGS: &[FeatureFlag] = &[FeatureFlag::LocalClaudeCode
 
 impl FeatureFlag {
     pub fn is_enabled(&self) -> bool {
+        #[cfg(feature = "local_only")]
+        if !LOCAL_ONLY_FLAGS.contains(self) {
+            return false;
+        }
+
         #[cfg(all(debug_assertions, not(feature = "test-util")))]
         {
             use std::sync::atomic::Ordering;

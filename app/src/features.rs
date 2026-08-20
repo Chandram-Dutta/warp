@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+#[cfg(not(feature = "local_only"))]
 use warp_core::channel::ChannelState;
 pub use warp_core::features::*;
 
@@ -13,6 +14,13 @@ pub fn init_feature_flags() {
 }
 
 /// Returns all feature flags which should be enabled in the current channel.
+#[cfg(feature = "local_only")]
+fn enabled_features() -> HashSet<FeatureFlag> {
+    LOCAL_ONLY_FLAGS.iter().copied().collect()
+}
+
+/// Returns all feature flags which should be enabled in the current channel.
+#[cfg(not(feature = "local_only"))]
 fn enabled_features() -> HashSet<FeatureFlag> {
     // Enable features overridden for the given channel.
     let mut flags = ChannelState::additional_features();

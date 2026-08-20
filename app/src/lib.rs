@@ -442,6 +442,7 @@ enum TuiEntryPoint {
 }
 
 enum AuthInitialization {
+    LoggedOut,
     Persisted,
     PendingApiKey(String),
 }
@@ -475,6 +476,9 @@ impl LaunchMode {
     }
 
     fn auth_initialization(&self) -> AuthInitialization {
+        if cfg!(feature = "local_only") {
+            return AuthInitialization::LoggedOut;
+        }
         match self.api_key() {
             Some(api_key) => AuthInitialization::PendingApiKey(api_key),
             None => AuthInitialization::Persisted,
@@ -1502,6 +1506,7 @@ pub(crate) fn initialize_app(
     }
 
     let (auth_state, pending_api_key) = match launch_mode.auth_initialization() {
+        AuthInitialization::LoggedOut => (AuthState::initialize_logged_out(ctx), None),
         AuthInitialization::Persisted => (AuthState::initialize(ctx), None),
         AuthInitialization::PendingApiKey(api_key) => (
             AuthState::initialize_for_credential_validation(ctx),
