@@ -1,0 +1,189 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+run_step() {
+  local label="$1"
+  shift
+  local started_at=$SECONDS
+  printf '\n==> %s\n' "$label"
+  "$@"
+  printf '<== %s (%ss)\n' "$label" "$((SECONDS - started_at))"
+}
+
+install_system_dependencies() {
+  local packages=(
+    brotli
+    build-essential
+    ca-certificates
+    clang-format
+    cmake
+    curl
+    fish
+    fontconfig
+    git
+    git-lfs
+    jq
+    libasound2-dev
+    libclang-dev
+    libegl1
+    libexpat1-dev
+    libfontconfig1-dev
+    libfreetype-dev
+    libgit2-dev
+    libssl-dev
+    libwayland-client0
+    libwayland-egl1
+    libx11-6
+    libxcb1
+    libxcursor1
+    libxi6
+    libxkbcommon-x11-0
+    locales
+    mesa-vulkan-drivers
+    musl-tools
+    pkg-config
+    python-is-python3
+    unzip
+    vim
+    xvfb
+    yaru-theme-icon
+    zlib1g
+    zsh
+  )
+  local missing=()
+  local package
+
+  for package in "${packages[@]}"; do
+    if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
+      missing+=("$package")
+    fi
+  done
+
+  if ((${#missing[@]} == 0)); then
+    echo "System dependencies are already installed."
+    return
+  fi
+
+  sudo apt-get update -y
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing[@]}"
+}
+
+install_protoc() {
+  local version="25.1"
+  if [[ "$(protoc --version 2>/dev/null || true)" == "libprotoc $version" ]]; then
+    echo "protoc $version is already installed."
+    return
+  fi
+
+  local archive
+  case "$(uname -m)" in
+    x86_64) archive="protoc-${version}-linux-x86_64.zip" ;;
+    aarch64) archive="protoc-${version}-linux-aarch_64.zip" ;;
+    *) echo "Unsupported architecture for protoc: $(uname -m)" >&2; return 1 ;;
+  esac
+
+  local workdir
+  workdir="$(mktemp -d)"
+  curl -fsSL \
+    "https://github.com/protocolbuffers/protobuf/releases/download/v${version}/${archive}" \
+    -o "$workdir/protoc.zip"
+  sudo unzip -q -o "$workdir/protoc.zip" -d /usr/local bin/protoc 'include/*'
+  rm -rf "$workdir"
+}
+
+configure_login_shell() {
+  local marker="# Warp orb development tools"
+  touch "$HOME/.bash_profile"
+  if grep -Fqx "$marker" "$HOME/.bash_profile"; then
+    return
+  fi
+
+  cat >> "$HOME/.bash_profile" <<'EOF'
+
+# Warp orb development tools
+if [[ -f "$HOME/.cargo/env" ]]; then
+  source "$HOME/.cargo/env"
+fi
+export PATH="$HOME/.local/bin:$PATH"
+EOF
+}
+
+install_rust() {
+  if [[ -f "$HOME/.cargo/env" ]]; then
+    # shellcheck disable=SC1091
+    source "$HOME/.cargo/env"
+  fi
+
+  if ! command -v rustup >/dev/null 2>&1; then
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+      | sh -s -- -y --profile minimal --default-toolchain none --no-modify-path
+  fi
+
+  # shellcheck disable=SC1091
+  source "$HOME/.cargo/env"
+
+  local channel
+  channel="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' rust-toolchain.toml)"
+  if ! rustup toolchain list | grep -q "^${channel}-"; then
+    rustup toolchain install "$channel" --profile minimal
+  fi
+  rustup component add --toolchain "$channel" rustfmt clippy
+}
+
+install_node_dependencies() {
+  if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs npm
+  fi
+  if ! command -v corepack >/dev/null 2>&1; then
+    npm install --global --prefix "$HOME/.local" corepack
+  fi
+
+  mkdir -p "$HOME/.local/bin"
+  corepack enable --install-directory "$HOME/.local/bin"
+  corepack prepare yarn@1.22.22 --activate
+  (
+    cd crates/command-signatures-v2/js
+    yarn install --immutable
+  )
+  (
+    cd crates/warp_graphql_schema
+    yarn install --frozen-lockfile
+  )
+}
+
+install_cargo_tools() {
+  ./script/install_cargo_binstall
+
+  if ! command -v cargo-nextest >/dev/null 2>&1; then
+    cargo binstall --secure --no-confirm --no-discover-github-token cargo-nextest
+  fi
+  if ! command -v diesel >/dev/null 2>&1; then
+    cargo binstall --no-confirm diesel_cli
+  fi
+  if ! command -v wgslfmt >/dev/null 2>&1; then
+    cargo install --git https://github.com/wgsl-analyzer/wgsl-analyzer \
+      --tag 2025-06-28 wgslfmt
+  fi
+}
+
+run_step "Install system dependencies" install_system_dependencies
+run_step "Install protoc" install_protoc
+run_step "Configure login shells" configure_login_shell
+run_step "Install the pinned Rust toolchain" install_rust
+
+# Make tools installed above available to the remainder of this setup run.
+# shellcheck disable=SC1091
+source "$HOME/.cargo/env"
+export PATH="$HOME/.local/bin:$PATH"
+
+run_step "Materialize Git LFS assets" git lfs install --local
+run_step "Fetch Git LFS assets" git lfs pull
+run_step "Install Node dependencies" install_node_dependencies
+run_step "Install Cargo development tools" install_cargo_tools
+run_step "Fetch Cargo dependencies" cargo fetch --locked
+
+echo
+echo "Warp orb setup is complete."
