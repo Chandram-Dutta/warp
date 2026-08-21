@@ -125,12 +125,19 @@ function sign_development_app() {
   local sign_args=(--force --options runtime --timestamp=none --sign "$signing_identity")
   local path
 
+  if codesign --remove-signature "$app_path"; then
+    echo "Removed the stale outer app signature before signing nested code."
+  else
+    echo "The app did not have an outer signature to remove."
+  fi
+  rm -rf "$app_path/Contents/_CodeSignature"
+
   while IFS= read -r -d '' path; do
     if file -b "$path" | grep -q '^Mach-O'; then
       echo "Signing nested Mach-O $path"
       codesign "${sign_args[@]}" "$path"
     fi
-  done < <(find "$app_path/Contents" -type f -print0)
+  done < <(find "$app_path/Contents" -type f ! -path "$app_path/Contents/MacOS/*" -print0)
 
   while IFS= read -r -d '' path; do
     echo "Signing nested bundle $path"
@@ -140,6 +147,13 @@ function sign_development_app() {
       \( -name '*.app' -o -name '*.appex' -o -name '*.docktileplugin' \
       -o -name '*.framework' -o -name '*.plugin' -o -name '*.xpc' \) -print0
   )
+
+  while IFS= read -r -d '' path; do
+    if file -b "$path" | grep -q '^Mach-O'; then
+      echo "Signing top-level Mach-O $path"
+      codesign "${sign_args[@]}" "$path"
+    fi
+  done < <(find "$app_path/Contents/MacOS" -type f -print0)
 
   echo "Signing app bundle $app_path"
   codesign "${sign_args[@]}" --entitlements script/Debug-Entitlements.plist "$app_path"
