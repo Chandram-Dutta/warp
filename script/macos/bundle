@@ -119,6 +119,32 @@ function codesign_with_retry() {
   done
 }
 
+function sign_development_app() {
+  local app_path="$1"
+  local signing_identity="$2"
+  local sign_args=(--force --options runtime --timestamp=none --sign "$signing_identity")
+  local path
+
+  while IFS= read -r -d '' path; do
+    if file -b "$path" | grep -q '^Mach-O'; then
+      echo "Signing nested Mach-O $path"
+      codesign "${sign_args[@]}" "$path"
+    fi
+  done < <(find "$app_path/Contents" -type f -print0)
+
+  while IFS= read -r -d '' path; do
+    echo "Signing nested bundle $path"
+    codesign "${sign_args[@]}" "$path"
+  done < <(
+    find "$app_path/Contents" -depth -type d \
+      \( -name '*.app' -o -name '*.appex' -o -name '*.docktileplugin' \
+      -o -name '*.framework' -o -name '*.plugin' -o -name '*.xpc' \) -print0
+  )
+
+  echo "Signing app bundle $app_path"
+  codesign "${sign_args[@]}" --entitlements script/Debug-Entitlements.plist "$app_path"
+}
+
 # Submit once so a transient polling failure can resume the same notarization
 # instead of uploading a duplicate artifact.
 function notarize_artifact() {
@@ -221,6 +247,7 @@ DEBUG=false
 ARTIFACT="app"
 CODESIGN=true
 SELFSIGN=false
+ADHOC_SIGN=false
 OPEN_AFTER_BUNDLE=false
 READ_PASSWORDS_FROM_ENV=false
 
@@ -259,6 +286,15 @@ while (( "$#" )); do
       echo "Self-signing enabled."
       CODESIGN=false
       SELFSIGN=true
+      shift
+      ;;
+    # Sign with an ad-hoc identity. The result has verifiable integrity but is
+    # intentionally not notarized or trusted as a Developer ID distribution.
+    --adhoc-sign)
+      echo "Ad-hoc signing enabled."
+      CODESIGN=false
+      SELFSIGN=true
+      ADHOC_SIGN=true
       shift
       ;;
     # Build only for the default target architecture instead of universal binary
@@ -870,19 +906,25 @@ fi
 ##############################
 
 if [[ $SELFSIGN = true ]]; then
-  SIGNING_CERT="$(security find-identity -p codesigning -v | grep "Apple Development" | awk '{print $2}' | head -1)"
-  if [[ -z "$SIGNING_CERT" ]]; then
-    echo "No Apple Development cert found, falling back to ad-hoc signing."
+  if [[ $ADHOC_SIGN = true ]]; then
     SIGNING_CERT="-"
   else
-    echo "Found Apple Development certificate"
+    SIGNING_CERT="$(security find-identity -p codesigning -v | grep "Apple Development" | awk '{print $2}' | head -1)"
+    if [[ -z "$SIGNING_CERT" ]]; then
+      echo "No Apple Development cert found, falling back to ad-hoc signing."
+      SIGNING_CERT="-"
+    else
+      echo "Found Apple Development certificate"
+    fi
   fi
   if [[ "$ARTIFACT" == app ]]; then
     echo "Self-signing $BUNDLE_DIR/$WARP_APP_NAME.app with ${SIGNING_CERT}..."
-    codesign --force --deep --options runtime --sign "$SIGNING_CERT" "$BUNDLE_DIR/$WARP_APP_NAME.app" --entitlements script/Debug-Entitlements.plist
+    codesign --verify --deep --strict --verbose=2 "$BUNDLE_DIR/$WARP_APP_NAME.app" || \
+      echo "Replacing the incomplete or invalid build-time app signature."
+    sign_development_app "$BUNDLE_DIR/$WARP_APP_NAME.app" "$SIGNING_CERT"
   elif [[ "$ARTIFACT" == cli || "$ARTIFACT" == warpctrl || "$ARTIFACT" == tui ]]; then
     echo "Self-signing $OUT_DIR/$WARP_BIN with ${SIGNING_CERT}..."
-    codesign --force --options runtime --sign "$SIGNING_CERT" "$OUT_DIR/$WARP_BIN" --entitlements script/Debug-Entitlements.plist
+    codesign --force --options runtime --timestamp=none --sign "$SIGNING_CERT" "$OUT_DIR/$WARP_BIN" --entitlements script/Debug-Entitlements.plist
   fi
 elif [[ $CODESIGN = true ]]; then
   if [[ "$ARTIFACT" == app ]]; then
@@ -975,6 +1017,11 @@ if [[ "$ARTIFACT" = app ]]; then
     cleanup_dmg_files "$DMG_DIR"
 
     create_warp_dmg "$BUNDLE_DIR"
+
+    if [[ $SELFSIGN = true ]]; then
+      echo "Signing $DMG_DIR/$DMG_NAME with ${SIGNING_CERT}..."
+      codesign --force --timestamp=none --sign "$SIGNING_CERT" "$DMG_DIR/$DMG_NAME"
+    fi
   fi
 fi
 

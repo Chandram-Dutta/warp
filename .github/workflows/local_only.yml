@@ -84,7 +84,7 @@ jobs:
           retention-days: 14
 
   macos-local-only:
-    name: Build unsigned warp-local-only DMG (macOS ARM64)
+    name: Build ad-hoc signed warp-local-only DMG (macOS ARM64)
     runs-on: macos-15
     timeout-minutes: 90
     steps:
@@ -109,26 +109,54 @@ jobs:
           script/install_cargo_bundle
           brew install create-dmg
 
-      - name: Build unsigned app and DMG
+      - name: Build ad-hoc signed app and DMG
         id: bundle
         env:
           SKIP_SETTINGS_SCHEMA: 1
         run: >-
-          script/bundle --channel local-only --arch aarch64 --debug --nosign
+          script/bundle --channel local-only --arch aarch64 --debug --adhoc-sign
           --dmg-name-suffix arm64
 
-      - name: Validate app and DMG
+      - name: Validate app signature, architecture, and DMG
         run: |
-          executable=target/aarch64-apple-darwin/debug/bundle/osx/WarpLocalOnly.app/Contents/MacOS/warp-local-only
+          app=target/aarch64-apple-darwin/debug/bundle/osx/WarpLocalOnly.app
+          executable="$app/Contents/MacOS/warp-local-only"
+          plugin="$app/Contents/PlugIns/WarpDockTilePlugin.docktileplugin"
+          dmg="${{ steps.bundle.outputs.dmg_path }}"
           test -x "$executable"
           file "$executable" | grep -F 'arm64'
           lipo "$executable" -verify_arch arm64
-          hdiutil verify "${{ steps.bundle.outputs.dmg_path }}"
+          codesign --verify --deep --strict --verbose=4 "$app"
+          codesign --verify --strict --verbose=4 "$plugin"
+          codesign -dv --verbose=4 "$app" 2>&1 | tee /tmp/app-signature.txt
+          grep -F 'Signature=adhoc' /tmp/app-signature.txt
+          codesign -d --entitlements :- "$app" > /tmp/app-entitlements.plist
+          plutil -lint /tmp/app-entitlements.plist
+          codesign --verify --strict --verbose=4 "$dmg"
+          hdiutil verify "$dmg"
 
-      - name: Upload unsigned macOS DMG
+          mount_dir="$(mktemp -d)"
+          quarantine_dir="$(mktemp -d)"
+          trap 'hdiutil detach "$mount_dir" || true; rm -rf "$mount_dir" "$quarantine_dir"' EXIT
+          hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount_dir"
+          codesign --verify --deep --strict --verbose=4 "$mount_dir/WarpLocalOnly.app"
+          file "$mount_dir/WarpLocalOnly.app/Contents/MacOS/warp-local-only" | grep -F 'arm64'
+          lipo "$mount_dir/WarpLocalOnly.app/Contents/MacOS/warp-local-only" -verify_arch arm64
+          ditto "$mount_dir/WarpLocalOnly.app" "$quarantine_dir/WarpLocalOnly.app"
+          xattr -w com.apple.quarantine '0081;00000000;GitHubActions;' "$quarantine_dir/WarpLocalOnly.app"
+          xattr -p com.apple.quarantine "$quarantine_dir/WarpLocalOnly.app"
+          codesign --verify --deep --strict --verbose=4 "$quarantine_dir/WarpLocalOnly.app"
+          spctl --assess --type execute --verbose=4 "$quarantine_dir/WarpLocalOnly.app" || \
+            echo 'Expected: ad-hoc development builds are not Developer ID trusted or notarized.'
+          xattr -dr com.apple.quarantine "$quarantine_dir/WarpLocalOnly.app"
+          hdiutil detach "$mount_dir"
+          rm -rf "$mount_dir" "$quarantine_dir"
+          trap - EXIT
+
+      - name: Upload ad-hoc signed macOS DMG
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: warp-local-only-macos-arm64-${{ github.sha }}
+          name: warp-local-only-macos-arm64-adhoc-${{ github.sha }}
           path: ${{ steps.bundle.outputs.dmg_path }}
           if-no-files-found: error
           retention-days: 14
