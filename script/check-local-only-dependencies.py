@@ -107,6 +107,16 @@ def main() -> None:
     assert "release_bundle" in local_only
     assert '#[cfg(all(feature = "local_only", feature = "warp_agent_runtime"))]' in app_root
     assert (
+        '#[cfg(not(feature = "local_only"))]\n'
+        "    ctx.add_singleton_model(GlobalBufferModel::new);"
+        in app_root
+    )
+    assert (
+        '#[cfg(not(feature = "local_only"))]\n'
+        "            lsp::LspManagerModel::handle(ctx).update(ctx, |manager, ctx| {"
+        in app_root
+    )
+    assert (
         '#[cfg(feature = "local_only")]\n'
         "    let persisted_data_scope = persistence::PersistedDataScope::TerminalLocal;"
         in app_root

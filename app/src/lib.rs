@@ -274,8 +274,9 @@ use crate::changelog_model::ChangelogModel;
 use crate::cloud_object::model::actions::{ObjectAction, ObjectActions};
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::model::view::CloudViewModel;
+#[cfg(not(feature = "local_only"))]
 use crate::code::global_buffer_model::GlobalBufferModel;
-#[cfg(feature = "local_fs")]
+#[cfg(all(feature = "local_fs", not(feature = "local_only")))]
 use crate::code::language_server_shutdown_manager::LanguageServerShutdownManager;
 use crate::context_chips::prompt::Prompt;
 use crate::default_terminal::DefaultTerminal;
@@ -2204,10 +2205,11 @@ pub(crate) fn initialize_app(
     );
     #[cfg(feature = "local_fs")]
     ctx.add_singleton_model(FileModel::new);
+    #[cfg(not(feature = "local_only"))]
     ctx.add_singleton_model(GlobalBufferModel::new);
     #[cfg(windows)]
     ctx.add_singleton_model(util::traffic_lights::windows::RendererState::new);
-    #[cfg(feature = "local_fs")]
+    #[cfg(all(feature = "local_fs", not(feature = "local_only")))]
     ctx.add_singleton_model(|_| LanguageServerShutdownManager::new());
 
     #[cfg(feature = "voice_input")]
@@ -2770,7 +2772,7 @@ pub(crate) fn app_callbacks(
                 telemetry_collector.flush_telemetry_events_for_shutdown(ctx);
             });
 
-            // Shutdown all LSP servers gracefully before app termination
+            #[cfg(not(feature = "local_only"))]
             lsp::LspManagerModel::handle(ctx).update(ctx, |manager, ctx| {
                 manager.terminate(ctx);
             });
