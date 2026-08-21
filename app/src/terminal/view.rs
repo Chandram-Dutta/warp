@@ -13684,7 +13684,8 @@ impl TerminalView {
         self.is_login_shell_bootstrapped = true;
         self.hide_slow_bootstrap_banner(ctx);
 
-        if self.auth_state.is_anonymous_or_logged_out()
+        if !cfg!(feature = "local_only")
+            && self.auth_state.is_anonymous_or_logged_out()
             && !FeatureFlag::OpenWarpNewSettingsModes.is_enabled()
         {
             self.insert_anonymous_user_ai_sign_up_banner(ctx);
@@ -21732,6 +21733,10 @@ impl TerminalView {
     }
 
     fn handle_input_event(&mut self, event: &InputEvent, ctx: &mut ViewContext<Self>) {
+        if !event.is_available_in_product() {
+            return;
+        }
+
         match event {
             InputEvent::Enter => self.clear_prompt_suggestions(ctx),
             InputEvent::PageUp => self.page_up(ctx),
@@ -26916,6 +26921,10 @@ impl TypedActionView for TerminalView {
     }
 
     fn handle_action(&mut self, action: &TerminalAction, ctx: &mut ViewContext<Self>) {
+        if !action.is_available_in_product() {
+            return;
+        }
+
         use TerminalAction::*;
         let input_mode = *InputModeSettings::as_ref(ctx).input_mode.value();
 

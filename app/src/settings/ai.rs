@@ -2208,6 +2208,19 @@ impl AISettings {
 
     pub fn default_session_mode(&self, app: &AppContext) -> DefaultSessionMode {
         let mode = *self.default_session_mode_internal.value();
+
+        #[cfg(feature = "local_only")]
+        {
+            let _ = app;
+            return match mode {
+                DefaultSessionMode::Terminal | DefaultSessionMode::TabConfig => mode,
+                DefaultSessionMode::Agent
+                | DefaultSessionMode::CloudAgent
+                | DefaultSessionMode::DockerSandbox => DefaultSessionMode::Terminal,
+            };
+        }
+
+        #[cfg(not(feature = "local_only"))]
         match mode {
             // Terminal and TabConfig don't require AI.
             DefaultSessionMode::Terminal | DefaultSessionMode::TabConfig => mode,
@@ -2255,13 +2268,31 @@ impl AISettings {
     }
 
     pub fn is_active_ai_enabled(&self, app: &warpui::AppContext) -> bool {
-        self.is_any_ai_enabled(app)
-            && *self.is_active_ai_enabled_internal
-            && AppExecutionMode::as_ref(app).allows_active_ai()
+        #[cfg(feature = "local_only")]
+        {
+            let _ = (self, app);
+            false
+        }
+
+        #[cfg(not(feature = "local_only"))]
+        {
+            self.is_any_ai_enabled(app)
+                && *self.is_active_ai_enabled_internal
+                && AppExecutionMode::as_ref(app).allows_active_ai()
+        }
     }
 
     pub fn is_prompt_suggestions_enabled(&self, app: &warpui::AppContext) -> bool {
-        self.is_active_ai_enabled(app) && *self.prompt_suggestions_enabled_internal
+        #[cfg(feature = "local_only")]
+        {
+            let _ = (self, app);
+            false
+        }
+
+        #[cfg(not(feature = "local_only"))]
+        {
+            self.is_active_ai_enabled(app) && *self.prompt_suggestions_enabled_internal
+        }
     }
 
     pub fn is_rule_suggestions_enabled(&self, app: &warpui::AppContext) -> bool {

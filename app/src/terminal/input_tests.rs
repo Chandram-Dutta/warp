@@ -9636,3 +9636,21 @@ fn upload_files_then_submit_cloud_followup_restores_input_on_upload_error() {
         );
     });
 }
+
+#[test]
+#[cfg(feature = "local_only")]
+fn local_only_input_actions_preserve_next_command_but_reject_agent_entrypoints() {
+    assert!(InputAction::CycleNextCommandSuggestion.is_available_in_product());
+    assert!(InputAction::CtrlR.is_available_in_product());
+    assert!(!InputAction::ShowAiCommandSearch.is_available_in_product());
+    assert!(!InputAction::ToggleConversationsMenu.is_available_in_product());
+    assert!(!InputAction::OpenModelSelector.is_available_in_product());
+    assert!(!InputAction::ActivateCloudHandoff.is_available_in_product());
+
+    assert!(Event::AutosuggestionAccepted.is_available_in_product());
+    assert!(Event::OpenSettings(SettingsSection::Appearance).is_available_in_product());
+    assert!(!Event::OpenSettings(SettingsSection::Account).is_available_in_product());
+    assert!(!Event::ExecuteAIQuery.is_available_in_product());
+    assert!(!Event::OpenViewMCPPane.is_available_in_product());
+    assert!(!Event::OpenShareSessionModal.is_available_in_product());
+}

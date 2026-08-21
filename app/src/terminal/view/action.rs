@@ -469,6 +469,126 @@ pub enum TerminalAction {
     Osc52AllowBlockedClipboardOperation,
 }
 
+impl TerminalAction {
+    pub fn is_available_in_product(&self) -> bool {
+        #[cfg(not(feature = "local_only"))]
+        return true;
+
+        #[cfg(feature = "local_only")]
+        {
+            use TerminalAction::*;
+
+            !matches!(
+                self,
+                OpenShareModal
+                    | JumpToLatestAgentMessage
+                    | OpenAIBlockAttachedBlocksMenu { .. }
+                    | OpenAIBlockOverflowMenu { .. }
+                    | RewindAIConversation { .. }
+                    | ExecuteRewindAIConversation { .. }
+                    | ExecuteRewindFromInlineMenu { .. }
+                    | OpenFileInWarp(_)
+                    | OpenWorkflowModal
+                    | OpenWorkflowModalForAIWorkflow(_)
+                    | OpenWorkflowModalForBlock(_)
+                    | OpenWorkflowModalWithCloudWorkflow(_)
+                    | AskAIAssistant { .. }
+                    | OnboardingFlow(_)
+                    | StopSharingCurrentSession { .. }
+                    | OpenSharedSessionOnDesktop { .. }
+                    | OpenShareSessionModal { .. }
+                    | CopySharedSessionLink { .. }
+                    | MakeAllParticipantsReaders { .. }
+                    | OpenSharedSessionViewerRoleMenu
+                    | RequestSharedSessionRole(_)
+                    | SelectAIAttachedBlock(_)
+                    | SetInputModeAgent
+                    | AttemptLoginGatedFeature
+                    | StartFileDropTarget
+                    | StopFileDropTarget
+                    | OpenTeamSettingsPage
+                    | HideTelemetryBannerPermanently
+                    | GenerateCodebaseIndex
+                    | LoadAgentModeConversation
+                    | DeleteAttachment { .. }
+                    | OpenAttachmentLightbox { .. }
+                    | WriteCodebaseIndex
+                    | ToggleAutoexecuteMode
+                    | ToggleQueueNextPrompt
+                    | CodebaseIndexSpeedbumpBanner(_)
+                    | AgentModeSetupSpeedbumpBanner(_)
+                    | AnonymousUserAISignUpBanner(_)
+                    | ResumeConversation
+                    | ForkConversationFromLastKnownGoodState
+                    | ToggleAIDocumentPane
+                    | ToggleTodoPopup
+                    | CloseTodoPopup
+                    | ToggleCodeReviewPane { .. }
+                    | InitProject
+                    | SummarizeConversation
+                    | IndexProjectSpeedbump
+                    | AddProjectAtCurrentDirectory
+                    | OpenProjectRulesPane
+                    | OpenViewMCPPane
+                    | OpenAddMCPPane
+                    | OpenAddRulePane
+                    | OpenRulesPane
+                    | OpenEditSkillPane { .. }
+                    | OpenAddPromptPane
+                    | OpenBillingAndUsagePane
+                    | OpenConversationsPalette
+                    | PickRepoToOpen
+                    | OpenFilesPalette { .. }
+                    | DismissCodeToolbeltTooltip
+                    | StartLspServer
+                    | SetupCloudEnvironment(_)
+                    | SetupCloudEnvironmentAndStart(_)
+                    | TriggerEnvironmentSetupSelection(_)
+                    | OpenEnvironmentManagementPane
+                    | ToggleLongRunningCommandControl
+                    | ToggleHideCliResponses
+                    | ExitAgentView
+                    | EnterCloudAgentView
+                    | StartNewAgentConversation { .. }
+                    | ToggleConversationDetailsPanel
+                    | CancelAmbientAgentTask
+                    | OpenModelSelector
+                    | ResolvePromptSuggestion(_)
+                    | AwsBedrockLoginBanner(_)
+                    | AwsCliNotInstalledBanner(_)
+                    | ToggleUsageFooter
+                    | RevealChildAgent { .. }
+                    | SwitchAgentViewToConversation { .. }
+                    | OpenChildAgentInNewPane { .. }
+                    | OpenChildAgentInNewTab { .. }
+                    | StopAgentConversation { .. }
+                    | KillAgentConversation { .. }
+                    | CyclePreviousOrchestrationChildAgent
+                    | CycleNextOrchestrationChildAgent
+                    | ToggleCLIAgentRichInput
+            ) && {
+                #[cfg(feature = "voice_input")]
+                {
+                    !matches!(self, ToggleCLIAgentVoiceInput(_))
+                }
+                #[cfg(not(feature = "voice_input"))]
+                {
+                    true
+                }
+            } && {
+                #[cfg(feature = "local_fs")]
+                {
+                    !matches!(self, OpenCodeInWarp { .. })
+                }
+                #[cfg(not(feature = "local_fs"))]
+                {
+                    true
+                }
+            }
+        }
+    }
+}
+
 // Manually implementing Debug to avoid leaking sensitive information in logs
 impl fmt::Debug for TerminalAction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -757,3 +877,7 @@ impl fmt::Debug for TerminalAction {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "action_tests.rs"]
+mod tests;

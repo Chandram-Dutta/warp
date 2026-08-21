@@ -63,8 +63,11 @@ use crate::ai::blocklist::suggested_rule_modal::SuggestedRuleAndId;
 use crate::ai::blocklist::{BlocklistAIHistoryModel, InputConfig, SerializedBlockListItem};
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentModel, AIDocumentVersion};
 use crate::ai::execution_profiles::ExecutionProfileId;
+#[cfg(not(feature = "local_only"))]
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
+#[cfg(not(feature = "local_only"))]
 use crate::ai::llms::LLMId;
+#[cfg(not(feature = "local_only"))]
 use crate::ai::restored_conversations::RestoredAgentConversations;
 use crate::ai_assistant::AskAIType;
 #[cfg(feature = "local_fs")]
@@ -1636,6 +1639,10 @@ impl PaneGroup {
         deferred_panes: &mut Vec<(PaneId, LeafSnapshot)>,
         pending_ambient_restorations: &mut Vec<(AmbientAgentTaskId, PaneId)>,
     ) -> anyhow::Result<(PaneData, InitialFocus)> {
+        if !leaf.contents.is_available_in_product() {
+            anyhow::bail!("Pane type is unavailable in this product profile");
+        }
+
         let custom_vertical_tabs_title = leaf.custom_vertical_tabs_title.clone();
         let result = match leaf.contents {
             LeafContents::AIDocument(_) => {
@@ -1683,6 +1690,7 @@ impl PaneGroup {
                 // and are not entirely passive (ignored suggestions).
                 // This prevents showing the "Previous session" banner when there's nothing to restore
                 // and avoids restoring passive code diffs that the user never acted on.
+                #[cfg(not(feature = "local_only"))]
                 let filtered_conversation_ids: Vec<AIConversationId> = terminal_snapshot
                     .conversation_ids_to_restore
                     .iter()
@@ -1704,6 +1712,7 @@ impl PaneGroup {
                     .copied()
                     .collect();
 
+                #[cfg(not(feature = "local_only"))]
                 let conversation_restoration = {
                     let conversations = RestoredAgentConversations::handle(ctx)
                         .update(ctx, |store, _| {
@@ -1718,6 +1727,14 @@ impl PaneGroup {
                             },
                         )
                 };
+                #[cfg(feature = "local_only")]
+                let conversation_restoration = None;
+                #[cfg(feature = "local_only")]
+                let initial_input_config = terminal_snapshot
+                    .input_config
+                    .map(InputConfig::with_shell_type);
+                #[cfg(not(feature = "local_only"))]
+                let initial_input_config = terminal_snapshot.input_config;
                 let (terminal_view, terminal_manager) = PaneGroup::create_session(
                     startup_directory,
                     HashMap::new(),
@@ -1730,10 +1747,11 @@ impl PaneGroup {
                     view_size,
                     model_event_sender.clone(),
                     chosen_shell,
-                    terminal_snapshot.input_config,
+                    initial_input_config,
                     ctx,
                 );
 
+                #[cfg(not(feature = "local_only"))]
                 let terminal_view_id = terminal_view.id();
 
                 let pane_data = TerminalPane::new(
@@ -1748,6 +1766,7 @@ impl PaneGroup {
                 let pane_id = terminal_pane_id.into();
                 pane_contents.insert(pane_id, Box::new(pane_data));
 
+                #[cfg(not(feature = "local_only"))]
                 if let Some(llm_override) = &terminal_snapshot.llm_model_override
                     && let Ok(llm_id) = serde_json::from_str::<LLMId>(llm_override)
                 {
@@ -1757,6 +1776,7 @@ impl PaneGroup {
                     });
                 }
 
+                #[cfg(not(feature = "local_only"))]
                 if let Some(active_profile_sync_id) = &terminal_snapshot.active_profile_id {
                     log::info!(
                         "Attempting to restore active_profile '{active_profile_sync_id}' for terminal {terminal_view_id:?}"

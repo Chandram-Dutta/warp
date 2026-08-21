@@ -335,6 +335,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
                 .is_supported_on_current_platform(),
         ),
     );
+    #[cfg(not(feature = "local_only"))]
     toggle_binding_pairs.push(
         ToggleSettingActionPair::new(
             "agent task completion notifications",
@@ -381,6 +382,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
                 .is_supported_on_current_platform(),
         ),
     );
+    #[cfg(not(feature = "local_only"))]
     toggle_binding_pairs.push(
         ToggleSettingActionPair::new(
             "in-app agent notifications",
@@ -456,6 +458,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
         ),
     );
 
+    #[cfg(not(feature = "local_only"))]
     toggle_binding_pairs.push(
         ToggleSettingActionPair::new(
             "code as default editor",
@@ -560,6 +563,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
         context,
         flags::SMART_SELECT_FLAG,
     ));
+    #[cfg(not(feature = "local_only"))]
     if FeatureFlag::AgentView.is_enabled() && AISettings::as_ref(app).is_any_ai_enabled(app) {
         toggle_binding_pairs.push(
             ToggleSettingActionPair::new(
@@ -578,6 +582,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
         );
     }
 
+    #[cfg(not(feature = "local_only"))]
     toggle_binding_pairs.push(
         ToggleSettingActionPair::new(
             "terminal input message line",
@@ -589,6 +594,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
         )
         .with_enabled(|| FeatureFlag::AgentView.is_enabled()),
     );
+    #[cfg(not(feature = "local_only"))]
     toggle_binding_pairs.push(
         ToggleSettingActionPair::new(
             "'@' context menu in terminal mode",
@@ -614,6 +620,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
         flags::PRESERVE_INPUT_FOCUS_ON_BLOCK_SELECTION_FLAG,
     ));
 
+    #[cfg(not(feature = "local_only"))]
     if FeatureFlag::AgentView.is_enabled() && AISettings::as_ref(app).is_any_ai_enabled(app) {
         toggle_binding_pairs.push(
             ToggleSettingActionPair::new(
@@ -631,6 +638,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
             ),
         );
     }
+    #[cfg(not(feature = "local_only"))]
     if FeatureFlag::AIContextMenuCode.is_enabled() {
         toggle_binding_pairs.push(
             ToggleSettingActionPair::new(
@@ -648,6 +656,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
             ),
         );
     }
+    #[cfg(not(feature = "local_only"))]
     toggle_binding_pairs.push(
         ToggleSettingActionPair::new(
             "global workflows in Command Search",
@@ -811,6 +820,108 @@ pub enum FeaturesPageAction {
     ToggleAgentInAppNotifications,
     MakeWarpDefaultTerminal,
     SetCodeEditorLineNumberMode(CodeEditorLineNumberMode),
+}
+
+impl FeaturesPageAction {
+    pub fn is_available_in_product(&self) -> bool {
+        #[cfg(not(feature = "local_only"))]
+        return true;
+
+        #[cfg(feature = "local_only")]
+        match self {
+            Self::SetDefaultSessionMode(
+                DefaultSessionMode::Terminal | DefaultSessionMode::TabConfig,
+            ) => true,
+            Self::SetDefaultSessionMode(
+                DefaultSessionMode::Agent
+                | DefaultSessionMode::CloudAgent
+                | DefaultSessionMode::DockerSandbox,
+            )
+            | Self::ToggleCodeAsDefaultEditor
+            | Self::ToggleShowTerminalZeroStateBlock
+            | Self::ToggleGlobalWorkflowsInUniversalSearch
+            | Self::ToggleAgentTaskCompletedNotifications
+            | Self::ToggleAtContextMenuInTerminalMode
+            | Self::ToggleSlashCommandsInTerminalMode
+            | Self::ToggleOutlineCodebaseSymbolsForAtContextMenu
+            | Self::ToggleAutoOpenCodeReviewPane
+            | Self::ToggleShowTerminalInputMessageLine
+            | Self::ToggleAgentInAppNotifications
+            | Self::SetCodeEditorLineNumberMode(_) => false,
+            Self::ToggleCopyOnSelect
+            | Self::ToggleAsyncFind
+            | Self::ToggleNotifications
+            | Self::ToggleRestoreSession
+            | Self::ToggleAutocompleteSymbols
+            | Self::ToggleLinuxClipboardSelection
+            | Self::ToggleOpenLinksInDesktopApp
+            | Self::ToggleSshReuseControlMaster
+            | Self::ToggleSnackbar
+            | Self::ToggleLinkTooltip
+            | Self::ToggleCompletionsOpenWhileTyping
+            | Self::ToggleCommandCorrections
+            | Self::ToggleErrorUnderlining
+            | Self::ToggleSyntaxHighlighting
+            | Self::ToggleAliasExpansion
+            | Self::ToggleMiddleClickPaste
+            | Self::ToggleShowInputHintText
+            | Self::ToggleUseAudibleBell
+            | Self::TogglePreferLowPowerGPU
+            | Self::ToggleVimMode
+            | Self::ToggleVimUnnamedSystemClipboard
+            | Self::ToggleVimStatusBar
+            | Self::ActivationKeybindEditorClicked
+            | Self::ActivationKeybindEditorCancel
+            | Self::ActivationKeybindEditorSave
+            | Self::ActivationKeystrokeDefined(_)
+            | Self::QuakeKeystrokeDefined(_)
+            | Self::QuakeKeybindEditorClicked
+            | Self::QuakeKeybindEditorCancel
+            | Self::QuakeKeybindEditorSave
+            | Self::QuakeEditorSetPinPosition(_)
+            | Self::QuakeEditorSetPinScreen(_)
+            | Self::QuakeEditorSetWidthPercentage
+            | Self::QuakeEditorSetHeightPercentage
+            | Self::QuakeEditorResetWidthHeight
+            | Self::QuakeEditorTogglePinWindow
+            | Self::OpenUrl(_)
+            | Self::SetExtraMetaKeys(_)
+            | Self::ToggleLeftMetaKey
+            | Self::ToggleRightMetaKey
+            | Self::ToggleMouseReporting
+            | Self::ToggleScrollReporting
+            | Self::ToggleFocusReporting
+            | Self::ToggleLongRunningNotifications
+            | Self::SetLongRunningNotificationThreshold
+            | Self::TogglePasswordPromptNotifications
+            | Self::ToggleNeedsAttentionNotifications
+            | Self::ToggleNotificationSound
+            | Self::SetNotificationToastDuration
+            | Self::ToggleShowWarningBeforeQuitting
+            | Self::ToggleLoginItem
+            | Self::ToggleQuitOnLastWindowClosed
+            | Self::ToggleSmartSelection
+            | Self::SetWordCharAllowlist
+            | Self::ResetWordCharAllowlist
+            | Self::SetGlobalHotkeyMode(_)
+            | Self::SetTabBehavior(_)
+            | Self::SetCtrlTabBehavior(_)
+            | Self::SetPreferredGraphicsBackend(_)
+            | Self::SetNewTabPlacement(_)
+            | Self::SetOsc52ClipboardAccess(_)
+            | Self::SetDefaultTabConfig(_)
+            | Self::SearchForKeybinding(_)
+            | Self::ToggleAutosuggestions
+            | Self::ToggleConfirmCloseSession
+            | Self::ToggleShowChangelogAfterUpdate
+            | Self::ToggleAutosuggestionKeybindingHint
+            | Self::ToggleShowAutosuggestionIgnoreButton
+            | Self::TogglePreserveInputFocusOnBlockSelection
+            | Self::MakeWarpDefaultTerminal => true,
+            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+            Self::ToggleForceX11 => true,
+        }
+    }
 }
 
 lazy_static! {
@@ -1444,6 +1555,10 @@ impl TypedActionView for FeaturesPageView {
     type Action = FeaturesPageAction;
 
     fn handle_action(&mut self, action: &FeaturesPageAction, ctx: &mut ViewContext<Self>) {
+        if !action.is_available_in_product() {
+            return;
+        }
+
         use FeaturesPageAction::*;
 
         match action {
@@ -2888,6 +3003,7 @@ impl FeaturesPageView {
 
         let mut text_editing_widgets: Vec<Box<dyn SettingsWidget<View = Self>>> =
             vec![Box::new(AutocompleteSymbolsWidget::default())];
+        #[cfg(not(feature = "local_only"))]
         if app_editor_settings
             .code_editor_line_number_mode
             .is_supported_on_current_platform()
@@ -2952,6 +3068,7 @@ impl FeaturesPageView {
             editor_widgets.push(Box::new(AutosuggestionIgnoreButtonWidget::default()));
         }
 
+        #[cfg(not(feature = "local_only"))]
         if input_settings
             .at_context_menu_in_terminal_mode
             .is_supported_on_current_platform()
@@ -3711,6 +3828,9 @@ impl FeaturesPageView {
                 let docker_sandbox_enabled = FeatureFlag::LocalDockerSandbox.is_enabled();
                 let mut items: Vec<DropdownItem<FeaturesPageAction>> = DefaultSessionMode::iter()
                     .filter(|val| *val != DefaultSessionMode::TabConfig)
+                    .filter(|val| {
+                        cfg!(not(feature = "local_only")) || *val == DefaultSessionMode::Terminal
+                    })
                     .filter(|val| {
                         *val != DefaultSessionMode::DockerSandbox || docker_sandbox_enabled
                     })
@@ -5314,7 +5434,13 @@ impl SettingsWidget for DesktopNotificationsWidget {
             session_settings.notifications.mode,
             NotificationsMode::Enabled
         ) {
+            let needs_attention_label = if cfg!(feature = "local_only") {
+                "Notify when a command needs your attention to continue"
+            } else {
+                "Notify when a command or agent needs your attention to continue"
+            };
             let toggles = vec![
+                #[cfg(not(feature = "local_only"))]
                 view.render_notification_toggle(
                     session_settings
                         .notifications
@@ -5332,7 +5458,7 @@ impl SettingsWidget for DesktopNotificationsWidget {
                 ),
                 view.render_notification_toggle(
                     session_settings.notifications.is_needs_attention_enabled,
-                    "Notify when a command or agent needs your attention to continue",
+                    needs_attention_label,
                     FeaturesPageAction::ToggleNeedsAttentionNotifications,
                     view.button_mouse_states
                         .agent_needs_attention_notifications_checkbox

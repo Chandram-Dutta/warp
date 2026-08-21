@@ -11,6 +11,44 @@ use crate::search::command_palette::mixer::CommandPaletteItemAction;
 use crate::search::data_source::{DataSourceSearchError, Query, QueryResult};
 use crate::search::mixer::{DataSourceRunErrorWrapper, SyncDataSource};
 use crate::util::bindings::CommandBinding;
+#[cfg(feature = "local_only")]
+use crate::{
+    settings_view::{
+        SettingsAction, appearance_page::AppearancePageAction, features_page::FeaturesPageAction,
+    },
+    terminal::{input::InputAction, view::TerminalAction},
+    workspace::WorkspaceAction,
+};
+
+#[cfg(not(feature = "local_only"))]
+fn binding_is_available_in_product(binding: &CommandBinding) -> bool {
+    let _ = binding;
+    true
+}
+
+#[cfg(feature = "local_only")]
+fn binding_is_available_in_product(binding: &CommandBinding) -> bool {
+    let Some(action) = &binding.action else {
+        return true;
+    };
+    let action = action.as_any();
+
+    if let Some(action) = action.downcast_ref::<WorkspaceAction>() {
+        action.is_available_in_product()
+    } else if let Some(action) = action.downcast_ref::<TerminalAction>() {
+        action.is_available_in_product()
+    } else if let Some(action) = action.downcast_ref::<InputAction>() {
+        action.is_available_in_product()
+    } else if let Some(action) = action.downcast_ref::<SettingsAction>() {
+        action.is_available_in_product()
+    } else if let Some(action) = action.downcast_ref::<FeaturesPageAction>() {
+        action.is_available_in_product()
+    } else if let Some(action) = action.downcast_ref::<AppearancePageAction>() {
+        action.is_available_in_product()
+    } else {
+        true
+    }
+}
 
 /// Data source for [`CommandBinding`]s. Produces a list of in-app actions a user can currently
 /// perform.
@@ -82,6 +120,7 @@ impl CommandBindingDataSource {
             .key_bindings_for_view(window_id, view_id)
             .into_iter()
             .filter_map(|lens| CommandBinding::from_lens(lens, ctx))
+            .filter(binding_is_available_in_product)
             .filter(|binding| binding_filter_fn.as_ref().is_none_or(|f| f(binding)))
             .map(Arc::new)
             .map(|binding| (binding.id, binding))

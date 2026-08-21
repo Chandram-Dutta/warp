@@ -741,12 +741,20 @@ fn test_settings_widget_deeplink_target() {
     );
     assert_eq!(
         settings_widget_deeplink_target("custom_router").map(|(section, _)| section),
-        Some(SettingsSection::WarpAgent),
+        if cfg!(feature = "local_only") {
+            None
+        } else {
+            Some(SettingsSection::WarpAgent)
+        },
     );
     #[cfg(not(target_family = "wasm"))]
     assert_eq!(
         settings_widget_deeplink_target("cli_agents").map(|(section, _)| section),
-        Some(SettingsSection::ThirdPartyCLIAgents),
+        if cfg!(feature = "local_only") {
+            None
+        } else {
+            Some(SettingsSection::ThirdPartyCLIAgents)
+        },
     );
     // Unknown / empty slugs are not linkable (allowlist only).
     assert!(settings_widget_deeplink_target("not_a_widget").is_none());
@@ -761,17 +769,57 @@ fn test_settings_section_for_simple_subpage() {
     );
     assert_eq!(
         settings_section_for_simple_subpage("billing_and_usage"),
-        Some(SettingsSection::BillingAndUsage),
+        if cfg!(feature = "local_only") {
+            None
+        } else {
+            Some(SettingsSection::BillingAndUsage)
+        },
     );
     assert_eq!(
         settings_section_for_simple_subpage("platform"),
-        Some(SettingsSection::OzCloudAPIKeys),
+        if cfg!(feature = "local_only") {
+            None
+        } else {
+            Some(SettingsSection::OzCloudAPIKeys)
+        },
     );
     assert_eq!(
         settings_section_for_simple_subpage("warp_agent"),
-        Some(SettingsSection::WarpAgent),
+        if cfg!(feature = "local_only") {
+            None
+        } else {
+            Some(SettingsSection::WarpAgent)
+        },
     );
     assert!(settings_section_for_simple_subpage("not_a_subpage").is_none());
+}
+
+#[test]
+#[cfg(feature = "local_only")]
+fn local_only_deep_links_reject_cloud_agent_and_account_routes() {
+    for host in [
+        "auth",
+        "team",
+        "shared_session",
+        "conversation",
+        "drive",
+        "mcp",
+        "codex",
+    ] {
+        assert!(
+            UriHost::from_str(host).is_err(),
+            "host {host} must be rejected"
+        );
+    }
+    assert!(UriHost::from_str("settings").is_ok());
+    assert!(
+        Action::parse(&Url::parse("warposs://action/new_agent_conversation").unwrap()).is_err()
+    );
+    assert!(settings_section_for_simple_subpage("billing_and_usage").is_none());
+    assert_eq!(
+        settings_section_for_simple_subpage("appearance"),
+        Some(SettingsSection::Appearance)
+    );
 }
 
 // -- post-checkout desktop hand-off ------------------------------------------

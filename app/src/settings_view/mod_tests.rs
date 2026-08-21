@@ -4,6 +4,8 @@ use warpui::{App, AppContext, Element, Entity, View};
 
 use super::*;
 use crate::appearance::Appearance;
+#[cfg(feature = "local_only")]
+use crate::settings::DefaultSessionMode;
 use crate::workspaces::workspace::{BillingMetadata, CustomerType};
 
 fn billing_metadata(customer_type: CustomerType) -> BillingMetadata {
@@ -180,6 +182,50 @@ fn all_sections_list_is_exhaustive() {
     for section in ALL_SECTIONS {
         assert!(is_listed(*section), "{section:?} is missing from the list");
     }
+}
+
+#[test]
+#[cfg(feature = "local_only")]
+fn local_only_settings_allow_list_excludes_cloud_and_agent_pages() {
+    assert!(SettingsSection::LocalAI.is_available());
+    assert!(SettingsSection::Appearance.is_available());
+    assert!(!SettingsSection::Account.is_available());
+    assert!(!SettingsSection::WarpDrive.is_available());
+    assert!(!SettingsSection::WarpAgent.is_available());
+    assert!(!SettingsSection::AgentMCPServers.is_available());
+    assert!(!SettingsSection::EditorAndCodeReview.is_available());
+}
+
+#[test]
+#[cfg(feature = "local_only")]
+fn local_only_settings_actions_and_events_reject_direct_bypasses() {
+    assert!(SettingsAction::SelectAndRefresh(SettingsSection::LocalAI).is_available_in_product());
+    assert!(!SettingsAction::SelectAndRefresh(SettingsSection::Account).is_available_in_product());
+    assert!(
+        !SettingsAction::SelectAndRefresh(SettingsSection::WarpAgent).is_available_in_product()
+    );
+
+    assert!(SettingsViewEvent::StartResize.is_available_in_product());
+    assert!(!SettingsViewEvent::CheckForUpdate.is_available_in_product());
+    assert!(!SettingsViewEvent::OpenWarpDrive.is_available_in_product());
+    assert!(!SettingsViewEvent::OpenMCPServerCollection.is_available_in_product());
+
+    assert!(
+        FeaturesPageAction::SetDefaultSessionMode(DefaultSessionMode::Terminal)
+            .is_available_in_product()
+    );
+    assert!(
+        !FeaturesPageAction::SetDefaultSessionMode(DefaultSessionMode::Agent)
+            .is_available_in_product()
+    );
+    assert!(!FeaturesPageAction::ToggleCodeAsDefaultEditor.is_available_in_product());
+    assert!(!FeaturesPageAction::ToggleAgentTaskCompletedNotifications.is_available_in_product());
+
+    assert!(AppearancePageAction::ToggleVerticalTabs.is_available_in_product());
+    assert!(AppearancePageAction::SetFontSize.is_available_in_product());
+    assert!(!AppearancePageAction::ToggleToolsPanelWarpDrive.is_available_in_product());
+    assert!(!AppearancePageAction::ToggleToolsPanelProjectExplorer.is_available_in_product());
+    assert!(!AppearancePageAction::ToggleShowCodeReviewButton.is_available_in_product());
 }
 
 #[test]

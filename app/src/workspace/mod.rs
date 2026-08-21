@@ -83,32 +83,51 @@ pub fn init(app: &mut AppContext) {
     modal::init(app);
     native_modal::init(app);
     lightbox_view::init(app);
+    #[cfg(not(feature = "local_only"))]
     rewind_confirmation_dialog::init(app);
+    #[cfg(not(feature = "local_only"))]
     delete_conversation_confirmation_dialog::init(app);
     crate::tab_configs::remove_confirmation_dialog::init(app);
+    #[cfg(not(feature = "local_only"))]
     hoa_onboarding::init(app);
     tab_configs::session_config_modal::init(app);
+    #[cfg(not(feature = "local_only"))]
     view::launch_modal::oz_launch::init(app);
+    #[cfg(not(feature = "local_only"))]
     view::openwarp_launch_modal::init(app);
+    #[cfg(not(feature = "local_only"))]
     view::orchestration_launch_modal::init(app);
+    #[cfg(not(feature = "local_only"))]
     view::agent_cli_launch_modal::init(app);
+    #[cfg(not(feature = "local_only"))]
     view::feature_intro_modal::init(app);
+    #[cfg(not(feature = "local_only"))]
     view::auto_handoff_sleep_modal::init(app);
+    #[cfg(not(feature = "local_only"))]
     view::cloud_agent_capacity_modal::init(app);
+    #[cfg(not(feature = "local_only"))]
     view::codex_modal::init(app);
+    #[cfg(not(feature = "local_only"))]
     view::free_ai_removal_modal::init(app);
+    #[cfg(not(feature = "local_only"))]
     view::global_search::view::GlobalSearchView::init(app);
+    #[cfg(not(feature = "local_only"))]
     view::right_panel::RightPanelView::init(app);
+    #[cfg(not(feature = "local_only"))]
     header_toolbar_editor::init(app);
+    #[cfg(not(feature = "local_only"))]
     view::conversation_list::view::register_conversation_list_view_bindings(app);
 
     settings_view::init_actions_from_parent_view(app, &id!("Workspace"), |settings_action| {
         WorkspaceAction::DispatchToSettingsTab(settings_action)
     });
     global_actions::init_global_actions(app);
+    #[cfg(not(feature = "local_only"))]
     notebooks::init(app);
+    #[cfg(not(feature = "local_only"))]
     code::init(app);
     sync_inputs::init(app);
+    #[cfg(not(feature = "local_only"))]
     lsp::init(app);
 
     app.register_fixed_bindings([FixedBinding::empty(
@@ -1225,6 +1244,7 @@ pub fn init(app: &mut AppContext) {
         ]);
     }
 
+    #[cfg(not(feature = "local_only"))]
     app.register_editable_bindings([EditableBinding::new(
         "workspace:log_out",
         "Log out",

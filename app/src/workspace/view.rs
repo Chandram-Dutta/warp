@@ -9781,6 +9781,29 @@ impl Workspace {
         ctx.notify();
     }
 
+    #[cfg(feature = "local_only")]
+    fn user_menu_items(&self, app: &AppContext) -> Vec<MenuItem<WorkspaceAction>> {
+        let _ = app;
+        let mut items = vec![
+            MenuItemFields::new("Settings")
+                .with_on_select_action(WorkspaceAction::ShowSettings)
+                .into_item(),
+            MenuItemFields::new("Keyboard shortcuts")
+                .with_on_select_action(WorkspaceAction::ToggleKeybindingsPage)
+                .into_item(),
+        ];
+
+        #[cfg(not(target_family = "wasm"))]
+        items.push(
+            MenuItemFields::new("View Warp logs")
+                .with_on_select_action(WorkspaceAction::ViewLogs)
+                .into_item(),
+        );
+
+        items
+    }
+
+    #[cfg(not(feature = "local_only"))]
     fn user_menu_items(&self, app: &AppContext) -> Vec<MenuItem<WorkspaceAction>> {
         let mut items = Vec::new();
         if !self.auth_state.is_anonymous_or_logged_out() {
@@ -15123,6 +15146,10 @@ impl Workspace {
         event: &SettingsViewEvent,
         ctx: &mut ViewContext<Self>,
     ) {
+        if !event.is_available_in_product() {
+            return;
+        }
+
         match event {
             SettingsViewEvent::CheckForUpdate => {
                 self.manual_check_for_update(ctx);
@@ -21288,7 +21315,7 @@ impl Workspace {
             );
         }
 
-        if FeatureFlag::AvatarInTabBar.is_enabled() {
+        if !cfg!(feature = "local_only") && FeatureFlag::AvatarInTabBar.is_enabled() {
             target.add_child(
                 Container::new(self.render_avatar_button(appearance, ctx))
                     .with_margin_left(TAB_BAR_PADDING_LEFT)
@@ -21296,7 +21323,10 @@ impl Workspace {
             );
         } else {
             let resource_center_closed = !self.current_workspace_state.is_resource_center_open;
-            if resource_center_closed && ContextFlag::WarpEssentials.is_enabled() {
+            if !cfg!(feature = "local_only")
+                && resource_center_closed
+                && ContextFlag::WarpEssentials.is_enabled()
+            {
                 target.add_child(
                     Container::new(self.render_resource_center_button(appearance, ctx))
                         .with_margin_left(TAB_BAR_PADDING_LEFT)
@@ -21311,7 +21341,8 @@ impl Workspace {
             );
         }
 
-        if self.auth_state.is_anonymous_or_logged_out()
+        if !cfg!(feature = "local_only")
+            && self.auth_state.is_anonymous_or_logged_out()
             && !FeatureFlag::OpenWarpNewSettingsModes.is_enabled()
         {
             if is_web_anonymous_user {
@@ -23770,7 +23801,14 @@ impl Workspace {
         }
     }
 
+    #[cfg(feature = "local_only")]
+    fn compute_left_panel_views(ctx: &AppContext) -> Vec<ToolPanelView> {
+        let _ = ctx;
+        Vec::new()
+    }
+
     /// Computes the list of available left panel views based on current AI settings and feature flags.
+    #[cfg(not(feature = "local_only"))]
     fn compute_left_panel_views(ctx: &AppContext) -> Vec<ToolPanelView> {
         let mut views = vec![];
         if cfg!(feature = "local_fs") && *CodeSettings::as_ref(ctx).show_project_explorer.value() {
@@ -23868,6 +23906,11 @@ impl TypedActionView for Workspace {
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         use WorkspaceAction::*;
         let window_id = ctx.window_id();
+
+        if !action.is_available_in_product() {
+            log::warn!("Ignoring action unavailable in this product profile: {action:?}");
+            return;
+        }
 
         if self.auth_state.is_anonymous_or_logged_out() && action.blocked_for_anonymous_user() {
             AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {

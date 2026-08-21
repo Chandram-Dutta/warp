@@ -134,6 +134,120 @@ pub enum CustomAction {
     ToggleConversationListView,
 }
 
+impl CustomAction {
+    pub fn is_available_in_product(self) -> bool {
+        #[cfg(not(feature = "local_only"))]
+        return true;
+
+        #[cfg(feature = "local_only")]
+        match self {
+            Self::NewTab
+            | Self::ShowAboutWarp
+            | Self::ShowSettings
+            | Self::ConfigureKeybindings
+            | Self::ShowAppearance
+            | Self::FocusInput
+            | Self::ClearBlocks
+            | Self::AddNextOccurrence
+            | Self::AddCursorAbove
+            | Self::AddCursorBelow
+            | Self::CycleNextSession
+            | Self::CyclePrevSession
+            | Self::Cut
+            | Self::Copy
+            | Self::Paste
+            | Self::Undo
+            | Self::Redo
+            | Self::CommandPalette
+            | Self::ClearEditor
+            | Self::Find
+            | Self::SelectAll
+            | Self::HistorySearch
+            | Self::SaveCurrentConfig
+            | Self::History
+            | Self::IncreaseFontSize
+            | Self::DecreaseFontSize
+            | Self::ResetFontSize
+            | Self::IncreaseZoom
+            | Self::DecreaseZoom
+            | Self::ResetZoom
+            | Self::RenameTab
+            | Self::SplitPaneRight
+            | Self::SplitPaneLeft
+            | Self::SplitPaneUp
+            | Self::SplitPaneDown
+            | Self::MoveTabLeft
+            | Self::MoveTabRight
+            | Self::ActivateNextTab
+            | Self::ActivatePreviousTab
+            | Self::ActivateNextPane
+            | Self::ActivatePreviousPane
+            | Self::NavigationPalette
+            | Self::SelectBlockAbove
+            | Self::SelectBlockBelow
+            | Self::SelectAllBlocks
+            | Self::ToggleBookmarkBlock
+            | Self::FindWithinBlock
+            | Self::CopyBlock
+            | Self::CopyBlockCommand
+            | Self::CopyBlockOutput
+            | Self::CloseTab
+            | Self::CloseOtherTabs
+            | Self::CloseTabsRight
+            | Self::ToggleMaximizePane
+            | Self::LaunchConfigPalette
+            | Self::TriggerWelcomeBlock
+            | Self::ToggleKeybindingsPage
+            | Self::ScrollToTopOfSelectedBlocks
+            | Self::ScrollToBottomOfSelectedBlocks
+            | Self::ToggleSyncAllTerminalInputsInAllTabs
+            | Self::ToggleSyncTerminalInputsInCurrentTab
+            | Self::DisableSyncTerminalInputs
+            | Self::ReopenClosedSession
+            | Self::AddWindow
+            | Self::CloseCurrentSession
+            | Self::CloseWindow
+            | Self::NewTerminalTab => true,
+            Self::NewFile
+            | Self::ShowAccount
+            | Self::ReferAFriend
+            | Self::ViewChangelog
+            | Self::AISearch
+            | Self::Workflows
+            | Self::CreateBlockPermalink
+            | Self::ViewSharedBlocks
+            | Self::FilesPalette
+            | Self::CommandSearch
+            | Self::ToggleResourceCenter
+            | Self::ToggleWarpDrive
+            | Self::NewPersonalWorkflow
+            | Self::NewPersonalNotebook
+            | Self::NewPersonalEnvVars
+            | Self::NewTeamWorkflow
+            | Self::NewTeamNotebook
+            | Self::NewTeamEnvVars
+            | Self::SearchDrive
+            | Self::OpenTeamSettings
+            | Self::ShareCurrentSession
+            | Self::SharePaneContents
+            | Self::NewAgentModePane
+            | Self::AttachSelectionAsAgentModeContext
+            | Self::OpenAIFactCollection
+            | Self::OpenMCPServerCollection
+            | Self::ToggleProjectExplorer
+            | Self::NewPersonalAIPrompt
+            | Self::NewTeamAIPrompt
+            | Self::OpenRepository
+            | Self::NewAgentTab
+            | Self::GoToLine
+            | Self::ToggleGlobalSearch
+            | Self::ToggleConversationListView => false,
+            #[cfg(windows)]
+            Self::WindowsPaste | Self::WindowsCopy => true,
+        }
+    }
+}
+
 lazy_static! {
     /// Maps for converting from custom tags back to the action enum
     /// This layer of indirection is necessary because the UI framework can't

@@ -3,8 +3,29 @@ use warpui::keymap::{EditableBinding, Keystroke, Trigger};
 use warpui::platform::OperatingSystem;
 
 use crate::terminal;
-use crate::util::bindings::{keybinding_name_to_display_string, trigger_to_keystroke};
+use crate::util::bindings::{
+    CustomAction, keybinding_name_to_display_string, trigger_to_keystroke,
+};
 use crate::workspace::WorkspaceAction;
+
+#[test]
+#[cfg(feature = "local_only")]
+fn local_only_product_rejects_cloud_agent_and_ide_custom_actions() {
+    assert!(CustomAction::NewTab.is_available_in_product());
+    assert!(CustomAction::History.is_available_in_product());
+    assert!(CustomAction::ShowSettings.is_available_in_product());
+    assert!(CustomAction::ToggleBookmarkBlock.is_available_in_product());
+
+    assert!(!CustomAction::ShowAccount.is_available_in_product());
+    assert!(!CustomAction::ToggleWarpDrive.is_available_in_product());
+    assert!(!CustomAction::CreateBlockPermalink.is_available_in_product());
+    assert!(!CustomAction::ViewSharedBlocks.is_available_in_product());
+    assert!(!CustomAction::ShareCurrentSession.is_available_in_product());
+    assert!(!CustomAction::NewAgentModePane.is_available_in_product());
+    assert!(!CustomAction::OpenMCPServerCollection.is_available_in_product());
+    assert!(!CustomAction::OpenRepository.is_available_in_product());
+    assert!(!CustomAction::ToggleProjectExplorer.is_available_in_product());
+}
 
 #[test]
 fn test_keybinding_name_to_display_string() {

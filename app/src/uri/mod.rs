@@ -130,6 +130,16 @@ impl FromStr for UriHost {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self> {
+        #[cfg(feature = "local_only")]
+        if !matches!(
+            s,
+            "action" | "launch" | "settings" | "home" | "tab_config" | "session"
+        ) {
+            return Err(anyhow!(
+                "URI host is unavailable in the local-only product: {s}"
+            ));
+        }
+
         match s {
             "auth" => Ok(Self::Auth),
             "team" => Ok(Self::Team),
@@ -948,7 +958,7 @@ enum Action {
 
 impl Action {
     fn parse(url: &Url) -> Result<Self> {
-        match url.path() {
+        let action = match url.path() {
             "/new_tab" => Ok(Self::NewTab),
             "/new_window" => Ok(Self::NewWindow),
             "/open_file_editor" => {
@@ -976,7 +986,17 @@ impl Action {
                 "Received \"action\" intent with unexpected action: {}",
                 url.path()
             )),
+        }?;
+
+        #[cfg(feature = "local_only")]
+        if !matches!(action, Self::NewTab | Self::NewWindow) {
+            return Err(anyhow!(
+                "URI action is unavailable in the local-only product: {}",
+                url.path()
+            ));
         }
+
+        Ok(action)
     }
 
     fn handle(&self, primary_window_id: Option<WindowId>, url: &Url, ctx: &mut AppContext) {
@@ -1675,13 +1695,14 @@ fn dispatch_action_in_new_or_existing_window<T: 'static>(
 }
 
 fn settings_section_for_simple_subpage(subpage: &str) -> Option<SettingsSection> {
-    match subpage {
+    let section = match subpage {
         "billing_and_usage" => Some(SettingsSection::BillingAndUsage),
         "platform" => Some(SettingsSection::OzCloudAPIKeys),
         "appearance" => Some(SettingsSection::Appearance),
         "warp_agent" => Some(SettingsSection::WarpAgent),
         _ => None,
-    }
+    };
+    section.filter(|section| section.is_available())
 }
 
 /// Validates an incoming custom URI for security and returns the host.

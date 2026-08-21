@@ -895,6 +895,248 @@ pub enum WorkspaceAction {
     ShowTeamSwitcherMenu,
 }
 
+impl WorkspaceAction {
+    pub fn is_available_in_product(&self) -> bool {
+        #[cfg(not(feature = "local_only"))]
+        return true;
+
+        #[cfg(feature = "local_only")]
+        {
+            use WorkspaceAction::*;
+
+            if let DispatchToSettingsTab(action) = self {
+                return action.is_available_in_product();
+            }
+            if let ShowSettingsPage(section) = self {
+                return section.is_available();
+            }
+            if let ShowSettingsPageWithSearch {
+                section: Some(section),
+                ..
+            }
+            | ScrollToSettingsWidget { page: section, .. } = self
+            {
+                return section.is_available();
+            }
+            if matches!(
+                self,
+                OpenPalette {
+                    mode: PaletteMode::WarpDrive | PaletteMode::Files | PaletteMode::Conversations,
+                    ..
+                } | TogglePalette {
+                    mode: PaletteMode::WarpDrive | PaletteMode::Files | PaletteMode::Conversations,
+                    ..
+                }
+            ) {
+                return false;
+            }
+            if let TabConfigSidecarMakeDefault { mode, .. } = self
+                && !matches!(
+                    mode,
+                    crate::settings::ai::DefaultSessionMode::Terminal
+                        | crate::settings::ai::DefaultSessionMode::TabConfig
+                )
+            {
+                return false;
+            }
+            if matches!(
+                self,
+                InsertInInput {
+                    ensure_agent_mode: true,
+                    ..
+                }
+            ) {
+                return false;
+            }
+
+            let unavailable = matches!(
+                self,
+                AddGetStartedTab
+                    | AddAmbientAgentTab
+                    | AddAgentTab
+                    | AddDockerSandboxTab
+                    | AutoupdateFailureLink
+                    | ApplyUpdate
+                    | LogOut
+                    | DownloadNewVersion
+                    | CheckForUpdate
+                    | ShowUpgrade
+                    | ShowReferralSettingsPage
+                    | JoinSlack
+                    | ViewLatestChangelog
+                    | ViewPrivacyPolicy
+                    | SendFeedback
+                    | ExportAllWarpDriveObjects
+                    | ToggleResourceCenter
+                    | ToggleUserMenu
+                    | ToggleAIAssistant
+                    | ClickedAIAssistantIcon
+                    | CreatePersonalNotebook
+                    | ImportToPersonalDrive
+                    | ImportToTeamDrive
+                    | CreateTeamNotebook
+                    | CreatePersonalWorkflow
+                    | CreateTeamWorkflow
+                    | CreatePersonalFolder
+                    | CreateTeamFolder
+                    | CreateTeamEnvVarCollection
+                    | CreatePersonalEnvVarCollection
+                    | CreatePersonalAIPrompt
+                    | CreateTeamAIPrompt
+                    | ToggleLeftPanel
+                    | ToggleWarpDrive
+                    | OpenWarpDrive
+                    | ToggleRightPanel
+                    | FocusLeftPanel
+                    | FocusRightPanel
+                    | OpenCodeReviewPanel(_)
+                    | ToggleVerticalTabsShowPrLink
+                    | ToggleVerticalTabsShowDiffStats
+                    | CopyAccessTokenToClipboard
+                    | ShowAIAssistantWarmWelcome
+                    | ClickedAIAssistantWarmWelcome
+                    | DismissAIAssistantWarmWelcome
+                    | HandleConflictingWorkflow(_)
+                    | HandleConflictingEnvVarCollection(_)
+                    | OpenPromptEditor { .. }
+                    | OpenAgentToolbarEditor
+                    | OpenCLIAgentToolbarEditor
+                    | OpenHeaderToolbarEditor
+                    | Reauth
+                    | SignupAnonymousUser
+                    | SignInAnonymousWebUser
+                    | OpenShareSessionModal(_)
+                    | StopSharingSessionFromTabMenu { .. }
+                    | StopSharingAllSessionsInTab { .. }
+                    | CopySharedSessionLinkFromTab { .. }
+                    | OpenSharedSessionQrCode { .. }
+                    | ViewObjectInWarpDrive(_)
+                    | OpenObjectSharingSettings { .. }
+                    | UndoTrash(_)
+                    | LogReviewCommentSendStatusForActiveTab
+                    | ToggleDebugNetworkStatus
+                    | RunAISuggestedCommand(_)
+                    | NewTabInAgentMode { .. }
+                    | NewPaneInAgentMode { .. }
+                    | OpenCloudAgentSetupGuide
+                    | AttemptLoginGatedAIUpgrade
+                    | OpenPromptSuggestionsUnavailableModal
+                    | FixInAgentMode { .. }
+                    | OpenAIFactCollection
+                    | OpenMCPServerCollection
+                    | OpenEnvironmentManagementPane
+                    | ToggleAIDocumentPane { .. }
+                    | HideAIDocumentPanes
+                    | OpenAIDocumentPane { .. }
+                    | StartNewConversation { .. }
+                    | JumpToLatestToast
+                    | OpenFileInNewTab { .. }
+                    | OpenNotebook { .. }
+                    | RunWorkflow { .. }
+                    | RestoreOrNavigateToConversation { .. }
+                    | ForkAIConversation { .. }
+                    | InsertForkSlashCommand
+                    | OpenLocalToCloudHandoffPane { .. }
+                    | AutoHandoffActiveAgentToCloud { .. }
+                    | ShowHandoffEnvironmentCreationModal
+                    | ShowCloudModeV2EnvironmentCreationModal
+                    | OpenCreateAuthSecretModal { .. }
+                    | SummarizeAIConversation { .. }
+                    | UndoRevertInCodeReviewPane { .. }
+                    | OpenRepository { .. }
+                    | NewCodeFile
+                    | ToggleProjectExplorer
+                    | OpenProjectExplorer
+                    | ToggleGlobalSearch
+                    | ToggleHiddenFiles
+                    | OpenGlobalSearch
+                    | ToggleConversationListView
+                    | OpenConversationListView
+                    | OpenAgentManagementView
+                    | ToggleNotificationMailbox { .. }
+                    | ToggleAgentManagementView
+                    | ViewAgentRunsForEnvironment { .. }
+                    | ShowRewindConfirmationDialog { .. }
+                    | ExecuteRewindAIConversation { .. }
+                    | ExecuteDeleteConversation { .. }
+                    | OpenOrAttachAmbientAgentConversation { .. }
+                    | OpenConversationTranscriptViewer { .. }
+                    | StartAgentOnboardingTutorial(_)
+                    | DismissFeatureIntroModal
+                    | OpenNewWorktreeModal
+                    | OpenNewWorktreeRepoPicker
+                    | OpenWorktreeInRepo { .. }
+                    | OpenWorktreeAddRepoPicker
+                    | OpenTabConfigErrorFile { .. }
+                    | OpenSettingsFile
+                    | FixSettingsWithOz { .. }
+                    | OpenNetworkLogPane
+                    | OpenNewWindowForTeam { .. }
+                    | ShowTeamSwitcherMenu
+            ) || {
+                #[cfg(not(target_family = "wasm"))]
+                {
+                    matches!(
+                        self,
+                        ContinueConversationLocally { .. }
+                            | ContinueThirdPartyConversationLocally { .. }
+                    )
+                }
+                #[cfg(target_family = "wasm")]
+                {
+                    matches!(self, ToggleConversationTranscriptDetailsPanel)
+                }
+            } || {
+                #[cfg(debug_assertions)]
+                {
+                    matches!(
+                        self,
+                        OpenBuildPlanMigrationModal
+                            | ResetBuildPlanMigrationModalState
+                            | DebugResetAwsBedrockLoginBannerDismissed
+                            | OpenOzLaunchModal
+                            | ResetOzLaunchModalState
+                            | OpenOpenWarpLaunchModal
+                            | ResetOpenWarpLaunchModalState
+                            | OpenOrchestrationLaunchModal
+                            | ResetOrchestrationLaunchModalState
+                            | OpenAgentCliLaunchModal
+                            | ResetAgentCliLaunchModalState
+                            | OpenFeatureIntroModal
+                            | ResetFeatureIntroModalState
+                            | OpenAutoHandoffSleepModal
+                            | ResetAutoHandoffSleepModalState
+                            | TriggerAutoHandoffToCloud
+                            | OpenFreeAiRemovalModal
+                            | ResetFreeAiRemovalModalState
+                            | InstallOpenCodeWarpPlugin
+                            | UseLocalOpenCodeWarpPlugin
+                            | ShowHoaOnboardingFlow
+                    )
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    false
+                }
+            } || {
+                #[cfg(target_os = "macos")]
+                {
+                    matches!(
+                        self,
+                        InstallOz | UninstallOz | InstallWarpctrl | UninstallWarpctrl
+                    )
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    false
+                }
+            };
+
+            !unavailable
+        }
+    }
+}
+
 impl From<&WorkspaceAction> for LoginGatedFeature {
     fn from(val: &WorkspaceAction) -> LoginGatedFeature {
         use WorkspaceAction::*;

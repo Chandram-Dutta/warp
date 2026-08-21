@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use super::*;
+#[cfg(feature = "local_only")]
+use crate::launch_configs::launch_config::PaneMode;
 use crate::launch_configs::launch_config::{PaneTemplateType, SplitDirection};
 
 const WORKTREE_TOML: &str = r#"
@@ -57,6 +59,39 @@ fn build_test_tab_config_toml(name: &str, commands: Vec<String>) -> String {
     };
 
     toml::to_string_pretty(&config).expect("Test config should serialize")
+}
+
+#[test]
+#[cfg(feature = "local_only")]
+fn local_only_renders_agent_and_cloud_tab_config_panes_as_terminals() {
+    for pane_type in [TabConfigPaneType::Agent, TabConfigPaneType::Cloud] {
+        let config = TabConfig {
+            name: "local-only".to_string(),
+            title: None,
+            color: None,
+            panes: vec![TabConfigPaneNode {
+                id: "main".to_string(),
+                pane_type: Some(pane_type),
+                split: None,
+                children: None,
+                is_focused: None,
+                directory: None,
+                commands: None,
+                shell: None,
+            }],
+            params: HashMap::new(),
+            source_path: None,
+        };
+
+        let (_, pane) = render_tab_config(&config, &HashMap::new(), None);
+        assert!(matches!(
+            pane,
+            PaneTemplateType::PaneTemplate {
+                pane_mode: PaneMode::Terminal,
+                ..
+            }
+        ));
+    }
 }
 
 #[test]

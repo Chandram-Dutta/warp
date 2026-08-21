@@ -155,6 +155,16 @@ pub enum LeafContents {
     GetStarted,
 }
 
+impl LeafContents {
+    pub(crate) fn is_available_in_product(&self) -> bool {
+        #[cfg(not(feature = "local_only"))]
+        return true;
+
+        #[cfg(feature = "local_only")]
+        matches!(self, Self::Terminal(_) | Self::Settings(_))
+    }
+}
+
 #[cfg(feature = "local_fs")]
 impl LeafContents {
     /// Whether this pane content should be written to (and later restored
@@ -167,6 +177,10 @@ impl LeafContents {
     /// that `read_node` cannot resolve, which causes the surrounding tab's
     /// restoration to fail and the whole tab to disappear on restart.
     pub(crate) fn is_persisted(&self) -> bool {
+        if !self.is_available_in_product() {
+            return false;
+        }
+
         match self {
             // Network log: the backing log is an in-memory ring buffer that
             // starts empty on launch; persisting would also regress back to

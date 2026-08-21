@@ -364,8 +364,12 @@ fn resolve_pane_node(
 
         let pane_mode = match pane_type {
             TabConfigPaneType::Terminal => PaneMode::Terminal,
+            #[cfg(not(feature = "local_only"))]
             TabConfigPaneType::Agent => PaneMode::Agent,
+            #[cfg(not(feature = "local_only"))]
             TabConfigPaneType::Cloud => PaneMode::Cloud,
+            #[cfg(feature = "local_only")]
+            TabConfigPaneType::Agent | TabConfigPaneType::Cloud => PaneMode::Terminal,
         };
 
         let cwd = node

@@ -106,3 +106,21 @@ fn test_code_pane_snapshot_with_multiple_tabs() {
     assert_eq!(tabs[2].path, None);
     assert!(matches!(source, Some(CodeSource::Link { .. })));
 }
+
+#[test]
+#[cfg(feature = "local_only")]
+fn local_only_session_restore_allows_local_settings_but_rejects_agent_and_ide_panes() {
+    let settings = LeafContents::Settings(SettingsPaneSnapshot::Local {
+        current_page: SettingsSection::Appearance,
+        search_query: None,
+    });
+    let ambient_agent = LeafContents::AmbientAgent(AmbientAgentPaneSnapshot {
+        uuid: Vec::new(),
+        task_id: None,
+    });
+
+    assert!(settings.is_available_in_product());
+    assert!(!ambient_agent.is_available_in_product());
+    assert!(!LeafContents::CustomRouterEditor.is_available_in_product());
+    assert!(!LeafContents::GetStarted.is_available_in_product());
+}

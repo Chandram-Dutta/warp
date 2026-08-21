@@ -64,6 +64,7 @@ use crate::menu::{self, Menu, MenuItem, MenuItemFields};
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::pane::view;
 use crate::pane_group::{BackingView, Direction, PaneConfiguration, PaneEvent, SplitPaneState};
+#[cfg(not(feature = "local_only"))]
 use crate::server::server_api::ServerApiProvider;
 use crate::server::telemetry::MCPServerCollectionPaneEntrypoint;
 use crate::settings::{AISettings, BlockVisibilitySettings, SettingsFileError};
@@ -309,13 +310,27 @@ pub enum SettingsViewEvent {
     },
 }
 
+impl SettingsViewEvent {
+    pub fn is_available_in_product(&self) -> bool {
+        #[cfg(not(feature = "local_only"))]
+        return true;
+
+        #[cfg(feature = "local_only")]
+        matches!(
+            self,
+            Self::Pane(_) | Self::StartResize | Self::ShowToast { .. }
+        )
+    }
+}
+
 /// Different navigation sections within the settings view
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub enum SettingsSection {
     About,
-    #[default]
+    #[cfg_attr(not(feature = "local_only"), default)]
     Account,
     #[cfg(feature = "local_only")]
+    #[default]
     LocalAI,
     BillingAndUsage,
     Appearance,
@@ -371,6 +386,22 @@ impl Display for SettingsSection {
 }
 
 impl SettingsSection {
+    pub fn is_available(self) -> bool {
+        #[cfg(feature = "local_only")]
+        return matches!(
+            self,
+            Self::About
+                | Self::LocalAI
+                | Self::Appearance
+                | Self::Features
+                | Self::Keybindings
+                | Self::Warpify
+        );
+
+        #[cfg(not(feature = "local_only"))]
+        true
+    }
+
     /// Stable identifier for this section, used everywhere the section leaves
     /// the process: the SQLite session-restore key and the
     /// `surface.settings.open --page` warpctrl vocabulary.
@@ -452,7 +483,7 @@ impl SettingsSection {
             "Oz Cloud API Keys" | "OzCloudAPIKeys" => Self::OzCloudAPIKeys,
             _ => return None,
         };
-        Some(section)
+        section.is_available().then_some(section)
     }
 }
 
@@ -464,7 +495,7 @@ impl SettingsSection {
 /// stable and internal widget identifiers (Rust type names) are not exposed.
 /// Add an entry here to make a new widget deep-linkable.
 pub fn settings_widget_deeplink_target(slug: &str) -> Option<(SettingsSection, &'static str)> {
-    match slug {
+    let target = match slug {
         "global_hotkey" => Some((
             SettingsSection::Features,
             features_page::global_hotkey_widget_id(),
@@ -476,7 +507,8 @@ pub fn settings_widget_deeplink_target(slug: &str) -> Option<(SettingsSection, &
             cli_agent_settings_widget_id(),
         )),
         _ => None,
-    }
+    };
+    target.filter(|(section, _)| section.is_available())
 }
 
 pub struct DisplayCount(pub usize);
@@ -1018,6 +1050,40 @@ pub enum SettingsAction {
     Debug(DebugSettingsAction),
 }
 
+impl SettingsAction {
+    pub fn is_available_in_product(&self) -> bool {
+        #[cfg(not(feature = "local_only"))]
+        return true;
+
+        #[cfg(feature = "local_only")]
+        match self {
+            Self::SelectAndRefresh(section) => section.is_available(),
+            Self::ToggleUmbrella(_)
+            | Self::WarpifyPageToggle(_)
+            | Self::Tab
+            | Self::Split(_)
+            | Self::ToggleMaximizePane
+            | Self::Close
+            | Self::OpenContextMenu(_)
+            | Self::FocusSelf
+            | Self::Up
+            | Self::Down
+            | Self::Debug(_) => true,
+            Self::AppearancePageToggle(action) => action.is_available_in_product(),
+            Self::FeaturesPageToggle(action) => action.is_available_in_product(),
+            Self::MainPageToggle(_)
+            | Self::PrivacyPageToggle(_)
+            | Self::WarpAgent(_)
+            | Self::AgentProfiles(_)
+            | Self::Knowledge(_)
+            | Self::CLIAgents(_)
+            | Self::CodeIndexing(_)
+            | Self::EditorAndCodeReview(_)
+            | Self::WarpDrive(_) => false,
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 enum CycleDirection {
     Up,
@@ -1185,6 +1251,7 @@ pub struct SettingsView {
     clipped_scroll_state: ClippedScrollStateHandle,
     context_menu: ViewHandle<Menu<SettingsAction>>,
     context_menu_state: Option<Vector2F>,
+    #[cfg(not(feature = "local_only"))]
     environments_page_handle: ViewHandle<EnvironmentsPageView>,
     /// Sidebar navigation items (pages + umbrellas). This is the single source
     /// of truth for which sections sit under which umbrella.
@@ -1208,7 +1275,9 @@ impl SettingsView {
 
         let global_resource_handles = GlobalResourceHandlesProvider::as_ref(ctx).get().clone();
         // Main settings page with accounts info
+        #[cfg(not(feature = "local_only"))]
         let main_page_handle = ctx.add_typed_action_view(MainSettingsPageView::new);
+        #[cfg(not(feature = "local_only"))]
         ctx.subscribe_to_view(&main_page_handle, |me, _, event, ctx| {
             me.handle_main_page_event(event, ctx);
         });
@@ -1229,10 +1298,13 @@ impl SettingsView {
         });
 
         // Shared blocks page
+        #[cfg(not(feature = "local_only"))]
         let block_client = ServerApiProvider::as_ref(ctx).get_block_client();
+        #[cfg(not(feature = "local_only"))]
         let show_blocks_view_handle =
             ctx.add_typed_action_view(|ctx| ShowBlocksView::new(block_client, ctx));
 
+        #[cfg(not(feature = "local_only"))]
         ctx.subscribe_to_view(&show_blocks_view_handle, |_, _, event, ctx| match event {
             ShowBlocksEvent::ShowToast { message, flavor } => {
                 ctx.emit(SettingsViewEvent::ShowToast {
@@ -1246,55 +1318,73 @@ impl SettingsView {
         let about_page_handle = ctx.add_view(AboutPageView::new);
 
         // Warp Agent page
+        #[cfg(not(feature = "local_only"))]
         let warp_agent_page_handle = ctx.add_typed_action_view(WarpAgentPageView::new);
+        #[cfg(not(feature = "local_only"))]
         ctx.subscribe_to_view(&warp_agent_page_handle, |me, _, event, ctx| {
             me.handle_warp_agent_page_event(event, ctx);
         });
 
         // Agent profiles page, under the Agents umbrella
+        #[cfg(not(feature = "local_only"))]
         let agent_profiles_page_handle = ctx.add_typed_action_view(AgentProfilesPageView::new);
+        #[cfg(not(feature = "local_only"))]
         ctx.subscribe_to_view(&agent_profiles_page_handle, |me, _, event, ctx| {
             me.handle_agent_profiles_page_event(event, ctx);
         });
 
         // Knowledge page, under the Agents umbrella
+        #[cfg(not(feature = "local_only"))]
         let knowledge_page_handle = ctx.add_typed_action_view(KnowledgePageView::new);
+        #[cfg(not(feature = "local_only"))]
         ctx.subscribe_to_view(&knowledge_page_handle, |me, _, event, ctx| {
             me.handle_knowledge_page_event(event, ctx);
         });
 
         // Third party CLI agents page, under the Agents umbrella
+        #[cfg(not(feature = "local_only"))]
         let cli_agents_page_handle = ctx.add_typed_action_view(CLIAgentsPageView::new);
+        #[cfg(not(feature = "local_only"))]
         ctx.subscribe_to_view(&cli_agents_page_handle, |me, _, event, ctx| {
             me.handle_cli_agents_page_event(event, ctx);
         });
 
         // Environments page
+        #[cfg(not(feature = "local_only"))]
         let environments_page_handle = ctx.add_typed_action_view(EnvironmentsPageView::new);
+        #[cfg(not(feature = "local_only"))]
         ctx.subscribe_to_view(&environments_page_handle, |me, _, event, ctx| {
             me.handle_environments_page_event(event, ctx);
         });
 
         // Billing & Usage page (internally, this routes to the v1 or v2 version. Depending on FFs and current plan).
+        #[cfg(not(feature = "local_only"))]
         let billing_and_usage_handle = ctx.add_view(BillingAndUsageDispatchView::new);
+        #[cfg(not(feature = "local_only"))]
         ctx.subscribe_to_view(&billing_and_usage_handle, |me, _, event, ctx| {
             me.handle_billing_and_usage_page_event(event, ctx);
         });
+        #[cfg(not(feature = "local_only"))]
         let billing_and_usage_page = SettingsPage::new(billing_and_usage_handle);
 
         // Keybindings page
         let keybindings_handle = ctx.add_typed_action_view(KeybindingsView::new);
 
         // Code umbrella pages
+        #[cfg(not(feature = "local_only"))]
         let code_indexing_page_handle = ctx.add_typed_action_view(CodeIndexingPageView::new);
+        #[cfg(not(feature = "local_only"))]
         ctx.subscribe_to_view(&code_indexing_page_handle, |me, _, event, ctx| {
             me.handle_code_indexing_page_event(event, ctx);
         });
+        #[cfg(not(feature = "local_only"))]
         let editor_review_page_handle = ctx.add_typed_action_view(EditorAndCodeReviewPageView::new);
 
         // Teams page, adding unconditionally, as `should_render` later on decides whether it
         // should be shown to the user or not
+        #[cfg(not(feature = "local_only"))]
         let teams_page_handle = ctx.add_typed_action_view(TeamsPageView::new);
+        #[cfg(not(feature = "local_only"))]
         ctx.subscribe_to_view(&teams_page_handle, |_, _, event, ctx| match event {
             TeamsPageViewEvent::TeamsChanged => ctx.notify(),
             TeamsPageViewEvent::OpenWarpDrive => ctx.emit(SettingsViewEvent::OpenWarpDrive),
@@ -1312,17 +1402,23 @@ impl SettingsView {
         });
 
         // Render the privacy page only if telemetry opt-out is enabled.
+        #[cfg(not(feature = "local_only"))]
         let privacy_page_handle = ctx.add_typed_action_view(PrivacyPageView::new);
+        #[cfg(not(feature = "local_only"))]
         ctx.subscribe_to_view(&privacy_page_handle, |me, _, event, ctx| {
             me.handle_privacy_page_event(event, ctx);
         });
 
+        #[cfg(not(feature = "local_only"))]
         let referrals_client = ServerApiProvider::as_ref(ctx).get_referrals_client();
+        #[cfg(not(feature = "local_only"))]
         let referrals_page_handle =
             ctx.add_typed_action_view(|ctx| ReferralsPageView::new(referrals_client, ctx));
+        #[cfg(not(feature = "local_only"))]
         ctx.subscribe_to_view(&referrals_page_handle, |me, _, event, ctx| {
             me.handle_referrals_page_event(event, ctx);
         });
+        #[cfg(not(feature = "local_only"))]
         let scripting_page_handle = if FeatureFlag::WarpControlCli.is_enabled() {
             Some(ctx.add_typed_action_view(ScriptingSettingsPageView::new))
         } else {
@@ -1332,19 +1428,25 @@ impl SettingsView {
         let local_ai_page_handle = ctx.add_typed_action_view(LocalAISettingsPageView::new);
 
         // Warp Drive page
+        #[cfg(not(feature = "local_only"))]
         let warp_drive_page_handle =
             ctx.add_typed_action_view(warp_drive_page::WarpDriveSettingsPageView::new);
+        #[cfg(not(feature = "local_only"))]
         ctx.subscribe_to_view(&warp_drive_page_handle, |me, _, event, ctx| {
             me.handle_warp_drive_page_event(event, ctx);
         });
 
+        #[cfg(not(feature = "local_only"))]
         let platform_page_handle = ctx.add_typed_action_view(platform_page::PlatformPageView::new);
+        #[cfg(not(feature = "local_only"))]
         ctx.subscribe_to_view(&platform_page_handle, |me, _, event, ctx| {
             me.handle_platform_page_event(event, ctx);
         });
 
         // MCP Servers page
+        #[cfg(not(feature = "local_only"))]
         let mcp_servers_page_handle = ctx.add_typed_action_view(MCPServersSettingsPageView::new);
+        #[cfg(not(feature = "local_only"))]
         ctx.subscribe_to_view(&mcp_servers_page_handle, |me, _, event, ctx| {
             me.handle_mcp_servers_page_event(event, ctx);
         });
@@ -1377,6 +1479,7 @@ impl SettingsView {
             me.handle_menu_event(event, ctx);
         });
 
+        #[cfg(not(feature = "local_only"))]
         let mut settings_pages = vec![
             SettingsPage::new(main_page_handle),
             SettingsPage::new(warp_agent_page_handle),
@@ -1397,21 +1500,33 @@ impl SettingsView {
             SettingsPage::new(warp_drive_page_handle),
         ];
 
+        #[cfg(feature = "local_only")]
+        let mut settings_pages = vec![
+            SettingsPage::new(local_ai_page_handle),
+            SettingsPage::new(appearance_page_handle),
+            SettingsPage::new(features_page_handle),
+            SettingsPage::new(keybindings_handle),
+            SettingsPage::new(warpify_page_handle),
+            SettingsPage::new(about_page_handle),
+        ];
+
+        #[cfg(not(feature = "local_only"))]
         if let Some(scripting_page_handle) = scripting_page_handle {
             settings_pages.push(SettingsPage::new(scripting_page_handle));
         }
-        #[cfg(feature = "local_only")]
-        settings_pages.push(SettingsPage::new(local_ai_page_handle));
 
+        #[cfg(not(feature = "local_only"))]
         settings_pages.extend(vec![
             SettingsPage::new(mcp_servers_page_handle),
             SettingsPage::new(environments_page_handle.clone()),
             SettingsPage::new(privacy_page_handle),
             SettingsPage::new(about_page_handle),
         ]);
+        settings_pages.retain(|page| page.section.is_available());
 
         // Build sidebar nav items. Umbrellas group their subpages here and
         // nowhere else, so this list is the only place membership is declared.
+        #[cfg(not(feature = "local_only"))]
         let mut nav_items = vec![
             SettingsNavItem::Page(SettingsSection::Account),
             SettingsNavItem::Umbrella(SettingsUmbrella::new(
@@ -1450,9 +1565,28 @@ impl SettingsView {
             SettingsNavItem::Page(SettingsSection::Privacy),
             SettingsNavItem::Page(SettingsSection::About),
         ];
-        #[cfg(feature = "local_only")]
-        nav_items.insert(1, SettingsNavItem::Page(SettingsSection::LocalAI));
 
+        #[cfg(feature = "local_only")]
+        let mut nav_items = vec![
+            SettingsNavItem::Page(SettingsSection::LocalAI),
+            SettingsNavItem::Page(SettingsSection::Appearance),
+            SettingsNavItem::Page(SettingsSection::Features),
+            SettingsNavItem::Page(SettingsSection::Keybindings),
+            SettingsNavItem::Page(SettingsSection::Warpify),
+            SettingsNavItem::Page(SettingsSection::About),
+        ];
+
+        for item in &mut nav_items {
+            if let SettingsNavItem::Umbrella(umbrella) = item {
+                umbrella.subpages.retain(|section| section.is_available());
+            }
+        }
+        nav_items.retain(|item| match item {
+            SettingsNavItem::Page(section) => section.is_available(),
+            SettingsNavItem::Umbrella(umbrella) => !umbrella.subpages.is_empty(),
+        });
+
+        #[cfg(not(feature = "local_only"))]
         if FeatureFlag::WarpControlCli.is_enabled() {
             let shared_blocks_index = nav_items
                 .iter()
@@ -1468,9 +1602,10 @@ impl SettingsView {
 
         let initial_page = match page {
             Some(SettingsSection::Scripting) if !FeatureFlag::WarpControlCli.is_enabled() => {
-                SettingsSection::Account
+                SettingsSection::default()
             }
-            other => other.unwrap_or_default(),
+            Some(section) if section.is_available() => section,
+            Some(_) | None => SettingsSection::default(),
         };
 
         // Auto-expand the umbrella if the initial page is one of its subpages.
@@ -1495,6 +1630,7 @@ impl SettingsView {
             clipped_scroll_state: Default::default(),
             context_menu,
             context_menu_state: Default::default(),
+            #[cfg(not(feature = "local_only"))]
             environments_page_handle,
             nav_items,
             settings_file_error: None,
@@ -2052,6 +2188,10 @@ impl SettingsView {
         allow_steal_focus: bool,
         ctx: &mut ViewContext<Self>,
     ) {
+        if !section.is_available() {
+            return;
+        }
+
         // Every nav target owns its backing page. Check it exists.
         if self.settings_page(section).is_none() {
             return;
@@ -2686,6 +2826,7 @@ impl View for SettingsView {
         }
 
         // Render environment setup mode selector overlay when open.
+        #[cfg(not(feature = "local_only"))]
         if let Some(selector_handle) = self
             .environments_page_handle
             .as_ref(app)
@@ -2695,6 +2836,7 @@ impl View for SettingsView {
         }
 
         // Render agent-assisted environment modal overlay when open.
+        #[cfg(not(feature = "local_only"))]
         if let Some(modal_handle) = self
             .environments_page_handle
             .as_ref(app)
@@ -2711,6 +2853,10 @@ impl TypedActionView for SettingsView {
     type Action = SettingsAction;
 
     fn handle_action(&mut self, action: &SettingsAction, ctx: &mut ViewContext<Self>) {
+        if !action.is_available_in_product() {
+            return;
+        }
+
         match action {
             SettingsAction::SelectAndRefresh(section) => {
                 self.set_and_refresh_current_page_internal(*section, false, true, ctx);

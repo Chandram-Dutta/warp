@@ -1,15 +1,19 @@
 use std::borrow::Cow;
 use std::fs::File;
+#[cfg(not(feature = "local_only"))]
 use std::path::PathBuf;
 
+#[cfg(not(feature = "local_only"))]
 use ai::workspace::WorkspaceMetadata;
 use csv::Writer;
 use enclose::enclose;
+#[cfg(not(feature = "local_only"))]
 use itertools::Itertools;
 use settings::Setting as _;
 use settings::manager::SettingsManager;
 use warp_core::context_flag::ContextFlag;
 use warp_errors::{report_error, report_if_error};
+#[cfg(not(feature = "local_only"))]
 use warp_util::path::user_friendly_path;
 use warpui::actions::StandardAction;
 use warpui::keymap::{Keystroke, Trigger};
@@ -19,16 +23,19 @@ use warpui::platform::menu::{
 use warpui::windowing::WindowManager;
 use warpui::{AppContext, SingletonEntity};
 
+#[cfg(not(feature = "local_only"))]
 use crate::ai::persisted_workspace::PersistedWorkspace;
+#[cfg(not(feature = "local_only"))]
 use crate::auth;
+#[cfg(not(feature = "local_only"))]
 use crate::auth::AuthStateProvider;
 use crate::default_terminal::DefaultTerminal;
 use crate::features::{FeatureFlag, runtime_flags_menu_items};
 use crate::root_view::OpenLaunchConfigArg;
 use crate::server::telemetry::LaunchConfigUiLocation;
-use crate::settings::{
-    AISettings, BlockVisibilitySettings, DebugSettings, DefaultSessionMode, SelectionSettings,
-};
+#[cfg(not(feature = "local_only"))]
+use crate::settings::{AISettings, DefaultSessionMode};
+use crate::settings::{BlockVisibilitySettings, DebugSettings, SelectionSettings};
 use crate::terminal::alt_screen_reporting::AltScreenReporting;
 use crate::terminal::session_settings::SessionSettings;
 use crate::terminal::settings::{SpacingMode, TerminalSettings};
@@ -63,18 +70,18 @@ const MAX_RECENT_REPOS_IN_MENU: usize = 10;
 
 /// Creates the root app menu bar
 pub fn menu_bar(ctx: &mut AppContext) -> MenuBar {
-    MenuBar::new(vec![
+    let mut menus = vec![
         make_new_app_menu(ctx),
         make_new_file_menu(ctx),
         make_new_edit_menu(ctx),
         make_new_view_menu(ctx),
         make_new_tab_menu(ctx),
         make_new_blocks_menu(ctx),
-        make_new_ai_menu(ctx),
-        make_new_drive_menu(ctx),
-        make_new_window_menu(),
-        make_new_help_menu(),
-    ])
+    ];
+    #[cfg(not(feature = "local_only"))]
+    menus.extend([make_new_ai_menu(ctx), make_new_drive_menu(ctx)]);
+    menus.extend([make_new_window_menu(), make_new_help_menu()]);
+    MenuBar::new(menus)
 }
 
 // Creates the app dock menu
@@ -107,6 +114,7 @@ fn default_name(action: CustomAction, ctx: &AppContext) -> String {
         })
 }
 
+#[cfg(not(feature = "local_only"))]
 fn non_updateable_custom_item(action: CustomAction, ctx: &AppContext) -> MenuItem {
     MenuItem::Custom(CustomMenuItem::new(
         &default_name(action, ctx),
@@ -144,13 +152,14 @@ fn make_new_app_menu(ctx: &AppContext) -> Menu {
         ctx,
     )];
 
-    if !FeatureFlag::AvatarInTabBar.is_enabled() {
+    if !cfg!(feature = "local_only") && !FeatureFlag::AvatarInTabBar.is_enabled() {
         menu_items.push(updateable_custom_item_without_checkmark(
             CustomAction::ToggleResourceCenter,
             ctx,
         ))
     }
 
+    #[cfg(not(feature = "local_only"))]
     menu_items.extend([
         MenuItem::Separator,
         updateable_custom_item_without_checkmark(CustomAction::ReferAFriend, ctx),
@@ -175,7 +184,7 @@ fn make_new_app_menu(ctx: &AppContext) -> Menu {
         preferences_menu_items,
     )));
 
-    if FeatureFlag::Changelog.is_enabled() {
+    if !cfg!(feature = "local_only") && FeatureFlag::Changelog.is_enabled() {
         menu_items.push(updateable_custom_item_without_checkmark(
             CustomAction::ViewChangelog,
             ctx,
@@ -187,13 +196,18 @@ fn make_new_app_menu(ctx: &AppContext) -> Menu {
         menu_items.push(MenuItem::Services);
     }
 
-    menu_items.push(MenuItem::Separator);
-    menu_items.push(link_menu_item(
-        "Privacy Policy...",
-        links::PRIVACY_POLICY_URL.into(),
-    ));
+    #[cfg(not(feature = "local_only"))]
+    {
+        menu_items.push(MenuItem::Separator);
+        menu_items.push(link_menu_item(
+            "Privacy Policy...",
+            links::PRIVACY_POLICY_URL.into(),
+        ));
+    }
 
+    #[cfg(not(feature = "local_only"))]
     let debug_menu_items = debug_menu_items();
+    #[cfg(not(feature = "local_only"))]
     if !debug_menu_items.is_empty() {
         menu_items.push(MenuItem::Custom(CustomMenuItem::new_with_submenu(
             "Debug",
@@ -228,28 +242,33 @@ fn make_new_app_menu(ctx: &AppContext) -> Menu {
         },
         None,
     )));
-    menu_items.push(MenuItem::Separator);
-    menu_items.push(MenuItem::Custom(CustomMenuItem::new(
-        "Log out",
-        auth::maybe_log_out,
-        move |_, ctx| {
-            let is_anonymous = AuthStateProvider::handle(ctx)
-                .as_ref(ctx)
-                .get()
-                .is_anonymous_or_logged_out();
-            MenuItemPropertyChanges {
-                disabled: Some(is_anonymous),
-                ..Default::default()
-            }
-        },
-        None,
-    )));
+    #[cfg(not(feature = "local_only"))]
+    {
+        menu_items.push(MenuItem::Separator);
+        menu_items.push(MenuItem::Custom(CustomMenuItem::new(
+            "Log out",
+            auth::maybe_log_out,
+            move |_, ctx| {
+                let is_anonymous = AuthStateProvider::handle(ctx)
+                    .as_ref(ctx)
+                    .get()
+                    .is_anonymous_or_logged_out();
+                MenuItemPropertyChanges {
+                    disabled: Some(is_anonymous),
+                    ..Default::default()
+                }
+            },
+            None,
+        )));
+    }
     menu_items.push(MenuItem::Standard(StandardAction::Quit));
     Menu::new("Warp", menu_items)
 }
 
 fn make_new_file_menu(ctx: &AppContext) -> Menu {
     let mut file_menu_options = make_new_elements_menu_items(ctx);
+
+    #[cfg(not(feature = "local_only"))]
     file_menu_options.extend([
         MenuItem::Separator,
         updateable_custom_item_without_checkmark(CustomAction::OpenRepository, ctx),
@@ -267,6 +286,9 @@ fn make_new_file_menu(ctx: &AppContext) -> Menu {
             None,
             vec![],
         )),
+    ]);
+
+    file_menu_options.extend([
         MenuItem::Separator,
         updateable_custom_item_without_checkmark(CustomAction::CloseCurrentSession, ctx),
         updateable_custom_item_without_checkmark(CustomAction::CloseWindow, ctx),
@@ -374,19 +396,34 @@ fn make_new_edit_menu(ctx: &AppContext) -> Menu {
 }
 
 fn make_new_view_menu(ctx: &AppContext) -> Menu {
-    let mut items = vec![
+    let mut items = Vec::new();
+
+    #[cfg(not(feature = "local_only"))]
+    items.extend([
         updateable_custom_item_without_checkmark(CustomAction::ToggleWarpDrive, ctx),
         MenuItem::Separator,
+    ]);
+
+    items.extend([
         updateable_custom_item_without_checkmark(CustomAction::CommandPalette, ctx),
         updateable_custom_item_without_checkmark(CustomAction::NavigationPalette, ctx),
         updateable_custom_item_without_checkmark(CustomAction::LaunchConfigPalette, ctx),
+    ]);
+
+    #[cfg(not(feature = "local_only"))]
+    items.extend([
         updateable_custom_item_without_checkmark(CustomAction::FilesPalette, ctx),
         updateable_custom_item_without_checkmark(CustomAction::ToggleProjectExplorer, ctx),
         updateable_custom_item_without_checkmark(CustomAction::ToggleConversationListView, ctx),
         updateable_custom_item_without_checkmark(CustomAction::ToggleGlobalSearch, ctx),
+    ]);
+
+    items.extend([
         MenuItem::Separator,
         updateable_custom_item_without_checkmark(CustomAction::History, ctx),
+        #[cfg(not(feature = "local_only"))]
         updateable_custom_item_without_checkmark(CustomAction::CommandSearch, ctx),
+        #[cfg(not(feature = "local_only"))]
         updateable_custom_item_without_checkmark(CustomAction::Workflows, ctx),
         MenuItem::Separator,
         MenuItem::Custom(CustomMenuItem::new(
@@ -435,7 +472,7 @@ fn make_new_view_menu(ctx: &AppContext) -> Menu {
             },
             None,
         )),
-    ];
+    ]);
 
     let is_compact_mode = matches!(
         TerminalSettings::handle(ctx)
@@ -514,6 +551,7 @@ fn make_new_tab_menu(ctx: &AppContext) -> Menu {
     Menu::new("Tab", items)
 }
 
+#[cfg(not(feature = "local_only"))]
 fn make_new_ai_menu(ctx: &AppContext) -> Menu {
     let mut items = vec![updateable_custom_item_without_checkmark(
         CustomAction::NewAgentModePane,
@@ -565,9 +603,12 @@ fn make_new_blocks_menu(ctx: &AppContext) -> Menu {
         ctx,
     ));
     items.push(MenuItem::Separator);
+    #[cfg(not(feature = "local_only"))]
     items.extend([
         updateable_custom_item_without_checkmark(CustomAction::CreateBlockPermalink, ctx),
         non_updateable_custom_item(CustomAction::ViewSharedBlocks, ctx),
+    ]);
+    items.extend([
         updateable_custom_item_without_checkmark(CustomAction::ToggleBookmarkBlock, ctx),
         updateable_custom_item_without_checkmark(CustomAction::FindWithinBlock, ctx),
         MenuItem::Separator,
@@ -585,6 +626,7 @@ fn make_new_blocks_menu(ctx: &AppContext) -> Menu {
     Menu::new("Blocks", items)
 }
 
+#[cfg(not(feature = "local_only"))]
 fn make_new_drive_menu(ctx: &AppContext) -> Menu {
     let mut items = vec![
         updateable_custom_item_without_checkmark(CustomAction::NewPersonalWorkflow, ctx),
@@ -911,6 +953,7 @@ fn link_menu_item(title: &'static str, link: Cow<'static, str>) -> MenuItem {
     ))
 }
 
+#[cfg(not(feature = "local_only"))]
 fn feedback_menu_item() -> MenuItem {
     MenuItem::Custom(CustomMenuItem::new(
         "Send Feedback...",
@@ -925,6 +968,18 @@ fn feedback_menu_item() -> MenuItem {
     ))
 }
 
+#[cfg(feature = "local_only")]
+fn make_new_help_menu() -> Menu {
+    Menu::new(
+        "Help",
+        vec![link_menu_item(
+            "Warp Documentation...",
+            links::USER_DOCS_URL.into(),
+        )],
+    )
+}
+
+#[cfg(not(feature = "local_only"))]
 fn make_new_help_menu() -> Menu {
     Menu::new(
         "Help",
@@ -986,31 +1041,11 @@ fn make_new_elements_menu_items(ctx: &AppContext) -> Vec<MenuItem> {
             no_updates,
             Some(Keystroke::parse("cmd-n").expect("Valid keystroke")),
         )),
-        MenuItem::Custom(CustomMenuItem::new(
-            "New Terminal Tab",
-            open_new_default_tab_or_window,
-            move |_props: &MenuItemProperties, ctx: &mut AppContext| {
-                let mut changes = MenuItemPropertyChanges::default();
-                let is_default_session_mode_agent =
-                    AISettings::handle(ctx).read(ctx, |ai_settings, ctx| {
-                        ai_settings.is_any_ai_enabled(ctx)
-                            && ai_settings.default_session_mode(ctx) == DefaultSessionMode::Agent
-                    });
-                let trigger = if is_default_session_mode_agent {
-                    Trigger::Custom(CustomAction::NewTerminalTab.into())
-                } else {
-                    Trigger::Custom(CustomAction::NewTab.into())
-                };
-                let binding = ctx
-                    .get_key_bindings()
-                    .find(|b| b.trigger == &trigger || b.original_trigger == Some(&trigger));
-                if let Some(binding) = binding {
-                    changes.keystroke = Some(bindings::trigger_to_keystroke(binding.trigger));
-                }
-                changes
-            },
-            Some(Keystroke::parse("cmd-t").expect("Valid keystroke")),
-        )),
+        new_terminal_tab_menu_item(),
+    ];
+
+    #[cfg(not(feature = "local_only"))]
+    new_elements_menu.extend([
         MenuItem::Custom(CustomMenuItem::new(
             "New Agent Tab",
             open_new_agent_tab_or_window,
@@ -1043,7 +1078,7 @@ fn make_new_elements_menu_items(ctx: &AppContext) -> Vec<MenuItem> {
             None,
         )),
         non_updateable_custom_item(CustomAction::NewFile, ctx),
-    ];
+    ]);
 
     let reopen_session_action_updater =
         custom_action_updater(CustomAction::ReopenClosedSession, Box::new(|_| false));
@@ -1076,9 +1111,51 @@ fn make_new_elements_menu_items(ctx: &AppContext) -> Vec<MenuItem> {
     new_elements_menu
 }
 
+#[cfg(feature = "local_only")]
+fn new_terminal_tab_menu_item() -> MenuItem {
+    MenuItem::Custom(CustomMenuItem::new(
+        "New Terminal Tab",
+        open_new_default_tab_or_window,
+        no_updates,
+        Some(Keystroke::parse("cmd-t").expect("Valid keystroke")),
+    ))
+}
+
+#[cfg(not(feature = "local_only"))]
+fn new_terminal_tab_menu_item() -> MenuItem {
+    MenuItem::Custom(CustomMenuItem::new(
+        "New Terminal Tab",
+        open_new_default_tab_or_window,
+        move |_props: &MenuItemProperties, ctx: &mut AppContext| {
+            let mut changes = MenuItemPropertyChanges::default();
+            let is_default_session_mode_agent =
+                AISettings::handle(ctx).read(ctx, |ai_settings, ctx| {
+                    ai_settings.is_any_ai_enabled(ctx)
+                        && ai_settings.default_session_mode(ctx) == DefaultSessionMode::Agent
+                });
+            let trigger = if is_default_session_mode_agent {
+                Trigger::Custom(CustomAction::NewTerminalTab.into())
+            } else {
+                Trigger::Custom(CustomAction::NewTab.into())
+            };
+            let binding = ctx
+                .get_key_bindings()
+                .find(|b| b.trigger == &trigger || b.original_trigger == Some(&trigger));
+            if let Some(binding) = binding {
+                changes.keystroke = Some(bindings::trigger_to_keystroke(binding.trigger));
+            }
+            changes
+        },
+        Some(Keystroke::parse("cmd-t").expect("Valid keystroke")),
+    ))
+}
+
 /// \return a callback that dispatches a CustomAction, appropriate for plugging into a CustomMenuItem.
 fn custom_action_dispatcher(action: CustomAction) -> impl Fn(&mut AppContext) + 'static {
     move |ctx| {
+        if !action.is_available_in_product() {
+            return;
+        }
         if let Some(wid) = WindowManager::handle(ctx).as_ref(ctx).active_window() {
             ctx.dispatch_custom_action(action, wid)
         }
@@ -1096,6 +1173,7 @@ fn open_new_default_tab_or_window(ctx: &mut AppContext) {
 
 /// Dispatch events to open an agent tab in the active window
 /// or make a new window if there is no active window.
+#[cfg(not(feature = "local_only"))]
 fn open_new_agent_tab_or_window(ctx: &mut AppContext) {
     match WindowManager::handle(ctx).as_ref(ctx).active_window() {
         Some(wid) => ctx.dispatch_custom_action(CustomAction::NewAgentTab, wid),
@@ -1114,6 +1192,7 @@ fn no_updates(_: &MenuItemProperties, _: &mut AppContext) -> MenuItemPropertyCha
     Default::default()
 }
 
+#[cfg(not(feature = "local_only"))]
 fn make_recent_repos_menu_items(ctx: &AppContext) -> Vec<MenuItem> {
     let recent_repos = generate_recent_repos_for_menu(ctx);
 
@@ -1141,6 +1220,7 @@ fn make_recent_repos_menu_items(ctx: &AppContext) -> Vec<MenuItem> {
         .collect()
 }
 
+#[cfg(not(feature = "local_only"))]
 fn generate_recent_repos_for_menu(ctx: &AppContext) -> Vec<PathBuf> {
     PersistedWorkspace::handle(ctx)
         .as_ref(ctx)

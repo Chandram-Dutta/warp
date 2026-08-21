@@ -1128,6 +1128,72 @@ pub enum Event {
     OpenCloudModeV2EnvironmentCreationModal,
 }
 
+impl Event {
+    pub fn is_available_in_product(&self) -> bool {
+        #[cfg(not(feature = "local_only"))]
+        return true;
+
+        #[cfg(feature = "local_only")]
+        {
+            if let Self::OpenSettings(section) = self {
+                return section.is_available();
+            }
+
+            !matches!(
+                self,
+                Self::ExecuteAIQuery
+                    | Self::SendAgentPrompt { .. }
+                    | Self::SubmitCloudFollowup { .. }
+                    | Self::CancelSharedSessionConversation { .. }
+                    | Self::SignupAnonymousUser { .. }
+                    | Self::OpenCodeReviewPane
+                    | Self::AttachDiffSetContext { .. }
+                    | Self::OpenConversationHistory
+                    | Self::OpenViewMCPPane
+                    | Self::OpenAddMCPPane
+                    | Self::OpenProjectRulesPane
+                    | Self::OpenEnvironmentManagementPane
+                    | Self::OpenFilesPalette { .. }
+                    | Self::TryHandlePassiveCodeDiff(_)
+                    | Self::ToggleAIDocumentPane { .. }
+                    | Self::SubmitCLIAgentInput { .. }
+                    | Self::OpenAIDocumentPane { .. }
+                    | Self::OpenAutoReloadModal { .. }
+                    | Self::AuthSecretDeleteConfirmationDialogToggled { .. }
+                    | Self::EnterAgentView { .. }
+                    | Self::EnterCloudAgentView { .. }
+                    | Self::CreateDockerSandbox
+                    | Self::ExitCloudModeAndStartLocalAgent { .. }
+                    | Self::ScrollToExchange { .. }
+                    | Self::TriggerEnvironmentSetup { .. }
+                    | Self::RegisterPluginListener(_)
+                    | Self::OpenShareSessionModal
+                    | Self::StartRemoteControl
+                    | Self::OpenHandoffEnvironmentCreationModal
+                    | Self::OpenCloudModeV2EnvironmentCreationModal
+            ) && {
+                #[cfg(feature = "local_fs")]
+                {
+                    !matches!(self, Self::OpenCodeInWarp { .. })
+                }
+                #[cfg(not(feature = "local_fs"))]
+                {
+                    true
+                }
+            } && {
+                #[cfg(not(target_family = "wasm"))]
+                {
+                    !matches!(self, Self::OpenPluginInstructionsPane(_, _))
+                }
+                #[cfg(target_family = "wasm")]
+                {
+                    true
+                }
+            }
+        }
+    }
+}
+
 pub enum InputState {
     Enabled,
     Disabled,
@@ -1218,6 +1284,36 @@ pub enum InputAction {
 
     /// Activates `&` cloud handoff compose mode from the message bar hint.
     ActivateCloudHandoff,
+}
+
+impl InputAction {
+    pub fn is_available_in_product(&self) -> bool {
+        #[cfg(not(feature = "local_only"))]
+        return true;
+
+        #[cfg(feature = "local_only")]
+        !matches!(
+            self,
+            Self::SelectAndRefreshVoltron(VoltronItem::AiCommands)
+                | Self::ShowAiCommandSearch
+                | Self::ToggleConversationsMenu
+                | Self::StartNewAgentConversation { .. }
+                | Self::ToggleInputAutoDetection
+                | Self::EnableAutoDetection
+                | Self::InsertZeroStatePromptSuggestion(_)
+                | Self::TryHandlePassiveCodeDiff(_)
+                | Self::ClearAndResetAIContextMenuQuery
+                | Self::ToggleAgentViewShortcuts
+                | Self::ToggleSlashCommandsMenu
+                | Self::DismissCloudModeV2SlashCommandsMenu
+                | Self::OpenModelSelector
+                | Self::TriggerSlashCommandFromKeybinding(_)
+                | Self::ClearAttachedContext
+                | Self::FigmaAddButtonClicked
+                | Self::FigmaEnableButtonClicked
+                | Self::ActivateCloudHandoff
+        )
+    }
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
@@ -16065,6 +16161,10 @@ impl TypedActionView for Input {
     }
 
     fn handle_action(&mut self, action: &InputAction, ctx: &mut ViewContext<Self>) {
+        if !action.is_available_in_product() {
+            return;
+        }
+
         match action {
             InputAction::FocusInputBox => self.focus_input_box(ctx),
             InputAction::Up => self.editor_up(ctx),
