@@ -118,6 +118,58 @@ impl PaneNodeSnapshot {
             }
         }
     }
+
+    pub(crate) fn prune_unavailable(self) -> Option<Self> {
+        let had_focus = self.has_focused_leaf();
+        let mut pruned = match self {
+            Self::Leaf(leaf) => leaf
+                .contents
+                .is_available_in_product()
+                .then_some(Self::Leaf(leaf)),
+            Self::Branch(branch) => {
+                let mut children = branch.children.into_iter().filter_map(|(flex, child)| {
+                    child.prune_unavailable().map(|child| (flex, child))
+                });
+                let first = children.next()?;
+                match children.next() {
+                    None => Some(first.1),
+                    Some(second) => Some(Self::Branch(BranchSnapshot {
+                        direction: branch.direction,
+                        children: std::iter::once(first)
+                            .chain(std::iter::once(second))
+                            .chain(children)
+                            .collect(),
+                    })),
+                }
+            }
+        }?;
+
+        if had_focus && !pruned.has_focused_leaf() {
+            pruned.focus_first_leaf();
+        }
+        Some(pruned)
+    }
+
+    fn has_focused_leaf(&self) -> bool {
+        match self {
+            Self::Leaf(leaf) => leaf.is_focused,
+            Self::Branch(branch) => branch
+                .children
+                .iter()
+                .any(|(_, child)| child.has_focused_leaf()),
+        }
+    }
+
+    fn focus_first_leaf(&mut self) {
+        match self {
+            Self::Leaf(leaf) => leaf.is_focused = true,
+            Self::Branch(branch) => {
+                if let Some((_, child)) = branch.children.first_mut() {
+                    child.focus_first_leaf();
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

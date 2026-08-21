@@ -3499,31 +3499,36 @@ impl PaneGroup {
                 PanesLayout::Snapshot(panes_snapshot) => {
                     let mut deferred_panes = Vec::new();
                     let mut pending_restorations = Vec::new();
-                    let result = Self::restore_pane_tree(
-                        *panes_snapshot,
-                        block_lists,
-                        resources.clone(),
-                        ctx,
-                        pane_contents,
-                        unsupported_banner_model_handle.clone(),
-                        view_bounds.size(),
-                        model_event_sender_clone.clone(),
-                        &mut deferred_panes,
-                        &mut pending_restorations,
-                    )
-                    .unwrap_or_else(|err| {
-                        log::warn!("Error restoring pane tree: {err:#}");
-                        Self::initial_single_terminal_pane(
-                            NewTerminalOptions::default(),
-                            resources,
-                            unsupported_banner_model_handle,
-                            view_bounds,
-                            model_event_sender_clone,
-                            pane_contents,
-                            pane_history,
-                            ctx,
-                        )
-                    });
+                    let result = (*panes_snapshot)
+                        .prune_unavailable()
+                        .ok_or_else(|| anyhow::anyhow!("No supported panes remain"))
+                        .and_then(|panes_snapshot| {
+                            Self::restore_pane_tree(
+                                panes_snapshot,
+                                block_lists,
+                                resources.clone(),
+                                ctx,
+                                pane_contents,
+                                unsupported_banner_model_handle.clone(),
+                                view_bounds.size(),
+                                model_event_sender_clone.clone(),
+                                &mut deferred_panes,
+                                &mut pending_restorations,
+                            )
+                        })
+                        .unwrap_or_else(|err| {
+                            log::warn!("Error restoring pane tree: {err:#}");
+                            Self::initial_single_terminal_pane(
+                                NewTerminalOptions::default(),
+                                resources,
+                                unsupported_banner_model_handle,
+                                view_bounds,
+                                model_event_sender_clone,
+                                pane_contents,
+                                pane_history,
+                                ctx,
+                            )
+                        });
 
                     *pending_ambient_for_closure.borrow_mut() = pending_restorations;
 
