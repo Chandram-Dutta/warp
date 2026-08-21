@@ -444,6 +444,6 @@ pub(super) fn delete_agent_conversations(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "local_only")))]
 #[path = "agent_tests.rs"]
 mod tests;

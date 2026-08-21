@@ -13,9 +13,10 @@ use warp_core::features::FeatureFlag;
 use warp_graphql::scalars::time::ServerTimestamp;
 
 use super::{
-    app_database_file_path, database_file_path_for_current_scope, database_file_path_for_scope,
-    decode_path, deduplicate_events, encode_path, get_all_codebase_index_metadata,
-    read_sqlite_data, save_app_state, save_codebase_index_metadata, setup_database, start_writer,
+    add_ignored_suggestion, app_database_file_path, database_file_path_for_current_scope,
+    database_file_path_for_scope, decode_path, deduplicate_events, encode_path,
+    get_all_codebase_index_metadata, insert_command, read_sqlite_data, save_app_state,
+    save_codebase_index_metadata, setup_database, start_writer,
 };
 use crate::ai::agent::conversation::AIConversationId;
 use crate::app_state::{

@@ -145,7 +145,7 @@ def main() -> None:
     assert 'RELEASE_CHANNEL != "local-only"' in macos_bundle
     assert 'if [ "$CHANNEL" = "local-only" ]' in bundled_resources
     assert "script/bundle --channel local-only --arch aarch64 --debug --nosign" in local_only_workflow
-    assert "lipo -verify_arch arm64" in local_only_workflow
+    assert 'lipo "$executable" -verify_arch arm64' in local_only_workflow
 
     local_only_packages = dependency_packages("local_only")
     unexpected = EXCLUDED_PACKAGES & local_only_packages

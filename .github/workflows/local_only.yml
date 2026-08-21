@@ -122,7 +122,7 @@ jobs:
           executable=target/aarch64-apple-darwin/debug/bundle/osx/WarpLocalOnly.app/Contents/MacOS/warp-local-only
           test -x "$executable"
           file "$executable" | grep -F 'arm64'
-          lipo -verify_arch arm64 "$executable"
+          lipo "$executable" -verify_arch arm64
           hdiutil verify "${{ steps.bundle.outputs.dmg_path }}"
 
       - name: Upload unsigned macOS DMG
