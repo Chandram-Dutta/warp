@@ -215,6 +215,7 @@ DMG_NAME_SUFFIX=""
 # By default we build dev bundles.
 RELEASE_CHANNEL="dev"
 FEATURES="release_bundle,cocoa_sentry,extern_plist"
+NO_DEFAULT_FEATURES=false
 REGISTER_SERVICES=true
 DEBUG=false
 ARTIFACT="app"
@@ -387,7 +388,16 @@ if [[ "$CARGO_PROFILE" == "dev" ]]; then
   TARGET_PROFILE_DIR="debug"
 fi
 
-if [[ $RELEASE_CHANNEL = "local" ]]; then
+if [[ $RELEASE_CHANNEL = "local-only" ]]; then
+    WARP_BIN="warp-local-only"
+    BUNDLE_ID="dev.warp.Warp-LocalOnly"
+    WARP_APP_NAME="WarpLocalOnly"
+    WARP_SCHEME_NAME="warplocalonly"
+    FEATURES="local_only"
+    NO_DEFAULT_FEATURES=true
+    ICON_CHANNEL="oss"
+    export WARP_PLIST_NO_FILE_TYPES=true
+elif [[ $RELEASE_CHANNEL = "local" ]]; then
     WARP_BIN="warp"
     BUNDLE_ID="dev.warp.Warp-Local"
     WARP_APP_NAME="WarpLocal"
@@ -490,9 +500,14 @@ elif [[ "$ARTIFACT" == tui ]]; then
   if [[ "$RELEASE_CHANNEL" != "oss" ]]; then
     WARP_TUI_FEATURES="$WARP_TUI_FEATURES,crash_reporting"
   fi
-elif [[ "$ARTIFACT" == app ]]; then
+elif [[ "$ARTIFACT" == app && "$RELEASE_CHANNEL" != "local-only" ]]; then
   # All channels ship the v3 classifier and v2 heuristic.
   FEATURES="$FEATURES,gui,nld_classifier_v3,nld_heuristic_v2"
+fi
+
+CARGO_FEATURE_ARGS=(--features "$FEATURES")
+if [[ $NO_DEFAULT_FEATURES = true ]]; then
+  CARGO_FEATURE_ARGS=(--no-default-features "${CARGO_FEATURE_ARGS[@]}")
 fi
 
 # If we're building a universal bundle for the app artifact, make sure the additional target is available.
@@ -507,9 +522,9 @@ if [[ "$CHECK_ONLY" == "true" ]]; then
   if [[ "$ARTIFACT" == "tui" ]]; then
     cargo check -p warp_tui --profile "$CARGO_PROFILE" --bin "$WARP_BIN" --target "$DEFAULT_TARGET" --features "$WARP_TUI_FEATURES"
   else
-    cargo check --profile "$CARGO_PROFILE" --bin "$WARP_BIN" --target "$DEFAULT_TARGET" --features "$FEATURES"
+    cargo check --profile "$CARGO_PROFILE" --bin "$WARP_BIN" --target "$DEFAULT_TARGET" "${CARGO_FEATURE_ARGS[@]}"
     if [[ $UNIVERSAL_BINARY = true && "$ARTIFACT" != "cli" && "$ARTIFACT" != "warpctrl" ]]; then
-      cargo check --profile "$CARGO_PROFILE" --bin "$WARP_BIN" --target "$ADDITIONAL_TARGET" --features "$FEATURES"
+      cargo check --profile "$CARGO_PROFILE" --bin "$WARP_BIN" --target "$ADDITIONAL_TARGET" "${CARGO_FEATURE_ARGS[@]}"
     fi
   fi
   exit 0
@@ -540,7 +555,7 @@ if [[ "$ARTIFACT" == "app" ]]; then
 
   pushd app > /dev/null
   echo "Building and bundling $DEFAULT_TARGET for channel $RELEASE_CHANNEL and bundle id $BUNDLE_ID with profile $CARGO_PROFILE"
-  cargo bundle --profile "$CARGO_PROFILE" --bin "$WARP_BIN" --target "$DEFAULT_TARGET" --features "$FEATURES"
+  cargo bundle --profile "$CARGO_PROFILE" --bin "$WARP_BIN" --target "$DEFAULT_TARGET" "${CARGO_FEATURE_ARGS[@]}"
   popd > /dev/null
 
   "$WORKSPACE_ROOT_DIR/script/macos/add_framework_rpath" "$BUNDLE_DIR/$WARP_APP_NAME.app/Contents/MacOS/$WARP_BIN"
@@ -595,7 +610,9 @@ if [[ "$ARTIFACT" == "app" ]]; then
 
   # Temporary key that ChatGPT Desktop can use to determine if the latest version of Warp supports the ChatGPT integration.
   # Once support has been rolled out for a sufficient amount of time we (and ChatGPT) can remove this.
-  plutil -insert SUPPORTS_CHAT_GPT_WORK_WITH_APPS -bool true "$BUNDLE_DIR"/$WARP_APP_NAME.app/Contents/Info.plist
+  if [[ $RELEASE_CHANNEL != "local-only" ]]; then
+    plutil -insert SUPPORTS_CHAT_GPT_WORK_WITH_APPS -bool true "$BUNDLE_DIR"/$WARP_APP_NAME.app/Contents/Info.plist
+  fi
 
   # Add LSBackgroundOnly key and set it to false since we need a UI app
   plutil -insert LSBackgroundOnly -bool false "$BUNDLE_DIR"/$WARP_APP_NAME.app/Contents/Info.plist
@@ -608,7 +625,7 @@ if [[ "$ARTIFACT" == "app" ]]; then
           echo "Building $ADDITIONAL_TARGET to include in universal binary"
 
           pushd app > /dev/null
-          cargo build --profile "$CARGO_PROFILE" --bin "$WARP_BIN" --target "$ADDITIONAL_TARGET" --features "$FEATURES"
+          cargo build --profile "$CARGO_PROFILE" --bin "$WARP_BIN" --target "$ADDITIONAL_TARGET" "${CARGO_FEATURE_ARGS[@]}"
           popd > /dev/null
       else
           echo "Skipping build of $ADDITIONAL_TARGET due to --skip-build flag"
@@ -664,7 +681,7 @@ if [[ "$ARTIFACT" == "app" ]]; then
   echo "Preparing bundled resources..."
   "$WORKSPACE_ROOT_DIR/script/prepare_bundled_resources" "$BUNDLED_RESOURCES_DIR" "$RELEASE_CHANNEL" "$CARGO_PROFILE"
 
-  "$WORKSPACE_ROOT_DIR/script/compile_icon" "$RELEASE_CHANNEL" "$BUNDLE_DIR/$WARP_APP_NAME.app"
+  "$WORKSPACE_ROOT_DIR/script/compile_icon" "${ICON_CHANNEL:-$RELEASE_CHANNEL}" "$BUNDLE_DIR/$WARP_APP_NAME.app"
 
   HELPERS_DIR="$BUNDLE_DIR/$WARP_APP_NAME.app/Contents/Helpers"
   if [[ ",$FEATURES," =~ ",heap_usage_tracking," ]]; then
@@ -678,6 +695,8 @@ if [[ "$ARTIFACT" == "app" ]]; then
     CLI_SCRIPT_PATH="$BUNDLED_RESOURCES_DIR/bin/oz"
   elif [[ $RELEASE_CHANNEL = "oss" ]]; then
     CLI_SCRIPT_PATH="$BUNDLED_RESOURCES_DIR/bin/warp-oss"
+  elif [[ $RELEASE_CHANNEL = "local-only" ]]; then
+    CLI_SCRIPT_PATH="$BUNDLED_RESOURCES_DIR/bin/warp-local-only"
   else
     CLI_SCRIPT_PATH="$BUNDLED_RESOURCES_DIR/bin/oz-$RELEASE_CHANNEL"
   fi
@@ -734,7 +753,7 @@ elif [[ "$ARTIFACT" == "cli" || "$ARTIFACT" == "warpctrl" ]]; then
     export "INFO_PLIST_PATH=$(realpath "$WARP_PLIST_PATH")"
     pushd app > /dev/null
     echo "Building $DEFAULT_TARGET for channel $RELEASE_CHANNEL with profile $CARGO_PROFILE"
-    cargo build --profile "$CARGO_PROFILE" --bin "$WARP_BIN" --target "$DEFAULT_TARGET" --features "$FEATURES"
+    cargo build --profile "$CARGO_PROFILE" --bin "$WARP_BIN" --target "$DEFAULT_TARGET" "${CARGO_FEATURE_ARGS[@]}"
     popd > /dev/null
   else
     echo "Skipping binary build due to --skip-build flag"

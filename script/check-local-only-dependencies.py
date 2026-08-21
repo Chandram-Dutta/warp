@@ -69,6 +69,11 @@ def main() -> None:
         REPO_ROOT / "crates" / "warp_core" / "src" / "cli_agent_protocol.rs"
     ).read_text()
     app_cli_agent = (REPO_ROOT / "app" / "src" / "terminal" / "cli_agent.rs").read_text()
+    local_only_workflow = (
+        REPO_ROOT / ".github" / "workflows" / "local_only.yml"
+    ).read_text()
+    macos_bundle = (REPO_ROOT / "script" / "macos" / "bundle").read_text()
+    bundled_resources = (REPO_ROOT / "script" / "prepare_bundled_resources").read_text()
     core_input = (REPO_ROOT / "crates" / "warp_core" / "src" / "input.rs").read_text()
     editor = (REPO_ROOT / "crates" / "editor" / "src" / "editor.rs").read_text()
     session_config = (REPO_ROOT / "app" / "src" / "tab_configs" / "session_config.rs").read_text()
@@ -132,6 +137,14 @@ def main() -> None:
         assert runtime_dependency not in core_cli_agent
     assert "use warp_core::cli_agent_protocol::CLIAgent;" in session_config
     assert "use warp_core::cli_agent_protocol::CLIAgent;" in cli_agent_sessions
+    local_only_bundle = manifest["package"]["metadata"]["bundle"]["bin"]["warp-local-only"]
+    assert local_only_bundle["identifier"] == "dev.warp.Warp-LocalOnly"
+    assert local_only_bundle["name"] == "WarpLocalOnly"
+    assert 'FEATURES="local_only"' in macos_bundle
+    assert "NO_DEFAULT_FEATURES=true" in macos_bundle
+    assert 'RELEASE_CHANNEL != "local-only"' in macos_bundle
+    assert 'if [ "$CHANNEL" = "local-only" ]' in bundled_resources
+    assert "script/bundle --channel local-only --arch x86_64 --debug --nosign" in local_only_workflow
 
     local_only_packages = dependency_packages("local_only")
     unexpected = EXCLUDED_PACKAGES & local_only_packages

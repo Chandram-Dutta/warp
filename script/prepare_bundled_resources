@@ -58,6 +58,9 @@ if [ -d "$RESOURCES_SRC/bundled" ]; then
   echo "Copying bundled resources to $DEST_DIR/bundled"
   rm -rf "$DEST_DIR/bundled"
   cp -R "$RESOURCES_SRC/bundled" "$DEST_DIR/bundled"
+  if [ "$CHANNEL" = "local-only" ]; then
+    rm -rf "$DEST_DIR/bundled/skills" "$DEST_DIR/bundled/mcp_skills"
+  fi
 else
   echo "Warning: No bundled directory found at $RESOURCES_SRC/bundled" >&2
 fi

@@ -1099,6 +1099,14 @@ git_credential_refresh = []
 prompt_cache_expiry_warning = []
 osc_hyperlinks = []
 
+[package.metadata.bundle.bin.warp-local-only]
+category = "public.app-category.developer-tools"
+copyright = "© 2026, Denver Technologies, Inc"
+identifier = "dev.warp.Warp-LocalOnly"
+name = "WarpLocalOnly"
+icon = ["channels/oss/icon/no-padding/512x512.png", "channels/oss/icon/no-padding/icon.ico"]
+short_description = "The local-only Warp terminal with user-configured AI providers."
+
 [package.metadata.bundle.bin.warp-oss]
 category = "public.app-category.developer-tools"
 copyright = "© 2025, Denver Technologies, Inc"

@@ -82,3 +82,50 @@ jobs:
           path: warp-local-only-linux-x86_64.tar.gz
           if-no-files-found: error
           retention-days: 14
+
+  macos-local-only:
+    name: Build unsigned warp-local-only DMG (macOS x86_64)
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Prepare macOS environment
+        uses: ./.github/actions/prepare_environment
+        with:
+          target_os: macos
+          is_self_hosted: false
+          install_release_deps: true
+          cache_key: local-only-macos-x86_64
+
+      - name: Install x86_64 Rust target
+        run: rustup target add x86_64-apple-darwin
+
+      - name: Install app packaging tools
+        run: |
+          script/install_cargo_bundle
+          brew install create-dmg
+
+      - name: Build unsigned app and DMG
+        id: bundle
+        env:
+          SKIP_SETTINGS_SCHEMA: 1
+        run: >-
+          script/bundle --channel local-only --arch x86_64 --debug --nosign
+          --dmg-name-suffix x86_64
+
+      - name: Validate app and DMG
+        run: |
+          test -d target/x86_64-apple-darwin/debug/bundle/osx/WarpLocalOnly.app
+          file target/x86_64-apple-darwin/debug/bundle/osx/WarpLocalOnly.app/Contents/MacOS/warp-local-only \
+            | grep -F 'x86_64'
+          hdiutil verify "${{ steps.bundle.outputs.dmg_path }}"
+
+      - name: Upload unsigned macOS DMG
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: warp-local-only-macos-x86_64-${{ github.sha }}
+          path: ${{ steps.bundle.outputs.dmg_path }}
+          if-no-files-found: error
+          retention-days: 14
