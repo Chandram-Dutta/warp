@@ -14,9 +14,29 @@ pub(crate) mod artifact_download;
 pub mod artifacts;
 pub(crate) mod attachment_utils;
 pub mod auth_secret_types;
-#[cfg(not(target_family = "wasm"))]
+#[cfg(all(
+    not(target_family = "wasm"),
+    feature = "warp_agent_runtime",
+    not(feature = "local_only")
+))]
 pub mod aws_credentials;
-#[cfg(not(target_family = "wasm"))]
+#[cfg(all(
+    not(target_family = "wasm"),
+    any(not(feature = "warp_agent_runtime"), feature = "local_only")
+))]
+#[path = "aws_credentials_disabled.rs"]
+pub mod aws_credentials;
+#[cfg(all(
+    not(target_family = "wasm"),
+    feature = "warp_agent_runtime",
+    not(feature = "local_only")
+))]
+pub(crate) mod bedrock_credentials;
+#[cfg(all(
+    not(target_family = "wasm"),
+    any(not(feature = "warp_agent_runtime"), feature = "local_only")
+))]
+#[path = "bedrock_credentials_disabled.rs"]
 pub(crate) mod bedrock_credentials;
 pub(crate) mod block_context;
 pub(crate) mod blocklist;

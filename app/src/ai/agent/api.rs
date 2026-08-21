@@ -1,6 +1,10 @@
 pub(crate) mod convert_conversation;
 mod convert_from;
 mod convert_to;
+#[cfg(all(feature = "warp_agent_runtime", not(feature = "local_only")))]
+mod r#impl;
+#[cfg(any(not(feature = "warp_agent_runtime"), feature = "local_only"))]
+#[path = "api/impl_disabled.rs"]
 mod r#impl;
 
 use std::path::Path;

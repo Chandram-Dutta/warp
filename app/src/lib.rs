@@ -1,5 +1,8 @@
 #![allow(clippy::doc_lazy_continuation)]
 
+#[cfg(all(feature = "local_only", feature = "warp_agent_runtime"))]
+compile_error!("warp_agent_runtime cannot be enabled in the local-only product");
+
 mod ai;
 mod alloc;
 mod antivirus;

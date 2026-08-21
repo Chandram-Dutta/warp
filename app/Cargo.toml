@@ -278,7 +278,7 @@ rmcp.workspace = true
 warp_isolation_platform.workspace = true
 warp_ripgrep.workspace = true
 warp_managed_secrets.workspace = true
-warp_multi_agent_client.workspace = true
+warp_multi_agent_client = { workspace = true, optional = true }
 local_control.workspace = true
 hashbrown.workspace = true
 rustc-hash.workspace = true
@@ -342,10 +342,9 @@ tracing-subscriber.workspace = true
 warp_errors = { workspace = true, features = ["tokio-errors", "websocket-errors"] }
 
 # AWS SDK (loading credentials for BYO LLM)
-aws-config = { version = "1.8.16", features = ["credentials-login"] }
-aws-credential-types = "1"
-aws-sdk-sts = { version = "1", default-features = false, features = ["default-https-client", "rt-tokio"] }
-aws-types = "1"
+aws-config = { version = "1.8.16", features = ["credentials-login"], optional = true }
+aws-credential-types = { version = "1", optional = true }
+aws-sdk-sts = { version = "1", default-features = false, features = ["default-https-client", "rt-tokio"], optional = true }
 
 notify-debouncer-full.workspace = true
 rquickjs = { workspace = true, optional = true }
@@ -483,7 +482,13 @@ figma_detection = []
 bundled_skills = []
 supergrok = []
 gemini_enterprise = []
-agent_mode = []
+agent_mode = ["warp_agent_runtime"]
+warp_agent_runtime = [
+    "dep:aws-config",
+    "dep:aws-credential-types",
+    "dep:aws-sdk-sts",
+    "dep:warp_multi_agent_client",
+]
 agent_mode_computer_use = []
 background_computer_use = []
 agent_mode_debug = []
@@ -765,6 +770,7 @@ code_mode_chip = []
 github_pr_prompt_chip = []
 create_project_flow = []
 agent_mode_evals = [
+    "warp_agent_runtime",
     "integration_tests",
     "warpui/defer_scene_build",
     "full_source_code_embedding",
