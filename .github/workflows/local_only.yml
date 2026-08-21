@@ -1,0 +1,84 @@
+name: Warp Local-Only CI
+
+on:
+  push:
+    branches:
+      - 'warp-local-only/**'
+  pull_request:
+    paths:
+      - '.github/workflows/local_only.yml'
+      - 'app/**'
+      - 'crates/**'
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - 'script/check-local-only-dependencies.py'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -C debuginfo=line-tables-only
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  local-only:
+    name: Build and test warp-local-only
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Prepare Linux environment
+        uses: ./.github/actions/prepare_environment
+        with:
+          target_os: linux
+          is_self_hosted: false
+          install_test_deps: true
+          cache_key: local-only-linux
+
+      - name: Verify Cargo metadata and dependency boundaries
+        run: |
+          cargo metadata --locked --format-version 1 >/dev/null
+          python3 script/check-local-only-dependencies.py
+
+      - name: Check local-only binary
+        run: >-
+          cargo check --locked -p warp --bin warp-local-only
+          --no-default-features --features local_only
+
+      - name: Run focused local AI provider tests
+        run: cargo test --locked -p warp_local_ai
+
+      - name: Run focused local-only boundary tests
+        run: |
+          cargo test --locked -p warp_core --features local_only local_only
+          cargo test --locked -p warp_core cli_agent_protocol
+          cargo test --locked -p warp_features --features local_only local_only_profile
+          cargo test --locked -p warp_server_auth --features local_only local_only_state
+          cargo test --locked -p warp --lib --no-default-features --features local_only local_only
+          cargo test --locked -p warp --lib --no-default-features --features local_only \
+            terminal_local_scope_skips_agent_rows_and_preserves_terminal_state
+          cargo test --locked -p warp --lib --no-default-features --features local_only \
+            settings::local_ai::tests
+
+      - name: Build local-only binary
+        run: >-
+          cargo build --locked -p warp --bin warp-local-only
+          --no-default-features --features local_only
+
+      - name: Package local-only binary
+        run: tar -C target/debug -czf warp-local-only-linux-x86_64.tar.gz warp-local-only
+
+      - name: Upload local-only binary
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: warp-local-only-linux-x86_64-${{ github.sha }}
+          path: warp-local-only-linux-x86_64.tar.gz
+          if-no-files-found: error
+          retention-days: 14
