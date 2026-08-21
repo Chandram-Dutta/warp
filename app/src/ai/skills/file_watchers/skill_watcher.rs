@@ -99,6 +99,26 @@ impl SkillWatcher {
         Self::new_internal(ctx, watcher_event_tx, dirs::home_dir())
     }
 
+    #[cfg(feature = "local_only")]
+    pub fn new_disabled(
+        ctx: &mut ModelContext<Self>,
+        watcher_event_tx: Sender<SkillWatcherEvent>,
+    ) -> Self {
+        let _ = ctx;
+        let (repository_message_tx, _) = async_channel::unbounded();
+        Self {
+            repository_message_tx,
+            project_skill_files_by_repo: HashMap::new(),
+            project_skill_refresh_generations: HashMap::new(),
+            next_project_skill_refresh_generation: 0,
+            failed_local_project_watchers: HashMap::new(),
+            watcher_event_tx,
+            home_provider_watchers: HashMap::new(),
+            symlink_canonical_to_originals: HashMap::new(),
+            symlink_target_watchers: HashMap::new(),
+        }
+    }
+
     /// Test-only constructor that skips home-directory watching so tests are not
     /// polluted by real skills present on the developer's machine.
     #[cfg(test)]

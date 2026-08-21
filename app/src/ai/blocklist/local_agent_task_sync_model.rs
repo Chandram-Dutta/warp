@@ -75,6 +75,16 @@ impl LocalTaskUpdate {
 }
 
 impl LocalAgentTaskSyncModel {
+    #[cfg(feature = "local_only")]
+    pub fn new(ctx: &mut ModelContext<Self>) -> Self {
+        Self {
+            ai_client: ServerApiProvider::as_ref(ctx).get_ai_client(),
+            cli_session_task_ids: HashMap::new(),
+            update_queue: LocalTaskUpdateQueue::default(),
+        }
+    }
+
+    #[cfg(not(feature = "local_only"))]
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
         let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
         Self::new_with_ai_client(ai_client, ctx)

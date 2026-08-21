@@ -57,6 +57,22 @@ pub struct SkillManager {
 }
 
 impl SkillManager {
+    #[cfg(feature = "local_only")]
+    pub fn new(ctx: &mut ModelContext<Self>) -> Self {
+        let (skill_watcher_tx, _) = async_channel::unbounded();
+        let skill_watcher = ctx.add_model(|ctx| SkillWatcher::new_disabled(ctx, skill_watcher_tx));
+        Self {
+            directory_skills: HashMap::new(),
+            skills_by_path: HashMap::new(),
+            skills_by_name: HashMap::new(),
+            bundled_skills: BundledSkills::default(),
+            remote_home_directories: HashMap::new(),
+            is_cloud_environment: false,
+            skill_watcher,
+        }
+    }
+
+    #[cfg(not(feature = "local_only"))]
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
         let (skill_watcher_tx, skill_watcher_rx) = async_channel::unbounded();
 

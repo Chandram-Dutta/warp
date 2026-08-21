@@ -77,6 +77,13 @@ pub struct OrchestrationEventService {
 }
 
 impl OrchestrationEventService {
+    #[cfg(feature = "local_only")]
+    pub fn new(ctx: &mut ModelContext<Self>) -> Self {
+        let _ = ctx;
+        Self::new_without_subscriptions()
+    }
+
+    #[cfg(not(feature = "local_only"))]
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
         let history_model = BlocklistAIHistoryModel::handle(ctx);
         ctx.subscribe_to_model(&history_model, move |me, _, event, ctx| {

@@ -242,6 +242,24 @@ impl TemplatableMCPServerManager {
     }
 
     /// Creates a new [`TemplatableMCPServerManager`] instance.
+    #[cfg(feature = "local_only")]
+    pub fn new(
+        locally_installed_servers: HashMap<Uuid, TemplatableMCPServerInstallation>,
+        running_server_uuids: Vec<Uuid>,
+        running_legacy_server_uuids: &[Uuid],
+        ctx: &mut ModelContext<Self>,
+    ) -> Self {
+        let _ = (
+            locally_installed_servers,
+            running_server_uuids,
+            running_legacy_server_uuids,
+            ctx,
+        );
+        Self::default()
+    }
+
+    /// Creates a new [`TemplatableMCPServerManager`] instance.
+    #[cfg(not(feature = "local_only"))]
     pub fn new(
         locally_installed_servers: HashMap<Uuid, TemplatableMCPServerInstallation>,
         running_server_uuids: Vec<Uuid>,
@@ -842,6 +860,10 @@ impl TemplatableMCPServerManager {
     /// The server will be started in the background and the result will be handled by the
     /// [`TemplatableMCPServerManager`].
     pub fn spawn_server(&mut self, installation_uuid: Uuid, ctx: &mut ModelContext<Self>) {
+        if cfg!(feature = "local_only") {
+            return;
+        }
+
         log::debug!("Trying to spawn a server with installation_uuid {installation_uuid}");
 
         // Look up installation to resolve template variables and use its UUID as the MCP server id.

@@ -6,6 +6,7 @@ use warpui::{Entity, ModelContext, SingletonEntity};
 use crate::ai::mcp::templatable::{
     GalleryData, JsonTemplate, TemplatableMCPServer, TemplateVariable,
 };
+#[cfg(not(feature = "local_only"))]
 use crate::server::cloud_objects::update_manager::{UpdateManager, UpdateManagerEvent};
 
 #[derive(Clone, Debug)]
@@ -97,6 +98,16 @@ pub struct MCPGalleryManager {
 }
 
 impl MCPGalleryManager {
+    #[cfg(feature = "local_only")]
+    pub fn new(ctx: &mut ModelContext<Self>) -> Self {
+        let _ = ctx;
+        Self {
+            gallery_items: Default::default(),
+            templatable_mcp_servers: Default::default(),
+        }
+    }
+
+    #[cfg(not(feature = "local_only"))]
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
         let gallery_manager = Self {
             gallery_items: Default::default(),

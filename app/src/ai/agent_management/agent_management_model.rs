@@ -37,6 +37,16 @@ impl Entity for AgentNotificationsModel {
 impl SingletonEntity for AgentNotificationsModel {}
 
 impl AgentNotificationsModel {
+    #[cfg(feature = "local_only")]
+    pub(crate) fn new(ctx: &mut ModelContext<Self>) -> Self {
+        let _ = ctx;
+        Self {
+            notifications: NotificationItems::default(),
+            pending_artifacts: HashMap::new(),
+        }
+    }
+
+    #[cfg(not(feature = "local_only"))]
     pub(crate) fn new(ctx: &mut ModelContext<Self>) -> Self {
         let history_model = BlocklistAIHistoryModel::handle(ctx);
         ctx.subscribe_to_model(&history_model, move |me, _, event, ctx| {

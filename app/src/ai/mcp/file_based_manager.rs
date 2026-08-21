@@ -46,6 +46,13 @@ pub struct FileBasedMCPManager {
 }
 
 impl FileBasedMCPManager {
+    #[cfg(feature = "local_only")]
+    pub fn new(ctx: &mut ModelContext<Self>) -> Self {
+        let _ = ctx;
+        Self::default()
+    }
+
+    #[cfg(not(feature = "local_only"))]
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
         let defer_global_warp_autostart = settings::settings_mode() == settings::SettingsMode::Tui;
         if FeatureFlag::FileBasedMcp.is_enabled() {

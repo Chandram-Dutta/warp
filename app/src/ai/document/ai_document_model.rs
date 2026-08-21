@@ -190,6 +190,23 @@ pub struct AIDocumentModel {
 }
 
 impl AIDocumentModel {
+    #[cfg(feature = "local_only")]
+    pub fn new(ctx: &mut ModelContext<Self>) -> Self {
+        let _ = ctx;
+        let (save_tx, _) = async_channel::unbounded();
+        Self {
+            documents: HashMap::new(),
+            earlier_versions: HashMap::new(),
+            latest_document_id_by_conversation_id: HashMap::new(),
+            content_dirty_flags: HashMap::new(),
+            save_tx,
+            pending_document_queue: Vec::new(),
+            streaming_create_documents: HashMap::new(),
+            dirty_orchestration_events: HashMap::new(),
+        }
+    }
+
+    #[cfg(not(feature = "local_only"))]
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
         ctx.subscribe_to_model(&UpdateManager::handle(ctx), |me, _, event, ctx| {
             me.handle_update_manager_event(event, ctx);

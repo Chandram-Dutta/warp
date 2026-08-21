@@ -983,6 +983,22 @@ impl OrchestrationEventStreamer {
     ) {
         self.persist_event_cursor(conversation_id, wake_message.sequence, ctx);
     }
+    #[cfg(feature = "local_only")]
+    pub fn new(ctx: &mut ModelContext<Self>) -> Self {
+        let provider = ServerApiProvider::as_ref(ctx);
+        Self {
+            ai_client: provider.get_ai_client(),
+            server_api: provider.get(),
+            streams: HashMap::new(),
+            viewer_mode_orchestrators: HashMap::new(),
+            next_sse_generation: 0,
+            next_wake_generation: 0,
+            killed_run_ids: HashSet::new(),
+            killed_run_id_order: VecDeque::new(),
+        }
+    }
+
+    #[cfg(not(feature = "local_only"))]
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
         let provider = ServerApiProvider::as_ref(ctx);
         let ai_client = provider.get_ai_client();

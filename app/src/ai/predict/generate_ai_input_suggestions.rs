@@ -10,12 +10,12 @@ use chrono::NaiveDateTime;
 use itertools::Itertools;
 use parking_lot::FairMutex;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "local_only")]
+use warp_local_ai::{NextCommandContext as LocalNextCommandContext, RecentCommand};
 
 use crate::ai_assistant::execution_context::WarpAiExecutionContext;
 use crate::terminal::TerminalModel;
 use crate::terminal::model::block::BlockState;
-#[cfg(feature = "local_only")]
-use warp_local_ai::{NextCommandContext as LocalNextCommandContext, RecentCommand};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandContext {

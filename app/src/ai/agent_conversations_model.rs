@@ -683,7 +683,7 @@ impl SingletonEntity for AgentConversationsModel {}
 impl AgentConversationsModel {
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
         // If FF not enabled, return an empty model and don't sync any tasks.
-        if !FeatureFlag::AgentManagementView.is_enabled() {
+        if cfg!(feature = "local_only") || !FeatureFlag::AgentManagementView.is_enabled() {
             return Self {
                 tasks: HashMap::new(),
                 conversations: HashMap::new(),
