@@ -15,6 +15,9 @@ EXECUTABLE="$APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
 BUNDLE_IDENTIFIER="$(plutil -extract CFBundleIdentifier raw -o - "$INFO_PLIST")"
 SMOKE_SECONDS="${WARP_APP_SMOKE_SECONDS:-15}"
 FAILED=false
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+SOURCE_ASSETS="${REPO_ROOT:+$REPO_ROOT/app/assets}"
+HIDDEN_SOURCE_ASSETS="${SOURCE_ASSETS:+$SOURCE_ASSETS.local-only-smoke-hidden}"
 
 mkdir -p "$LOG_DIR"
 
@@ -42,6 +45,22 @@ fi
 if [[ ! -x "$EXECUTABLE" ]]; then
   echo "Bundle executable is missing or not executable: $EXECUTABLE" >&2
   FAILED=true
+fi
+
+restore_source_assets() {
+  if [[ -n "$HIDDEN_SOURCE_ASSETS" && -d "$HIDDEN_SOURCE_ASSETS" ]]; then
+    mv "$HIDDEN_SOURCE_ASSETS" "$SOURCE_ASSETS"
+  fi
+}
+trap restore_source_assets EXIT
+
+if [[ -n "$SOURCE_ASSETS" && -d "$SOURCE_ASSETS" ]]; then
+  if [[ -e "$HIDDEN_SOURCE_ASSETS" ]]; then
+    echo "Refusing to overwrite existing smoke-test asset backup: $HIDDEN_SOURCE_ASSETS" >&2
+    exit 2
+  fi
+  echo "Hiding $SOURCE_ASSETS to verify the packaged executable uses embedded assets."
+  mv "$SOURCE_ASSETS" "$HIDDEN_SOURCE_ASSETS"
 fi
 
 wait_until_stable() {

@@ -833,6 +833,7 @@ local_only = [
     "pinned_tabs",
     "pluggable_notifications",
     "rect_selection",
+    "release_bundle",
     "settings_file",
     "shell_selector",
     "skip_firebase_anonymous_user",

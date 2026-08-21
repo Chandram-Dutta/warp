@@ -104,6 +104,7 @@ def main() -> None:
     assert not expected_feature_edges & local_only
     assert "agent_mode" not in local_only
     assert "warp_agent_runtime" not in local_only
+    assert "release_bundle" in local_only
     assert '#[cfg(all(feature = "local_only", feature = "warp_agent_runtime"))]' in app_root
     assert (
         '#[cfg(feature = "local_only")]\n'
@@ -147,6 +148,7 @@ def main() -> None:
     assert "script/bundle --channel local-only --arch aarch64 --debug --adhoc-sign" in local_only_workflow
     assert 'lipo "$executable" -verify_arch arm64' in local_only_workflow
     assert "codesign --verify --deep --strict --verbose=4" in local_only_workflow
+    assert "script/macos/smoke_test_app" in local_only_workflow
 
     local_only_packages = dependency_packages("local_only")
     unexpected = EXCLUDED_PACKAGES & local_only_packages
