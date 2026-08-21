@@ -316,11 +316,19 @@ fn make_new_edit_menu(ctx: &AppContext) -> Menu {
         updateable_custom_item_without_checkmark(CustomAction::AddCursorAbove, ctx),
         updateable_custom_item_without_checkmark(CustomAction::AddCursorBelow, ctx),
     ];
-    let group_4 = vec![
-        updateable_custom_item_without_checkmark(CustomAction::Find, ctx),
-        updateable_custom_item_without_checkmark(CustomAction::GoToLine, ctx),
-        updateable_custom_item_without_checkmark(CustomAction::FocusInput, ctx),
-    ];
+    let mut group_4 = vec![updateable_custom_item_without_checkmark(
+        CustomAction::Find,
+        ctx,
+    )];
+    #[cfg(not(feature = "local_only"))]
+    group_4.push(updateable_custom_item_without_checkmark(
+        CustomAction::GoToLine,
+        ctx,
+    ));
+    group_4.push(updateable_custom_item_without_checkmark(
+        CustomAction::FocusInput,
+        ctx,
+    ));
     let group_5 = vec![
         MenuItem::Custom(CustomMenuItem::new(
             "Use Warp's Prompt",

@@ -72,6 +72,7 @@ def main() -> None:
     local_only_workflow = (
         REPO_ROOT / ".github" / "workflows" / "local_only.yml"
     ).read_text()
+    app_menus = (REPO_ROOT / "app" / "src" / "app_menus.rs").read_text()
     macos_bundle = (REPO_ROOT / "script" / "macos" / "bundle").read_text()
     bundled_resources = (REPO_ROOT / "script" / "prepare_bundled_resources").read_text()
     core_input = (REPO_ROOT / "crates" / "warp_core" / "src" / "input.rs").read_text()
@@ -115,6 +116,10 @@ def main() -> None:
         '#[cfg(not(feature = "local_only"))]\n'
         "            lsp::LspManagerModel::handle(ctx).update(ctx, |manager, ctx| {"
         in app_root
+    )
+    go_to_line_menu = app_menus.index("CustomAction::GoToLine")
+    assert app_menus.rfind('#[cfg(not(feature = "local_only"))]', 0, go_to_line_menu) > (
+        app_menus.rfind("let mut group_4", 0, go_to_line_menu)
     )
     assert (
         '#[cfg(feature = "local_only")]\n'
