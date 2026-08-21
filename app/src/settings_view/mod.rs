@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use about_page::AboutPageView;
 use agent_profiles_page::{AgentProfilesPageAction, AgentProfilesPageEvent, AgentProfilesPageView};
-use appearance_page::{AppearancePageAction, AppearanceSettingsPageView};
+use appearance_page::AppearanceSettingsPageView;
 use billing_and_usage_dispatch::BillingAndUsageDispatchView;
 use billing_and_usage_page::BillingAndUsagePageEvent;
 use cli_agents_page::{CLIAgentsPageAction, CLIAgentsPageEvent, CLIAgentsPageView};
