@@ -63,6 +63,16 @@ impl WarpServerConfig {
             iap_config: None,
         }
     }
+
+    pub fn local_only() -> Self {
+        Self {
+            server_root_url: "warp-network-disabled://local-only".into(),
+            rtc_server_url: "warp-network-disabled://local-only".into(),
+            session_sharing_server_url: None,
+            firebase_auth_api_key: "".into(),
+            iap_config: None,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -81,6 +91,13 @@ impl OzConfig {
         Self {
             oz_root_url: "https://oz.warp.dev".into(),
             workload_audience_url: None,
+        }
+    }
+
+    pub fn local_only() -> Self {
+        Self {
+            oz_root_url: "warp-network-disabled://local-only".into(),
+            workload_audience_url: Some("warp-network-disabled://local-only".into()),
         }
     }
 }

@@ -12,8 +12,8 @@ fn main() -> Result<()> {
         ChannelConfig {
             app_id: AppId::new("dev", "warp", "WarpOss"),
             logfile_name: "warp-local-only.log".into(),
-            server_config: WarpServerConfig::production(),
-            oz_config: OzConfig::production(),
+            server_config: WarpServerConfig::local_only(),
+            oz_config: OzConfig::local_only(),
             telemetry_config: None,
             crash_reporting_config: None,
             autoupdate_config: None,

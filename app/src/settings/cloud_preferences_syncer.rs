@@ -20,6 +20,7 @@ use super::ai::ExecutionProfiles;
 use super::cloud_preferences::{CloudPreferencesSettings, CloudPreferencesSettingsChangedEvent};
 use super::manager::SettingsEvent;
 use crate::auth::auth_state::AuthState;
+use crate::channel::ChannelState;
 use crate::cloud_object::model::generic_string_model::GenericStringObjectId;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::{CloudObjectEventEntrypoint, GenericStringObjectFormat, JsonObjectType};
@@ -99,7 +100,8 @@ pub fn initialize_cloud_preferences_syncer(
 
     // The settings surface decides whether this process participates in cloud
     // sync at all (e.g. the TUI keeps its config local).
-    let sync_enabled = settings::settings_mode().should_sync_to_cloud();
+    let sync_enabled =
+        ChannelState::allows_warp_network() && settings::settings_mode().should_sync_to_cloud();
     CloudPreferencesSyncer::new(
         force_local_wins_on_startup,
         toml_file_path,

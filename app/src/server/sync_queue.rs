@@ -399,6 +399,9 @@ impl SyncQueue {
     }
 
     pub fn start_dequeueing(&mut self, ctx: &mut ModelContext<Self>) {
+        if !crate::ChannelState::allows_warp_network() {
+            return;
+        }
         self.should_dequeue = true;
         self.dequeue(ctx)
     }
@@ -425,7 +428,9 @@ impl SyncQueue {
 
         self.add_inferred_dependencies(&mut queue_item, &queue_id, ctx);
         self.queue.push((queue_id, queue_item));
-        self.dequeue(ctx);
+        if crate::ChannelState::allows_warp_network() {
+            self.dequeue(ctx);
+        }
         queue_id
     }
 

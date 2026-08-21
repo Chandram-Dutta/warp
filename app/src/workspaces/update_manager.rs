@@ -64,11 +64,13 @@ impl TeamUpdateManager {
         model_event_sender: Option<SyncSender<ModelEvent>>,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
-        let network_status = NetworkStatus::handle(ctx);
-        ctx.subscribe_to_model(&network_status, Self::handle_network_status_changed);
+        if crate::ChannelState::allows_warp_network() {
+            let network_status = NetworkStatus::handle(ctx);
+            ctx.subscribe_to_model(&network_status, Self::handle_network_status_changed);
 
-        let team_tester_status = TeamTesterStatus::handle(ctx);
-        ctx.subscribe_to_model(&team_tester_status, Self::handle_team_tester_status_changed);
+            let team_tester_status = TeamTesterStatus::handle(ctx);
+            ctx.subscribe_to_model(&team_tester_status, Self::handle_team_tester_status_changed);
+        }
 
         Self {
             team_client,

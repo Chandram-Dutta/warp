@@ -35,6 +35,8 @@ pub struct ChannelState {
 }
 
 impl ChannelState {
+    const LOCAL_ONLY_NETWORK_URL: &'static str = "warp-network-disabled://local-only";
+
     pub fn init() -> Self {
         let channel = Channel::Oss;
         let app_id = AppId::new("dev", "warp", "WarpOss");
@@ -89,9 +91,16 @@ impl ChannelState {
         cfg!(debug_assertions) || matches!(Self::channel(), Channel::Local | Channel::Dev)
     }
 
+    pub const fn allows_warp_network() -> bool {
+        !cfg!(feature = "local_only")
+    }
+
     pub fn override_server_root_url(url: impl Into<Cow<'static, str>>) -> Result<(), ParseError> {
         let url = url.into();
         Url::parse(&url)?;
+        if !Self::allows_warp_network() {
+            return Ok(());
+        }
         CHANNEL_STATE.lock().config.server_config.server_root_url = url;
         Ok(())
     }
@@ -99,6 +108,9 @@ impl ChannelState {
     pub fn override_ws_server_url(url: impl Into<Cow<'static, str>>) -> Result<(), ParseError> {
         let url = url.into();
         Url::parse(&url)?;
+        if !Self::allows_warp_network() {
+            return Ok(());
+        }
         CHANNEL_STATE.lock().config.server_config.rtc_server_url = url;
         Ok(())
     }
@@ -108,6 +120,9 @@ impl ChannelState {
     ) -> Result<(), ParseError> {
         let url = url.into();
         Url::parse(&url)?;
+        if !Self::allows_warp_network() {
+            return Ok(());
+        }
         CHANNEL_STATE
             .lock()
             .config
@@ -179,6 +194,9 @@ impl ChannelState {
     }
 
     pub fn telemetry_file_name() -> Cow<'static, str> {
+        if !Self::allows_warp_network() {
+            return Cow::Borrowed("");
+        }
         CHANNEL_STATE
             .lock()
             .config
@@ -193,7 +211,7 @@ impl ChannelState {
     /// `telemetry_config: None`, in which case UI that controls telemetry
     /// should be hidden since the toggle has no effect.
     pub fn is_telemetry_available() -> bool {
-        CHANNEL_STATE.lock().config.telemetry_config.is_some()
+        Self::allows_warp_network() && CHANNEL_STATE.lock().config.telemetry_config.is_some()
     }
 
     /// Returns whether this build has a crash reporting config and can therefore
@@ -201,10 +219,13 @@ impl ChannelState {
     /// `crash_reporting_config: None`, in which case UI that controls crash
     /// reporting should be hidden since the toggle has no effect.
     pub fn is_crash_reporting_available() -> bool {
-        CHANNEL_STATE.lock().config.crash_reporting_config.is_some()
+        Self::allows_warp_network() && CHANNEL_STATE.lock().config.crash_reporting_config.is_some()
     }
 
     pub fn releases_base_url() -> Cow<'static, str> {
+        if !Self::allows_warp_network() {
+            return Cow::Borrowed("");
+        }
         CHANNEL_STATE
             .lock()
             .config
@@ -215,6 +236,9 @@ impl ChannelState {
     }
 
     pub fn firebase_api_key() -> Cow<'static, str> {
+        if !Self::allows_warp_network() {
+            return Cow::Borrowed("");
+        }
         CHANNEL_STATE
             .lock()
             .config
@@ -224,10 +248,16 @@ impl ChannelState {
     }
 
     pub fn iap_config() -> Option<IapConfig> {
+        if !Self::allows_warp_network() {
+            return None;
+        }
         CHANNEL_STATE.lock().config.server_config.iap_config.clone()
     }
 
     pub fn ws_server_url() -> Cow<'static, str> {
+        if !Self::allows_warp_network() {
+            return Cow::Borrowed(Self::LOCAL_ONLY_NETWORK_URL);
+        }
         CHANNEL_STATE
             .lock()
             .config
@@ -258,6 +288,9 @@ impl ChannelState {
     }
 
     pub fn session_sharing_server_url() -> Option<Cow<'static, str>> {
+        if !Self::allows_warp_network() {
+            return None;
+        }
         cfg_if::cfg_if! {
             if #[cfg(feature = "test-util")] {
                 Some(Cow::Borrowed("fake_session_sharing_url"))
@@ -268,10 +301,16 @@ impl ChannelState {
     }
 
     pub fn oz_root_url() -> Cow<'static, str> {
+        if !Self::allows_warp_network() {
+            return Cow::Borrowed(Self::LOCAL_ONLY_NETWORK_URL);
+        }
         CHANNEL_STATE.lock().config.oz_config.oz_root_url.clone()
     }
 
     pub fn server_root_url() -> Cow<'static, str> {
+        if !Self::allows_warp_network() {
+            return Cow::Borrowed(Self::LOCAL_ONLY_NETWORK_URL);
+        }
         cfg_if::cfg_if! {
             if #[cfg(feature = "test-util")] {
                 Cow::Owned(MOCK_SERVER_URL.clone())
@@ -282,6 +321,9 @@ impl ChannelState {
     }
 
     pub fn workload_audience_url() -> Cow<'static, str> {
+        if !Self::allows_warp_network() {
+            return Cow::Borrowed(Self::LOCAL_ONLY_NETWORK_URL);
+        }
         let state = CHANNEL_STATE.lock();
         match &state.config.oz_config.workload_audience_url {
             Some(url) => url.clone(),
@@ -301,6 +343,9 @@ impl ChannelState {
 
     /// Returns the rudderstack destination for all events that don't contain user-generated content.
     pub fn rudderstack_non_ugc_destination() -> RudderStackDestination {
+        if !Self::allows_warp_network() {
+            return RudderStackDestination::default();
+        }
         let state = CHANNEL_STATE.lock();
 
         state
@@ -314,6 +359,9 @@ impl ChannelState {
 
     /// Returns the rudderstack destination for all events that contain user-generated content.
     pub fn rudderstack_ugc_destination() -> RudderStackDestination {
+        if !Self::allows_warp_network() {
+            return RudderStackDestination::default();
+        }
         let state = CHANNEL_STATE.lock();
 
         state
@@ -347,6 +395,9 @@ impl ChannelState {
     }
 
     pub fn sentry_url() -> Cow<'static, str> {
+        if !Self::allows_warp_network() {
+            return Cow::Borrowed("");
+        }
         CHANNEL_STATE
             .lock()
             .config
@@ -357,13 +408,14 @@ impl ChannelState {
     }
 
     pub fn show_autoupdate_menu_items() -> bool {
-        CHANNEL_STATE
-            .lock()
-            .config
-            .autoupdate_config
-            .as_ref()
-            .map(|ac| ac.show_autoupdate_menu_items)
-            .unwrap_or_default()
+        Self::allows_warp_network()
+            && CHANNEL_STATE
+                .lock()
+                .config
+                .autoupdate_config
+                .as_ref()
+                .map(|ac| ac.show_autoupdate_menu_items)
+                .unwrap_or_default()
     }
 
     /// Returns the MCP OAuth provider config matching the given client ID, if any.

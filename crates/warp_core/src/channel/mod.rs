@@ -41,6 +41,10 @@ impl Channel {
     /// builds can't be redirected away from their baked-in server URLs. Internal-only channels
     /// (`Dev`, `Local`, `Integration`) continue to honor them for local development and testing.
     pub fn allows_server_url_overrides(&self) -> bool {
+        if cfg!(feature = "local_only") {
+            return false;
+        }
+
         match self {
             Channel::Dev | Channel::Local | Channel::Integration => true,
             Channel::Stable | Channel::Preview | Channel::Oss => false,

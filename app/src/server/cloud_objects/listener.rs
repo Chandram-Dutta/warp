@@ -84,6 +84,10 @@ impl Listener {
             pending_refresh_abort_handle: None,
         };
 
+        if !crate::ChannelState::allows_warp_network() {
+            return listener;
+        }
+
         // When the websocket signals readiness, decide whether to refresh cloud objects
         // based on how long the connection was down.
         let _ = ctx.spawn_stream_local(

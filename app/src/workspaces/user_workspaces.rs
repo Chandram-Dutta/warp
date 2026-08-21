@@ -223,6 +223,27 @@ impl UserWorkspaces {
         )
     }
 
+    #[cfg(feature = "local_only")]
+    pub fn new(
+        team_client: Arc<dyn TeamClient>,
+        workspace_client: Arc<dyn WorkspaceClient>,
+        cached_workspaces: Vec<Workspace>,
+        current_workspace_uid: Option<WorkspaceUid>,
+        ctx: &mut ModelContext<Self>,
+    ) -> Self {
+        let _ = (cached_workspaces, current_workspace_uid, ctx);
+        Self {
+            current_workspace_uid: None.into(),
+            workspaces: Vec::new().into(),
+            window_team_uids: Default::default(),
+            joinable_teams: Default::default(),
+            user_purchase_policy: None,
+            team_client,
+            workspace_client,
+        }
+    }
+
+    #[cfg(not(feature = "local_only"))]
     pub fn new(
         team_client: Arc<dyn TeamClient>,
         workspace_client: Arc<dyn WorkspaceClient>,

@@ -207,18 +207,20 @@ impl UpdateManager {
         object_client: Arc<dyn ObjectClient>,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
-        let network_status = NetworkStatus::handle(ctx);
-        ctx.subscribe_to_model(&network_status, |me, _, event, ctx| {
-            me.handle_network_status_changed(event, ctx);
-        });
+        if crate::ChannelState::allows_warp_network() {
+            let network_status = NetworkStatus::handle(ctx);
+            ctx.subscribe_to_model(&network_status, |me, _, event, ctx| {
+                me.handle_network_status_changed(event, ctx);
+            });
 
-        let team_tester_status = TeamTesterStatus::handle(ctx);
-        ctx.subscribe_to_model(&team_tester_status, Self::handle_team_tester_status_changed);
+            let team_tester_status = TeamTesterStatus::handle(ctx);
+            ctx.subscribe_to_model(&team_tester_status, Self::handle_team_tester_status_changed);
 
-        let sync_queue = SyncQueue::handle(ctx);
-        ctx.subscribe_to_model(&sync_queue, |me, _, event, ctx| {
-            me.handle_model_event(event, ctx);
-        });
+            let sync_queue = SyncQueue::handle(ctx);
+            ctx.subscribe_to_model(&sync_queue, |me, _, event, ctx| {
+                me.handle_model_event(event, ctx);
+            });
+        }
 
         Self {
             model_event_sender,

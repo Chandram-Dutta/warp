@@ -600,6 +600,10 @@ impl LaunchMode {
 
     /// Returns `true` if this process can build and sync codebase indices.
     fn supports_indexing(&self) -> bool {
+        if cfg!(feature = "local_only") {
+            return false;
+        }
+
         match self {
             LaunchMode::CommandLine { command, .. } => {
                 matches!(command, CliCommand::Agent(AgentCommand::Run { .. }))
@@ -752,9 +756,20 @@ pub fn run() -> Result<()> {
     // Ensure feature flags are initialized before parsing command-line arguments.
     features::init_feature_flags();
     if let Some(args) = warp_cli::local_control::ControlArgs::from_control_mode_env() {
-        #[cfg(windows)]
-        warp_util::windows::attach_to_parent_console();
-        warp_cli::local_control::run_and_exit(args);
+        #[cfg(feature = "local_only")]
+        {
+            let _ = args;
+            return Err(anyhow!(
+                "Warp Control is unavailable in the local-only product"
+            ));
+        }
+
+        #[cfg(not(feature = "local_only"))]
+        {
+            #[cfg(windows)]
+            warp_util::windows::attach_to_parent_console();
+            warp_cli::local_control::run_and_exit(args);
+        }
     }
 
     // Parse command-line arguments.
@@ -796,24 +811,37 @@ pub fn run() -> Result<()> {
                 return warp_cli::completions::generate_to_stdout(*shell);
             }
             warp_cli::Command::CommandLine(cmd) => {
-                let (is_sandboxed, computer_use_override) = match cmd.as_ref() {
-                    warp_cli::CliCommand::Agent(warp_cli::agent::AgentCommand::Run(run_args)) => (
-                        run_args.sandboxed,
-                        run_args.computer_use.computer_use_override(),
-                    ),
-                    _ => (false, None),
-                };
+                #[cfg(feature = "local_only")]
+                {
+                    let _ = cmd;
+                    return Err(anyhow!(
+                        "Warp Agent and cloud CLI commands are unavailable in the local-only product"
+                    ));
+                }
 
-                return run_internal(LaunchMode::CommandLine {
-                    command: cmd.as_ref().clone(),
-                    global_options: GlobalOptions {
-                        output_format: args.output_format(),
-                        api_key: args.api_key().cloned(),
-                    },
-                    debug: args.debug(),
-                    is_sandboxed,
-                    computer_use_override,
-                });
+                #[cfg(not(feature = "local_only"))]
+                {
+                    let (is_sandboxed, computer_use_override) = match cmd.as_ref() {
+                        warp_cli::CliCommand::Agent(warp_cli::agent::AgentCommand::Run(
+                            run_args,
+                        )) => (
+                            run_args.sandboxed,
+                            run_args.computer_use.computer_use_override(),
+                        ),
+                        _ => (false, None),
+                    };
+
+                    return run_internal(LaunchMode::CommandLine {
+                        command: cmd.as_ref().clone(),
+                        global_options: GlobalOptions {
+                            output_format: args.output_format(),
+                            api_key: args.api_key().cloned(),
+                        },
+                        debug: args.debug(),
+                        is_sandboxed,
+                        computer_use_override,
+                    });
+                }
             }
             warp_cli::Command::DumpDebugInfo => {
                 return debug_dump::run();
@@ -892,15 +920,23 @@ fn run_worker_command(worker: &warp_cli::WorkerCommand) -> Result<()> {
             pattern,
             paths,
         } => {
-            warp_ripgrep::search::run_search_subprocess(
-                std::slice::from_ref(pattern),
-                paths.clone(),
-                *ignore_case,
-                *multiline,
-                parent.pid,
-            )
-            .map_err(|err| anyhow!(err.to_string()))?;
-            Ok(())
+            #[cfg(feature = "local_only")]
+            return Err(anyhow!(
+                "Code search workers are unavailable in the local-only product"
+            ));
+
+            #[cfg(not(feature = "local_only"))]
+            {
+                warp_ripgrep::search::run_search_subprocess(
+                    std::slice::from_ref(pattern),
+                    paths.clone(),
+                    *ignore_case,
+                    *multiline,
+                    parent.pid,
+                )
+                .map_err(|err| anyhow!(err.to_string()))?;
+                Ok(())
+            }
         }
         #[cfg(not(any(
             feature = "local_tty",
@@ -1554,7 +1590,7 @@ pub(crate) fn initialize_app(
     #[cfg(not(target_family = "wasm"))]
     server_api.set_ambient_agent_task_id(ambient_agent_task_id);
     let ai_client = server_api_provider.as_ref(ctx).get_ai_client();
-    #[cfg(not(target_family = "wasm"))]
+    #[cfg(all(not(target_family = "wasm"), not(feature = "local_only")))]
     // Refresh starts only after the authenticated server client exists; tracing initialization
     // remains responsible for deciding whether this process opted in to cloud-agent export.
     tracing::start_auth_refresh(
@@ -1737,17 +1773,17 @@ pub(crate) fn initialize_app(
 
     // Initialize ApiKeyManager after UserWorkspaces so it can subscribe to workspace/settings changes
     ctx.add_singleton_model(|ctx| {
-        #[cfg_attr(target_family = "wasm", allow(unused_mut))]
+        #[cfg_attr(any(target_family = "wasm", feature = "local_only"), allow(unused_mut))]
         let mut manager = ::ai::api_keys::ApiKeyManager::new(ctx);
-        #[cfg(not(target_family = "wasm"))]
+        #[cfg(all(not(target_family = "wasm"), not(feature = "local_only")))]
         if matches!(launch_mode, LaunchMode::Tui { .. }) {
             manager.subscribe_to_tui_api_key_changes(ctx);
         }
-        #[cfg(not(target_family = "wasm"))]
+        #[cfg(all(not(target_family = "wasm"), not(feature = "local_only")))]
         manager.subscribe_to_settings_changes(ctx);
         // Gemini Enterprise (GEAP) credential refresh triggers: workspace
         // settings saves / team changes and the member's enablement toggle.
-        #[cfg(not(target_family = "wasm"))]
+        #[cfg(all(not(target_family = "wasm"), not(feature = "local_only")))]
         if FeatureFlag::GeminiEnterprise.is_enabled() {
             manager.subscribe_to_geap_settings_changes(ctx);
         }
@@ -1756,7 +1792,7 @@ pub(crate) fn initialize_app(
         // here. The initial value resumes proactive refresh of any tokens
         // restored from secure storage; TeamsChanged keeps the policy aligned
         // as team data loads or the workspace changes.
-        #[cfg(not(target_family = "wasm"))]
+        #[cfg(all(not(target_family = "wasm"), not(feature = "local_only")))]
         if FeatureFlag::SuperGrok.is_enabled() {
             use crate::workspaces::user_workspaces::UserWorkspacesEvent;
             ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |manager, _, event, ctx| {
@@ -1771,27 +1807,30 @@ pub(crate) fn initialize_app(
         manager
     });
 
-    ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |_, event, ctx| {
-        if matches!(
-            event,
-            UserWorkspacesEvent::CurrentWorkspaceChanged
-                | UserWorkspacesEvent::AiOveragesUpdated
-                | UserWorkspacesEvent::PurchaseAddonCreditsSuccess
-        ) {
-            AIRequestUsageModel::handle(ctx).update(ctx, |usage_model, ctx| {
-                usage_model.request_availability_refresh(ctx);
-            });
-        }
-    });
-    ctx.subscribe_to_model(
-        &::ai::api_keys::ApiKeyManager::handle(ctx),
-        |_, event, ctx| {
-            let ::ai::api_keys::ApiKeyManagerEvent::KeysUpdated = event;
-            AIRequestUsageModel::handle(ctx).update(ctx, |usage_model, ctx| {
-                usage_model.request_availability_refresh(ctx);
-            });
-        },
-    );
+    #[cfg(not(feature = "local_only"))]
+    {
+        ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |_, event, ctx| {
+            if matches!(
+                event,
+                UserWorkspacesEvent::CurrentWorkspaceChanged
+                    | UserWorkspacesEvent::AiOveragesUpdated
+                    | UserWorkspacesEvent::PurchaseAddonCreditsSuccess
+            ) {
+                AIRequestUsageModel::handle(ctx).update(ctx, |usage_model, ctx| {
+                    usage_model.request_availability_refresh(ctx);
+                });
+            }
+        });
+        ctx.subscribe_to_model(
+            &::ai::api_keys::ApiKeyManager::handle(ctx),
+            |_, event, ctx| {
+                let ::ai::api_keys::ApiKeyManagerEvent::KeysUpdated = event;
+                AIRequestUsageModel::handle(ctx).update(ctx, |usage_model, ctx| {
+                    usage_model.request_availability_refresh(ctx);
+                });
+            },
+        );
+    }
 
     ctx.add_singleton_model(AntivirusInfo::new);
 
@@ -1879,7 +1918,7 @@ pub(crate) fn initialize_app(
     ctx.add_singleton_model(remote_server::manager::RemoteServerManager::new);
     #[cfg(not(target_family = "wasm"))]
     ctx.add_singleton_model(remote_server::codebase_index_model::RemoteCodebaseIndexModel::new);
-    #[cfg(not(target_family = "wasm"))]
+    #[cfg(all(not(target_family = "wasm"), not(feature = "local_only")))]
     remote_server::wire_auth_token_rotation(ctx);
 
     log::info!(
@@ -1960,11 +1999,14 @@ pub(crate) fn initialize_app(
     } else {
         // If the app was opened while logged out, record an event for measuring new users.
         // This is sent immediately in case they quit the app on the signup screen.
-        send_telemetry_sync_from_app_ctx!(TelemetryEvent::LoggedOutStartup, ctx);
-        download_method::determine_and_report(
-            auth_state.clone(),
-            ctx.background_executor().clone(),
-        );
+        #[cfg(not(feature = "local_only"))]
+        {
+            send_telemetry_sync_from_app_ctx!(TelemetryEvent::LoggedOutStartup, ctx);
+            download_method::determine_and_report(
+                auth_state.clone(),
+                ctx.background_executor().clone(),
+            );
+        }
     }
 
     #[cfg(not(target_family = "wasm"))]
@@ -1975,6 +2017,7 @@ pub(crate) fn initialize_app(
         // skill directories (e.g. `.agents/skills`) for `Repository`
         // subscribers (LSP, MCP). Registered before any repository begins
         // watching so it gates descent on the very first registration.
+        #[cfg(not(feature = "local_only"))]
         DirectoryWatcher::handle(ctx).update(ctx, |watcher, _| {
             watcher.register_force_included_paths(
                 ::ai::skills::SKILL_PROVIDER_DEFINITIONS
@@ -2007,18 +2050,21 @@ pub(crate) fn initialize_app(
             } else {
                 RepoMetadataModel::new(ctx)
             };
-            model.register_force_included_paths(
-                ::ai::skills::SKILL_PROVIDER_DEFINITIONS
-                    .iter()
-                    .map(|provider| provider.skills_path.clone()),
-                ctx,
-            );
-            model.set_project_skill_provider_paths(
-                ::ai::skills::SKILL_PROVIDER_DEFINITIONS
-                    .iter()
-                    .map(|provider| provider.skills_path.clone()),
-                ctx,
-            );
+            #[cfg(not(feature = "local_only"))]
+            {
+                model.register_force_included_paths(
+                    ::ai::skills::SKILL_PROVIDER_DEFINITIONS
+                        .iter()
+                        .map(|provider| provider.skills_path.clone()),
+                    ctx,
+                );
+                model.set_project_skill_provider_paths(
+                    ::ai::skills::SKILL_PROVIDER_DEFINITIONS
+                        .iter()
+                        .map(|provider| provider.skills_path.clone()),
+                    ctx,
+                );
+            }
 
             // Subscribe to RemoteServerManager push events so that remote repo
             // metadata snapshots and incremental updates populate the remote
@@ -2065,10 +2111,11 @@ pub(crate) fn initialize_app(
     timer.mark_interval_end("INITIALIZE_TELEMETRY_COLLECTION");
 
     // Register initial keybindings prior to creating menus
+    #[cfg(not(feature = "local_only"))]
     ai::init(ctx);
     app_services::init(ctx);
     // // TODO: Temporarily disabling keybindings for WASM builds. Will be implemented in future WASM support.
-    #[cfg(not(target_family = "wasm"))]
+    #[cfg(all(not(target_family = "wasm"), not(feature = "local_only")))]
     code::editor::find::view::init(ctx);
     workspace::init(ctx);
     pane_group::init(ctx);
@@ -2085,29 +2132,45 @@ pub(crate) fn initialize_app(
     themes::theme_deletion_modal::init(ctx);
     root_view::init(ctx);
     voltron::init(ctx);
+    #[cfg(not(feature = "local_only"))]
     auth::init(ctx);
+    #[cfg(not(feature = "local_only"))]
     reward_view::init(ctx);
     crate::view_components::find::init(ctx);
     prompt::editor_modal::init(ctx);
+    #[cfg(not(feature = "local_only"))]
     ai::blocklist::agent_view::editor::init(ctx);
     undo_close::init(ctx);
+    #[cfg(not(feature = "local_only"))]
     billing::shared_objects_creation_denied_modal::init(ctx);
+    #[cfg(not(feature = "local_only"))]
     tab_configs::new_worktree_modal::init(ctx);
     tab_configs::params_modal::init(ctx);
+    #[cfg(not(feature = "local_only"))]
     ai::blocklist::init(ctx);
+    #[cfg(not(feature = "local_only"))]
     ai::blocklist::block::status_bar::init(ctx);
+    #[cfg(not(feature = "local_only"))]
     drive::index::init(ctx);
+    #[cfg(not(feature = "local_only"))]
     drive::sharing::dialog::init(ctx);
+    #[cfg(not(feature = "local_only"))]
     ai_assistant::panel::init(ctx);
+    #[cfg(not(feature = "local_only"))]
     settings_view::update_environment_form::init(ctx);
+    #[cfg(not(feature = "local_only"))]
     env_vars::env_var_collection_block::init(ctx);
     context_chips::display_menu::init(ctx);
     context_chips::node_version_popup::init(ctx);
+    #[cfg(not(feature = "local_only"))]
     env_vars::view::env_var_collection::init(ctx);
+    #[cfg(not(feature = "local_only"))]
     ai::agent::todos::popup::init(ctx);
+    #[cfg(not(feature = "local_only"))]
     terminal::view::init_environment::mode_selector::init(ctx);
+    #[cfg(not(feature = "local_only"))]
     coding_entrypoints::project_buttons::init(ctx);
-    if FeatureFlag::CodeReviewSaveChanges.is_enabled() {
+    if cfg!(not(feature = "local_only")) && FeatureFlag::CodeReviewSaveChanges.is_enabled() {
         code_review::init(ctx);
     }
 
@@ -2119,6 +2182,7 @@ pub(crate) fn initialize_app(
     ctx.add_singleton_model(|_| GitHubAuthNotifier::new());
     ctx.add_singleton_model(|_| NetworkStatus::new());
     ctx.add_singleton_model(|_| SystemStats::new());
+    #[cfg(not(feature = "local_only"))]
     workspace::auto_handoff::init(ctx);
     ctx.add_singleton_model(|_| KeybindingChangedNotifier::new());
     ctx.add_singleton_model(|_| TabShortcutModifierState::new());
@@ -2556,8 +2620,13 @@ pub(crate) fn initialize_app(
 
     // Index global rules (e.g. ~/.agents/AGENTS.md) on a background task so
     // they are available to subsequent agent queries.
+    #[cfg(not(feature = "local_only"))]
     ProjectContextModel::handle(ctx).update(ctx, |me, ctx| me.index_global_rules(ctx));
-    #[cfg(all(not(target_family = "wasm"), feature = "local_fs"))]
+    #[cfg(all(
+        not(target_family = "wasm"),
+        feature = "local_fs",
+        not(feature = "local_only")
+    ))]
     {
         ctx.add_singleton_model(ai::remote_agent_context::RemoteAgentContext::new);
     }
