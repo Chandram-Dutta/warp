@@ -13,9 +13,7 @@ use crate::search::mixer::{DataSourceRunErrorWrapper, SyncDataSource};
 use crate::util::bindings::CommandBinding;
 #[cfg(feature = "local_only")]
 use crate::{
-    settings_view::{
-        SettingsAction, appearance_page::AppearancePageAction, features_page::FeaturesPageAction,
-    },
+    settings_view::{AppearancePageAction, FeaturesPageAction, SettingsAction},
     terminal::{input::InputAction, view::TerminalAction},
     workspace::WorkspaceAction,
 };

@@ -204,9 +204,10 @@ impl LocalAISettingsPageView {
         let provider = Self::active_provider(ctx);
         let credential = LocalAICredentials::as_ref(ctx)
             .credential(provider)
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .to_owned();
         self.credential_editor.update(ctx, |editor, ctx| {
-            editor.system_reset_buffer_text(credential, ctx);
+            editor.system_reset_buffer_text(&credential, ctx);
             editor.set_placeholder_text(
                 if provider.requires_api_key() {
                     "Required API key"
