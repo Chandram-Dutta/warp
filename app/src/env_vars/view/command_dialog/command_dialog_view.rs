@@ -1,5 +1,5 @@
+use warp_core::input::NavigationKey;
 use warp_core::ui::appearance::Appearance;
-use warp_editor::editor::NavigationKey;
 use warpui::elements::{
     Border, ConstrainedBox, Container, CornerRadius, Flex, MouseStateHandle, ParentElement, Radius,
     Shrinkable,

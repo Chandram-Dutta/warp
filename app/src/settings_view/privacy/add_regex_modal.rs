@@ -1,5 +1,5 @@
 use regex::Regex;
-use warp_editor::editor::NavigationKey;
+use warp_core::input::NavigationKey;
 use warpui::elements::{
     ChildView, Container, CrossAxisAlignment, Empty, Expanded, Flex, MainAxisSize,
     MouseStateHandle, ParentElement, Text,

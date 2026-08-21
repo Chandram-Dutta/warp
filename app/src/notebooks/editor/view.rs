@@ -6,10 +6,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use markdown_parser::{FormattedText, parse_html, parse_markdown};
 use pathfinder_geometry::vector::vec2f;
 use string_offset::CharOffset;
+use warp_core::input::NavigationKey;
 use warp_editor::content::anchor::Anchor;
 use warp_editor::content::text::{BufferTextStyle, CodeBlockType, TextStyles};
 use warp_editor::content::version::BufferVersion;
-use warp_editor::editor::{EmbeddedItemModel, NavigationKey, RunnableCommandModel, TextDecoration};
+use warp_editor::editor::{EmbeddedItemModel, RunnableCommandModel, TextDecoration};
 use warp_editor::model::{CoreEditorModel, RichTextEditorModel};
 use warp_editor::render::element::{
     DisplayOptions, DisplayStateHandle, RichTextAction, RichTextElement, VerticalExpansionBehavior,

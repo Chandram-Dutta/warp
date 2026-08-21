@@ -49,9 +49,9 @@ use vim::{
     vim_inner_quote, vim_inner_word, vim_word_iterator_from_offset,
 };
 use warp_completer::completer::Description;
+use warp_core::input::NavigationKey;
 use warp_core::semantic_selection::SemanticSelection;
 use warp_core::{safe_error, send_telemetry_from_ctx};
-use warp_editor::editor::NavigationKey;
 use warp_util::path::ShellFamily;
 use warp_util::user_input::UserInput;
 use warpui::accessibility::{AccessibilityContent, ActionAccessibilityContent, WarpA11yRole};

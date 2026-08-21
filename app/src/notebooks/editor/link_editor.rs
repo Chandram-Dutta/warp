@@ -1,4 +1,4 @@
-use warp_editor::editor::NavigationKey;
+use warp_core::input::NavigationKey;
 use warp_editor::model::RichTextEditorModel;
 use warp_editor::render::model::RenderState;
 use warpui::elements::{

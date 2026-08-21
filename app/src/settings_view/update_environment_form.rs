@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use instant::{Duration, Instant};
 use log::debug;
 use url::Url;
+use warp_core::input::NavigationKey;
 use warp_core::send_telemetry_from_ctx;
-use warp_editor::editor::NavigationKey;
 use warp_graphql::queries::user_github_info::UserGithubInfoResult;
 use warpui::elements::{
     Border, ChildAnchor, ChildView, Clipped, ClippedScrollStateHandle, ClippedScrollable,

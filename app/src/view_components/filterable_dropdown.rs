@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use warp_editor::editor::NavigationKey;
+use warp_core::input::NavigationKey;
 use warpui::elements::{
     Align, Border, ChildAnchor, ChildView, Clipped, ConstrainedBox, Container, CornerRadius,
     CrossAxisAlignment, Dismiss, DispatchEventResult, Element, EventHandler, Flex,

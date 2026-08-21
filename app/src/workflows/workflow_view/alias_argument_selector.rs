@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
+use warp_core::input::NavigationKey;
 use warp_core::ui::appearance::Appearance;
-use warp_editor::editor::NavigationKey;
 use warpui::elements::ChildView;
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::{

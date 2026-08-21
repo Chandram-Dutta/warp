@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use itertools::{Either, Itertools};
-use warp_editor::editor::NavigationKey;
+use warp_core::input::NavigationKey;
 use warpui::accessibility::{AccessibilityContent, WarpA11yRole};
 use warpui::elements::{
     Clipped, ConstrainedBox, Container, CrossAxisAlignment, Flex, ParentElement, Shrinkable, Text,

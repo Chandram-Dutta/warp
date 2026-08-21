@@ -1,6 +1,6 @@
 use pathfinder_geometry::vector::vec2f;
+use warp_core::input::NavigationKey;
 use warp_core::ui::appearance::Appearance;
-use warp_editor::editor::NavigationKey;
 use warpui::elements::{
     Align, Border, ChildAnchor, ChildView, ClippedScrollStateHandle, ClippedScrollable,
     ConstrainedBox, Container, CornerRadius, Flex, OffsetPositioning, ParentElement,

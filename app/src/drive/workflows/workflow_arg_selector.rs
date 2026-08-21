@@ -4,9 +4,9 @@ use std::rc::Rc;
 use itertools::Itertools;
 use strum::IntoEnumIterator;
 use strum_macros::{EnumIter, IntoStaticStr};
+use warp_core::input::NavigationKey;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::Fill;
-use warp_editor::editor::NavigationKey;
 use warpui::elements::{
     Align, Border, ChildAnchor, ChildView, ClippedScrollStateHandle, ClippedScrollable,
     ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dismiss, Empty, EventHandler,

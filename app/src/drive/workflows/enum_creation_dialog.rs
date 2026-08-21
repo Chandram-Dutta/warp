@@ -3,8 +3,8 @@ use std::rc::Rc;
 use strum::IntoEnumIterator;
 use strum_macros::{EnumIter, IntoStaticStr};
 use warp_core::features::FeatureFlag;
+use warp_core::input::NavigationKey;
 use warp_core::ui::appearance::Appearance;
-use warp_editor::editor::NavigationKey;
 use warpui::elements::{
     Border, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container, CornerRadius,
     CrossAxisAlignment, Empty, Fill, Flex, MainAxisAlignment, MainAxisSize, MouseStateHandle,

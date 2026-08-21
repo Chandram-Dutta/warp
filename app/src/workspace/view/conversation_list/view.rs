@@ -4,9 +4,9 @@ use std::sync::{Arc, Mutex};
 
 use pathfinder_geometry::vector::Vector2F;
 use warp_core::features::FeatureFlag;
+use warp_core::input::NavigationKey;
 use warp_core::send_telemetry_from_ctx;
 use warp_core::ui::Icon;
-use warp_editor::editor::NavigationKey;
 use warpui::elements::{
     Border, ChildAnchor, ChildView, Clipped, ConstrainedBox, Container, CornerRadius,
     CrossAxisAlignment, Element, Fill, Flex, FormattedTextElement, Hoverable, MainAxisAlignment,

@@ -65,6 +65,12 @@ def package_dependencies(package: str) -> set[str]:
 def main() -> None:
     manifest = tomllib.loads((REPO_ROOT / "app" / "Cargo.toml").read_text())
     app_root = (REPO_ROOT / "app" / "src" / "lib.rs").read_text()
+    core_input = (REPO_ROOT / "crates" / "warp_core" / "src" / "input.rs").read_text()
+    editor = (REPO_ROOT / "crates" / "editor" / "src" / "editor.rs").read_text()
+    terminal_input = (REPO_ROOT / "app" / "src" / "terminal" / "input.rs").read_text()
+    terminal_block_filter = (
+        REPO_ROOT / "app" / "src" / "terminal" / "block_filter.rs"
+    ).read_text()
     persistence_root = (REPO_ROOT / "app" / "src" / "persistence" / "mod.rs").read_text()
     sqlite = (REPO_ROOT / "app" / "src" / "persistence" / "sqlite.rs").read_text()
     restored_conversations = (
@@ -103,6 +109,13 @@ def main() -> None:
         "    db_connection: Option<Arc<Mutex<SqliteConnection>>>"
         in restored_conversations
     )
+    assert "pub enum NavigationKey" in core_input
+    assert "pub use warp_core::input::NavigationKey;" in editor
+    assert "pub enum NavigationKey" not in editor
+    assert "use warp_core::input::NavigationKey;" in terminal_input
+    assert "use warp_core::input::NavigationKey;" in terminal_block_filter
+    for source in (REPO_ROOT / "app" / "src").rglob("*.rs"):
+        assert "warp_editor::editor::NavigationKey" not in source.read_text(), source
 
     local_only_packages = dependency_packages("local_only")
     unexpected = EXCLUDED_PACKAGES & local_only_packages

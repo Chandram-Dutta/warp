@@ -1,4 +1,4 @@
-use warp_editor::editor::NavigationKey;
+use warp_core::input::NavigationKey;
 use warpui::elements::{
     Align, ConstrainedBox, Container, Flex, ParentElement, SavePosition, Shrinkable, Stack,
 };

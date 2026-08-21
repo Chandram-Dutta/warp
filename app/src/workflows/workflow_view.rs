@@ -11,9 +11,9 @@ use string_offset::CharOffset;
 use syntax_highlightable::SyntaxHighlightable;
 use url::Url;
 use warp_core::context_flag::ContextFlag;
+use warp_core::input::NavigationKey;
 use warp_core::settings::Setting;
 use warp_core::ui::theme::AnsiColorIdentifier;
-use warp_editor::editor::NavigationKey;
 use warp_errors::report_error;
 use warpui::clipboard::ClipboardContent;
 use warpui::elements::{

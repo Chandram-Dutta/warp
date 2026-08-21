@@ -9,6 +9,7 @@ use num_traits::SaturatingSub;
 use pathfinder_color::ColorU;
 use rangemap::{RangeMap, RangeSet};
 use string_offset::CharOffset;
+pub use warp_core::input::NavigationKey;
 use warpui_core::elements::Border;
 use warpui_core::text_layout::PaintStyleOverride;
 use warpui_core::{Action, AppContext, Element, TypedActionView, View};
@@ -138,17 +139,4 @@ pub trait RunnableCommandModel {
     fn border(&self, app: &AppContext) -> Option<Border>;
 
     fn as_any(&self) -> &dyn Any;
-}
-
-/// A navigation key, which could be propagated from an editor to its parent view.
-#[derive(Debug, Clone, Copy)]
-pub enum NavigationKey {
-    Tab,
-    ShiftTab,
-    Up,
-    Down,
-    PageUp,
-    PageDown,
-    Left,
-    Right,
 }

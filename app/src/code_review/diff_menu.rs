@@ -3,8 +3,8 @@
 use std::cmp;
 
 use fuzzy_match::{FuzzyMatchResult, match_indices_case_insensitive};
+use warp_core::input::NavigationKey;
 use warp_core::ui::theme::Fill;
-use warp_editor::editor::NavigationKey;
 use warpui::color::ColorU;
 use warpui::elements::{
     Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dismiss,

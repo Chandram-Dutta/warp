@@ -2,7 +2,7 @@
 // Adding this file level gate as some of the code around editability is not used in WASM yet.
 
 use pathfinder_color::ColorU;
-use warp_editor::editor::NavigationKey;
+use warp_core::input::NavigationKey;
 use warp_editor::search::{SearchEvent, Searcher};
 pub use warpui::AppContext;
 pub use warpui::accessibility::{AccessibilityContent, WarpA11yRole};

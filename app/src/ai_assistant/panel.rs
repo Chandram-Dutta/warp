@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use chrono::Local;
 use pathfinder_geometry::vector::{Vector2F, vec2f};
-use warp_editor::editor::NavigationKey;
+use warp_core::input::NavigationKey;
 use warp_errors::report_error;
 use warpui::r#async::Timer;
 use warpui::clipboard::ClipboardContent;

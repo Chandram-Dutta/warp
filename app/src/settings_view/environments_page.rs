@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use instant::Instant;
 use pathfinder_geometry::vector::vec2f;
+use warp_core::input::NavigationKey;
 use warp_core::ui::color::blend::Blend;
 use warp_core::ui::theme::color::internal_colors;
-use warp_editor::editor::NavigationKey;
 use warp_graphql::scalars::time::ServerTimestamp;
 use warpui::elements::{
     Align, Border, ChildAnchor, Clipped, ConstrainedBox, Container, CornerRadius,

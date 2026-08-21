@@ -7,6 +7,7 @@ pub mod command;
 pub mod context_flag;
 pub mod execution_mode;
 pub mod features;
+pub mod input;
 pub mod interval_timer;
 #[cfg(target_os = "macos")]
 pub mod macos;

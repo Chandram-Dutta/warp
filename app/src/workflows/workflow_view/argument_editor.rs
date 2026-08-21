@@ -3,8 +3,8 @@ use std::cmp::Ordering;
 use itertools::Itertools;
 use pathfinder_color::ColorU;
 use warp_core::features::FeatureFlag;
+use warp_core::input::NavigationKey;
 use warp_core::ui::appearance::Appearance;
-use warp_editor::editor::NavigationKey;
 use warpui::elements::{
     ChildView, ConstrainedBox, Container, CrossAxisAlignment, Fill, Flex, MainAxisAlignment,
     MainAxisSize, ParentElement, Shrinkable,

@@ -6,9 +6,9 @@ use itertools::Itertools;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use session_sharing_protocol::common::{Guest, PendingGuest, SessionId, TeamAclData};
+use warp_core::input::NavigationKey;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::Fill as ThemeFill;
-use warp_editor::editor::NavigationKey;
 use warp_errors::report_error;
 use warpui::clipboard::ClipboardContent;
 use warpui::elements::{

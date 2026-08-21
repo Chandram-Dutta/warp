@@ -1,5 +1,5 @@
 use pathfinder_color::ColorU;
-use warp_editor::editor::NavigationKey;
+use warp_core::input::NavigationKey;
 use warpui::elements::{
     ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex, MainAxisAlignment,
     MainAxisSize, MouseStateHandle, ParentElement, Radius, Wrap, WrapFill,

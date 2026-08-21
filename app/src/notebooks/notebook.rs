@@ -9,7 +9,7 @@ use regex::Regex;
 use settings::Setting as _;
 use url::Url;
 use warp_core::context_flag::ContextFlag;
-use warp_editor::editor::NavigationKey;
+use warp_core::input::NavigationKey;
 use warp_editor::model::{CoreEditorModel, RichTextEditorModel};
 use warp_errors::{report_error, report_if_error};
 use warpui::accessibility::{AccessibilityContent, WarpA11yRole};
