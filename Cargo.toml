@@ -55,6 +55,7 @@ ipynb_parser = { path = "crates/ipynb_parser" }
 jsonrpc = { path = "crates/jsonrpc" }
 languages = { path = "crates/languages" }
 local_control = { path = "crates/local_control" }
+warp_local_ai = { path = "crates/local_ai" }
 lsp = { path = "crates/lsp" }
 markdown_parser = { path = "crates/markdown_parser" }
 mcp = { path = "crates/mcp" }

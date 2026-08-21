@@ -121,6 +121,8 @@ fn subpage_display_names_are_correct() {
 const ALL_SECTIONS: &[SettingsSection] = &[
     SettingsSection::About,
     SettingsSection::Account,
+    #[cfg(feature = "local_only")]
+    SettingsSection::LocalAI,
     SettingsSection::BillingAndUsage,
     SettingsSection::Appearance,
     SettingsSection::Features,
@@ -147,6 +149,8 @@ const ALL_SECTIONS: &[SettingsSection] = &[
 fn all_sections_list_is_exhaustive() {
     fn is_listed(section: SettingsSection) -> bool {
         let known = match section {
+            #[cfg(feature = "local_only")]
+            SettingsSection::LocalAI => section,
             SettingsSection::About
             | SettingsSection::Account
             | SettingsSection::BillingAndUsage

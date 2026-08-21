@@ -20,6 +20,8 @@ mod input;
 mod input_mode;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 mod linux;
+#[cfg(feature = "local_only")]
+mod local_ai;
 mod local_control;
 pub mod macros;
 pub mod manager;
@@ -60,6 +62,8 @@ pub use input::*;
 pub use input_mode::*;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 pub use linux::*;
+#[cfg(feature = "local_only")]
+pub use local_ai::*;
 pub use local_control::*;
 pub use native_preference::*;
 pub use onboarding::*;

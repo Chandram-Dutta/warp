@@ -18,27 +18,42 @@ use warp_completer::parsers::hir::{Command, Expression, FlagType};
 #[cfg(feature = "local_fs")]
 use warp_core::command::ExitCode;
 use warp_core::features::FeatureFlag;
+#[cfg(feature = "local_only")]
+use warp_local_ai::{DirectNextCommandProvider, NextCommandProvider, ProviderConnection};
 #[cfg(feature = "local_fs")]
 use warpui::r#async::FutureExt;
 use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
 
+#[cfg(not(feature = "local_only"))]
+use super::generate_ai_input_suggestions::create_generate_ai_input_suggestions_request;
+#[cfg(feature = "local_only")]
+use super::generate_ai_input_suggestions::create_local_next_command_context;
+#[cfg(not(feature = "local_only"))]
+use super::generate_ai_input_suggestions::get_context_messages;
+#[cfg(feature = "local_only")]
+use super::generate_ai_input_suggestions::get_local_command_context_messages;
 use super::generate_ai_input_suggestions::{
     GenerateAIInputSuggestionsRequest, GenerateAIInputSuggestionsResponseV2, NextCommandContext,
-    create_generate_ai_input_suggestions_request, get_context_messages,
 };
 use crate::ai::block_context::BlockContext;
 use crate::ai_assistant::execution_context::WarpAiExecutionContext;
 use crate::completer::SessionContext;
 #[cfg(feature = "local_fs")]
 use crate::persistence::{database_file_path_for_current_scope, establish_ro_connection};
-use crate::server::server_api::{AIApiError, ServerApi};
+use crate::server::server_api::AIApiError;
+#[cfg(not(feature = "local_only"))]
+use crate::server::server_api::ServerApi;
+#[cfg(not(feature = "local_only"))]
 use crate::settings::AISettings;
+#[cfg(feature = "local_only")]
+use crate::settings::LocalAISettings;
 #[cfg(feature = "local_fs")]
 use crate::terminal::ShellHost;
 use crate::terminal::event::UserBlockCompleted;
 use crate::terminal::input::{CompleterData, IntelligentAutosuggestionResult};
 use crate::terminal::model::session::Sessions;
 use crate::terminal::{History, HistoryEntry, TerminalModel};
+#[cfg(not(feature = "local_only"))]
 use crate::workspaces::user_workspaces::UserWorkspaces;
 
 cfg_if::cfg_if! {
@@ -61,8 +76,67 @@ const NUM_ADDITIONAL_PREV_COMMAND_CONTEXT_LLM: usize = 2;
 const ARG_GENERATOR_VALIDATION_TIMEOUT: Duration = Duration::from_millis(150);
 
 pub fn is_next_command_enabled(app: &warpui::AppContext) -> bool {
-    AISettings::as_ref(app).is_intelligent_autosuggestions_enabled(app)
-        && UserWorkspaces::as_ref(app).is_next_command_enabled()
+    #[cfg(feature = "local_only")]
+    {
+        LocalAISettings::as_ref(app).is_next_command_enabled(app)
+    }
+    #[cfg(not(feature = "local_only"))]
+    {
+        AISettings::as_ref(app).is_intelligent_autosuggestions_enabled(app)
+            && UserWorkspaces::as_ref(app).is_next_command_enabled()
+    }
+}
+
+fn create_next_command_tracking_request(
+    next_command_context: NextCommandContext,
+    prefix: Option<String>,
+    block_context: Option<Box<BlockContext>>,
+    previous_result: Option<IntelligentAutosuggestionResult>,
+) -> GenerateAIInputSuggestionsRequest {
+    #[cfg(feature = "local_only")]
+    {
+        let _ = (next_command_context, block_context, previous_result);
+        GenerateAIInputSuggestionsRequest {
+            prefix,
+            ..Default::default()
+        }
+    }
+    #[cfg(not(feature = "local_only"))]
+    {
+        create_generate_ai_input_suggestions_request(
+            next_command_context,
+            prefix,
+            block_context,
+            previous_result,
+        )
+    }
+}
+
+#[cfg(feature = "local_only")]
+async fn generate_local_next_command_suggestion(
+    provider: &Arc<dyn NextCommandProvider>,
+    connection: Option<ProviderConnection>,
+    context: &NextCommandContext,
+    prefix: Option<&str>,
+) -> Result<GenerateAIInputSuggestionsResponseV2, AIApiError> {
+    let connection = connection.ok_or_else(|| {
+        AIApiError::Other(anyhow::anyhow!(
+            "Local Next Command provider is not configured"
+        ))
+    })?;
+    let suggestion = provider
+        .suggest(
+            connection,
+            create_local_next_command_context(context, prefix),
+        )
+        .await
+        .map_err(|error| AIApiError::Other(anyhow::Error::new(error)))?;
+    let command = suggestion.display_only_command().to_owned();
+    Ok(GenerateAIInputSuggestionsResponseV2 {
+        commands: vec![command.clone()],
+        ai_queries: Vec::new(),
+        most_likely_action: command,
+    })
 }
 
 /// Information about an autosuggestion that would have been made if purely based off history.
@@ -135,7 +209,10 @@ pub struct ZeroStateSuggestionInfo {
 pub struct NextCommandModel {
     sessions: ModelHandle<Sessions>,
     model: Arc<FairMutex<TerminalModel>>,
+    #[cfg(not(feature = "local_only"))]
     server_api: Arc<ServerApi>,
+    #[cfg(feature = "local_only")]
+    local_provider: Arc<dyn NextCommandProvider>,
     #[cfg(feature = "local_fs")]
     conn: Option<Arc<Mutex<SqliteConnection>>>,
 
@@ -159,7 +236,7 @@ impl NextCommandModel {
     pub fn new(
         sessions: ModelHandle<Sessions>,
         model: Arc<FairMutex<TerminalModel>>,
-        server_api: Arc<ServerApi>,
+        #[cfg(not(feature = "local_only"))] server_api: Arc<ServerApi>,
     ) -> Self {
         #[cfg(feature = "local_fs")]
         let conn = database_file_path_for_current_scope()
@@ -172,7 +249,10 @@ impl NextCommandModel {
         Self {
             sessions,
             model,
+            #[cfg(not(feature = "local_only"))]
             server_api,
+            #[cfg(feature = "local_only")]
+            local_provider: Arc::new(DirectNextCommandProvider::default()),
             #[cfg(feature = "local_fs")]
             conn,
             next_command_state: NextCommandSuggestionState::None,
@@ -282,6 +362,9 @@ impl NextCommandModel {
     ) -> NextCommandContext {
         #[cfg_attr(not(feature = "local_fs"), allow(unused_mut))]
         let mut history_contexts = vec![];
+        #[cfg(feature = "local_only")]
+        let context_messages = get_local_command_context_messages(terminal_model.clone(), 5);
+        #[cfg(not(feature = "local_only"))]
         let context_messages = get_context_messages(terminal_model.clone(), 5, 100, 200);
         #[cfg(feature = "local_fs")]
         if let Some(conn) = conn {
@@ -367,7 +450,12 @@ impl NextCommandModel {
         previous_result: Option<IntelligentAutosuggestionResult>,
         ctx: &mut ModelContext<Self>,
     ) {
+        #[cfg(not(feature = "local_only"))]
         let server_api = self.server_api.clone();
+        #[cfg(feature = "local_only")]
+        let local_provider = self.local_provider.clone();
+        #[cfg(feature = "local_only")]
+        let provider_connection = LocalAISettings::as_ref(ctx).provider_connection(ctx);
         let terminal_model = self.model.clone();
         let cached_next_command_context = self.cached_zerostate_next_command_context.clone();
 
@@ -459,7 +547,7 @@ impl NextCommandModel {
                             {
                                 // We construct the request even though we're not sending it to the server because
                                 // it might be used later for cycling next command suggestions.
-                                let request = create_generate_ai_input_suggestions_request(
+                                let request = create_next_command_tracking_request(
                                     next_command_context.clone(),
                                     prefix,
                                     block_context,
@@ -481,7 +569,7 @@ impl NextCommandModel {
                             }
                         }
                     }
-                    let request = create_generate_ai_input_suggestions_request(
+                    let request = create_next_command_tracking_request(
                         next_command_context.clone(),
                         prefix.clone(),
                         block_context,
@@ -490,8 +578,18 @@ impl NextCommandModel {
 
                     // For zero-state next command suggestions, return the result immediately.
                     let Some(prefix) = prefix else {
+                        #[cfg(feature = "local_only")]
+                        let response = generate_local_next_command_suggestion(
+                            &local_provider,
+                            provider_connection,
+                            &next_command_context,
+                            None,
+                        )
+                        .await;
+                        #[cfg(not(feature = "local_only"))]
+                        let response = server_api.generate_ai_input_suggestions(&request).await;
                         return (
-                            server_api.generate_ai_input_suggestions(&request).await,
+                            response,
                             request,
                             true,
                             start_ts_ms,
@@ -571,6 +669,15 @@ impl NextCommandModel {
                     };
 
                     // Only if we have no commands from history and no completions, use the LLM to generate a partial suggestion.
+                    #[cfg(feature = "local_only")]
+                    let response = generate_local_next_command_suggestion(
+                        &local_provider,
+                        provider_connection,
+                        &next_command_context,
+                        Some(&prefix),
+                    )
+                    .await;
+                    #[cfg(not(feature = "local_only"))]
                     let response = server_api.generate_ai_input_suggestions(&request).await;
                     (
                         response,
@@ -622,6 +729,11 @@ impl NextCommandModel {
                     if !response.most_likely_action.starts_with(prefix) {
                         // This is not expected to happen because the server applies its own filtering,
                         // but check just in case.
+                        #[cfg(feature = "local_only")]
+                        log::warn!(
+                            "Next Command provider returned a suggestion with the wrong prefix"
+                        );
+                        #[cfg(not(feature = "local_only"))]
                         log::warn!(
                             "Next command suggestion `{}` does not start with prefix `{}`.",
                             response.most_likely_action,
@@ -651,6 +763,9 @@ impl NextCommandModel {
                 ctx.emit(NextCommandModelEvent::NextCommandSuggestionReady);
             }
             Err(err) => {
+                #[cfg(feature = "local_only")]
+                log::debug!("Local Next Command provider did not return a suggestion: {err:#}");
+                #[cfg(not(feature = "local_only"))]
                 log::error!("Failed to generate Next Command suggestion: {err:#}");
             }
         };

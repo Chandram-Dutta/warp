@@ -4,6 +4,60 @@ use crate::terminal::model::terminal_model::BlockIndex;
 use crate::terminal::model::test_utils::create_test_block_with_grids;
 use crate::test_util::mock_blockgrid;
 
+#[cfg(feature = "local_only")]
+#[test]
+fn local_command_context_does_not_collect_terminal_output() {
+    let mut model = TerminalModel::mock(None, None);
+    model.simulate_block("git status", "terminal-output-must-not-be-collected");
+
+    let messages = get_local_command_context_messages(Arc::new(FairMutex::new(model)), 5);
+
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].input, "git status");
+    assert!(messages[0].output.is_empty());
+    assert!(messages[0].context.git_branch.is_none());
+    assert!(
+        !serde_json::to_string(&messages)
+            .unwrap()
+            .contains("terminal-output-must-not-be-collected")
+    );
+}
+
+#[cfg(feature = "local_only")]
+#[test]
+fn local_context_excludes_output_agent_and_codebase_fields() {
+    use crate::ai_assistant::execution_context::{WarpAiExecutionContext, WarpAiOsContext};
+
+    let context = NextCommandContext {
+        history_contexts: Vec::new(),
+        ai_execution_context: WarpAiExecutionContext {
+            os: WarpAiOsContext {
+                category: Some("os-context-must-not-be-sent".to_owned()),
+                distribution: None,
+            },
+            shell_name: "zsh".to_owned(),
+            shell_version: Some("5.9".to_owned()),
+        },
+        context_messages: vec![ContextMessageInput {
+            input: "git status".to_owned(),
+            output: "terminal-output-must-not-be-sent".to_owned(),
+            context: CommandContext {
+                pwd: Some("/tmp/project".to_owned()),
+                git_branch: Some("codebase-context-must-not-be-sent".to_owned()),
+                exit_code: 0,
+            },
+        }],
+    };
+
+    let serialized =
+        serde_json::to_string(&create_local_next_command_context(&context, Some("git "))).unwrap();
+    assert!(serialized.contains("git status"));
+    assert!(serialized.contains("/tmp/project"));
+    assert!(!serialized.contains("terminal-output-must-not-be-sent"));
+    assert!(!serialized.contains("codebase-context-must-not-be-sent"));
+    assert!(!serialized.contains("os-context-must-not-be-sent"));
+}
+
 #[test]
 fn test_merge_history_contexts_to_string_basic() {
     let mut all_commands = vec![];

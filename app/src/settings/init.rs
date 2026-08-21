@@ -28,6 +28,8 @@ use crate::banner::BannerState;
 use crate::drive::settings::WarpDriveSettings;
 use crate::resource_center::TipsCompleted;
 use crate::search::command_search::settings::CommandSearchSettings;
+#[cfg(feature = "local_only")]
+use crate::settings::{LocalAICredentials, LocalAISettings};
 use crate::terminal::BlockListSettings;
 use crate::terminal::alt_screen_reporting::AltScreenReporting;
 use crate::terminal::general_settings::GeneralSettings;
@@ -106,6 +108,11 @@ pub fn register_all_settings(ctx: &mut AppContext) {
     SemanticSelection::register(ctx);
     if FeatureFlag::WarpControlCli.is_enabled() {
         LocalControlSettings::register(ctx);
+    }
+    #[cfg(feature = "local_only")]
+    {
+        LocalAISettings::register(ctx);
+        LocalAICredentials::register(ctx);
     }
 
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]

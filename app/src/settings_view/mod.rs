@@ -13,6 +13,8 @@ use features_page::{FeaturesPageView, FeaturesSettingsPageEvent};
 use itertools::Itertools as _;
 use keybindings::KeybindingsView;
 use knowledge_page::{KnowledgePageAction, KnowledgePageEvent, KnowledgePageView};
+#[cfg(feature = "local_only")]
+use local_ai_page::LocalAISettingsPageView;
 use main_page::{MainPageAction, MainSettingsPageEvent, MainSettingsPageView};
 use mcp_servers_page::MCPServersSettingsPageView;
 use nav::{SettingsNavItem, SettingsUmbrella};
@@ -99,6 +101,8 @@ mod features_page;
 pub(crate) mod handoff_environment_creation_modal;
 pub mod keybindings;
 mod knowledge_page;
+#[cfg(feature = "local_only")]
+mod local_ai_page;
 mod main_page;
 pub mod mcp_servers;
 pub mod mcp_servers_page;
@@ -311,6 +315,8 @@ pub enum SettingsSection {
     About,
     #[default]
     Account,
+    #[cfg(feature = "local_only")]
+    LocalAI,
     BillingAndUsage,
     Appearance,
     Features,
@@ -343,6 +349,8 @@ use crate::util::bindings::custom_tag_to_keystroke;
 impl Display for SettingsSection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            #[cfg(feature = "local_only")]
+            SettingsSection::LocalAI => write!(f, "Next Command AI"),
             SettingsSection::BillingAndUsage => write!(f, "Billing and usage"),
             SettingsSection::Keybindings => write!(f, "Keyboard shortcuts"),
             SettingsSection::SharedBlocks => write!(f, "Shared blocks"),
@@ -380,6 +388,8 @@ impl SettingsSection {
         match self {
             Self::About => "About",
             Self::Account => "Account",
+            #[cfg(feature = "local_only")]
+            Self::LocalAI => "Next Command AI",
             Self::BillingAndUsage => "Billing and usage",
             Self::Appearance => "Appearance",
             Self::Features => "Features",
@@ -414,6 +424,8 @@ impl SettingsSection {
         let section = match slug {
             "About" => Self::About,
             "Account" => Self::Account,
+            #[cfg(feature = "local_only")]
+            "Next Command AI" | "LocalAI" => Self::LocalAI,
             "Billing and usage" => Self::BillingAndUsage,
             "Appearance" => Self::Appearance,
             "Features" => Self::Features,
@@ -1144,6 +1156,8 @@ macro_rules! update_page {
             SettingsPageViewHandle::Privacy(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Referrals(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Scripting(handle) => $ctx.update_view(handle, $update),
+            #[cfg(feature = "local_only")]
+            SettingsPageViewHandle::LocalAI(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::WarpAgent(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::AgentProfiles(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Knowledge(handle) => $ctx.update_view(handle, $update),
@@ -1314,6 +1328,8 @@ impl SettingsView {
         } else {
             None
         };
+        #[cfg(feature = "local_only")]
+        let local_ai_page_handle = ctx.add_typed_action_view(LocalAISettingsPageView::new);
 
         // Warp Drive page
         let warp_drive_page_handle =
@@ -1384,6 +1400,8 @@ impl SettingsView {
         if let Some(scripting_page_handle) = scripting_page_handle {
             settings_pages.push(SettingsPage::new(scripting_page_handle));
         }
+        #[cfg(feature = "local_only")]
+        settings_pages.push(SettingsPage::new(local_ai_page_handle));
 
         settings_pages.extend(vec![
             SettingsPage::new(mcp_servers_page_handle),
@@ -1432,6 +1450,8 @@ impl SettingsView {
             SettingsNavItem::Page(SettingsSection::Privacy),
             SettingsNavItem::Page(SettingsSection::About),
         ];
+        #[cfg(feature = "local_only")]
+        nav_items.insert(1, SettingsNavItem::Page(SettingsSection::LocalAI));
 
         if FeatureFlag::WarpControlCli.is_enabled() {
             let shared_blocks_index = nav_items
@@ -2115,6 +2135,8 @@ impl SettingsView {
             SettingsPageViewHandle::Warpify(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Referrals(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Scripting(v) => v.as_ref(app).should_render(app),
+            #[cfg(feature = "local_only")]
+            SettingsPageViewHandle::LocalAI(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::WarpAgent(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::AgentProfiles(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Knowledge(v) => v.as_ref(app).should_render(app),

@@ -280,6 +280,7 @@ use crate::ai::llms::{LLMId, LLMModelHost, LLMPreferences};
 use crate::ai::loading::shimmering_warp_loading_text;
 #[cfg(feature = "local_fs")]
 use crate::ai::persisted_workspace::PersistedWorkspace;
+use crate::ai::predict::next_command_model::is_next_command_enabled;
 use crate::ai::predict::prompt_suggestions::{
     has_pending_code_or_unit_test_prompt_suggestion,
     is_accept_prompt_suggestion_bound_to_cmd_enter,
@@ -15237,8 +15238,7 @@ impl TerminalView {
         if let Some(correction) = corrections.into_iter().next() {
             let rule = correction.rule_applied;
 
-            if AISettings::as_ref(ctx).is_intelligent_autosuggestions_enabled(ctx)
-                && UserWorkspaces::as_ref(ctx).is_next_command_enabled()
+            if is_next_command_enabled(ctx)
                 && COMMAND_CORRECTIONS_PREFERRED_DENYLIST.contains(rule.to_str())
             {
                 // Defer to Next Command if the rule is in the denylist.

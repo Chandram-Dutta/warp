@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
 use crate::ai_assistant::execution_context::WarpAiExecutionContext;
 use crate::terminal::TerminalModel;
 use crate::terminal::model::block::BlockState;
+#[cfg(feature = "local_only")]
+use warp_local_ai::{NextCommandContext as LocalNextCommandContext, RecentCommand};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandContext {
@@ -47,6 +49,33 @@ pub struct NextCommandContext {
     pub history_contexts: Vec<HistoryContext>,
     pub ai_execution_context: WarpAiExecutionContext,
     pub context_messages: Vec<ContextMessageInput>,
+}
+
+#[cfg(feature = "local_only")]
+pub fn create_local_next_command_context(
+    context: &NextCommandContext,
+    prefix: Option<&str>,
+) -> LocalNextCommandContext {
+    let working_directory = context
+        .context_messages
+        .last()
+        .and_then(|message| message.context.pwd.clone());
+    let recent_commands = context
+        .context_messages
+        .iter()
+        .map(|message| RecentCommand {
+            command: message.input.clone(),
+            working_directory: message.context.pwd.clone(),
+            exit_code: message.context.exit_code,
+        })
+        .collect();
+    LocalNextCommandContext::new(
+        context.ai_execution_context.shell_name.clone(),
+        context.ai_execution_context.shell_version.clone(),
+        working_directory,
+        prefix.unwrap_or_default(),
+        recent_commands,
+    )
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -156,6 +185,36 @@ pub fn get_context_messages(
             }
         })
         .collect::<Vec<ContextMessageInput>>()
+}
+
+#[cfg(feature = "local_only")]
+pub fn get_local_command_context_messages(
+    terminal_model: Arc<FairMutex<TerminalModel>>,
+    number_of_blocks: usize,
+) -> Vec<ContextMessageInput> {
+    let model = terminal_model.lock();
+    let filtered_blocks = model
+        .block_list()
+        .blocks()
+        .iter()
+        .filter(|block| {
+            block.state() == BlockState::DoneWithExecution && !block.is_in_band_command_block()
+        })
+        .collect::<Vec<_>>();
+    let first_block = filtered_blocks.len().saturating_sub(number_of_blocks);
+
+    filtered_blocks[first_block..]
+        .iter()
+        .map(|block| ContextMessageInput {
+            input: block.command_with_secrets_obfuscated(false),
+            output: String::new(),
+            context: CommandContext {
+                exit_code: block.exit_code().value() as i64,
+                pwd: block.pwd().cloned(),
+                git_branch: None,
+            },
+        })
+        .collect()
 }
 
 pub fn convert_context_messages_to_strings(

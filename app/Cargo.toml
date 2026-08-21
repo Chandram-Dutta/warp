@@ -245,6 +245,7 @@ warp_errors = { workspace = true, features = ["reqwest-errors"] }
 warp_editor.workspace = true
 warp_graphql.workspace = true
 warp_js = { workspace = true, optional = true }
+warp_local_ai = { workspace = true, optional = true }
 warp_search_core.workspace = true
 warp_server_auth.workspace = true
 warp_server_client.workspace = true
@@ -812,6 +813,7 @@ local_only = [
     "clear_autosuggestion_on_escape",
     "command_correction_key",
     "completions_v2",
+    "dep:warp_local_ai",
     "directory_tab_colors",
     "full_screen_zen_mode",
     "grouped_tabs",
