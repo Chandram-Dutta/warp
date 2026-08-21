@@ -48,7 +48,7 @@ use crate::pane_group::child_agent::{
     ErrorChildAgentConversationRequest, create_error_child_agent_conversation,
 };
 use crate::pane_group::{self, Direction, PaneGroup};
-use crate::persistence::{BlockCompleted, ModelEvent};
+use crate::persistence::{BlockCompleted, ModelEvent, TerminalModelEvent};
 #[cfg(not(target_family = "wasm"))]
 use crate::server::server_api::ServerApiProvider;
 use crate::session_management::SessionNavigationData;
@@ -195,7 +195,8 @@ impl TerminalPane {
         }
 
         if let Some(sender) = &self.model_event_sender {
-            let model_event = ModelEvent::DeleteBlocks(self.uuid.clone());
+            let model_event =
+                ModelEvent::Terminal(TerminalModelEvent::DeleteBlocks(self.uuid.clone()));
             if let Err(err) = sender.send(model_event) {
                 report_error!(
                     anyhow::Error::new(err).context("Error sending blocks deleted event"),
@@ -974,11 +975,13 @@ fn handle_terminal_view_event(
                             && AppExecutionMode::as_ref(ctx).can_save_session()
                             && let Some(sender) = &group.model_event_sender
                         {
-                            let block_completed_event = ModelEvent::SaveBlock(BlockCompleted {
-                                pane_id: pane.session_uuid(),
-                                block: block.clone(),
-                                is_local: *is_local,
-                            });
+                            let block_completed_event = ModelEvent::Terminal(
+                                TerminalModelEvent::SaveBlock(BlockCompleted {
+                                    pane_id: pane.session_uuid(),
+                                    block: block.clone(),
+                                    is_local: *is_local,
+                                }),
+                            );
 
                             let sender_clone = sender.clone();
                             let _ = ctx.spawn(

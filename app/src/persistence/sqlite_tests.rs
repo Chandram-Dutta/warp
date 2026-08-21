@@ -6,6 +6,7 @@ use ai::workspace::WorkspaceMetadata;
 use chrono::{Local, Utc};
 use cloud_object_persistence::to_cloud_object_permissions;
 use diesel::connection::SimpleConnection;
+use diesel::{QueryDsl, RunQueryDsl};
 use pathfinder_geometry::rect::RectF;
 use pathfinder_geometry::vector::Vector2F;
 use warp_core::features::FeatureFlag;
@@ -16,6 +17,7 @@ use super::{
     decode_path, deduplicate_events, encode_path, get_all_codebase_index_metadata,
     read_sqlite_data, save_app_state, save_codebase_index_metadata, setup_database, start_writer,
 };
+use crate::ai::agent::conversation::AIConversationId;
 use crate::app_state::{
     AppState, CodePaneSnapShot, CodePaneTabSnapshot, LeafContents, LeafSnapshot, PaneNodeSnapshot,
     TabGroupSnapshot, TabSnapshot, TerminalPaneSnapshot, WindowSnapshot,
@@ -27,8 +29,10 @@ use crate::notebooks::{CloudNotebook, CloudNotebookModel};
 use crate::persistence::model::ObjectPermissions;
 use crate::persistence::{
     BlockCompleted, ModelEvent, PersistedDataScope, PersistenceScope, StartedCommandMetadata,
+    TerminalModelEvent,
 };
 use crate::server::ids::{ClientId, ServerId};
+use crate::suggestions::ignored_suggestions_model::SuggestionType;
 use crate::tab::SelectedTabColor;
 use crate::terminal::ShellLaunchData;
 use crate::terminal::model::block::SerializedBlock;
@@ -159,11 +163,121 @@ fn sqlite_read_restores_app_state_and_codebase_metadata() {
     let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
         .expect("persisted data should load");
     let restored_app_state = restored
+        .terminal
         .app_state
         .expect("app state should be present for the full scope");
     assert_eq!(restored_app_state.windows.len(), 1);
-    assert_eq!(restored.codebase_indices.len(), 1);
-    assert_eq!(restored.codebase_indices[0].path, metadata.path);
+    assert_eq!(restored.ide.codebase_indices.len(), 1);
+    assert_eq!(restored.ide.codebase_indices[0].path, metadata.path);
+}
+
+#[test]
+fn terminal_local_scope_skips_agent_rows_and_preserves_terminal_state() {
+    let tempdir = tempfile::tempdir().expect("tempdir should be created");
+    let database_path = tempdir.path().join("warp.sqlite");
+    let mut conn = setup_database(&database_path).expect("database should initialize");
+
+    let conversation_id = AIConversationId::new();
+    let mut window = test_terminal_window_snapshot(false);
+    let PaneNodeSnapshot::Leaf(LeafSnapshot {
+        contents: LeafContents::Terminal(terminal),
+        ..
+    }) = &mut window.tabs[0].root
+    else {
+        panic!("test layout should contain a terminal");
+    };
+    terminal.llm_model_override = Some("legacy-agent-model".to_owned());
+    terminal.conversation_ids_to_restore = vec![conversation_id];
+    terminal.active_conversation_id = Some(conversation_id);
+
+    save_app_state(
+        &mut conn,
+        &AppState {
+            windows: vec![window],
+            active_window_index: Some(0),
+            block_lists: Default::default(),
+            running_mcp_servers: Default::default(),
+        },
+    )
+    .expect("app state should save");
+    insert_command(
+        &mut conn,
+        StartedCommandMetadata {
+            command: "printf local".to_owned(),
+            start_ts: Some(Local::now()),
+            pwd: Some("/tmp".to_owned()),
+            shell: Some("zsh".to_owned()),
+            username: None,
+            hostname: None,
+            session_id: Some(SessionId::from(7)),
+            git_branch: None,
+            cloud_workflow_id: None,
+            workflow_command: None,
+            is_agent_executed: false,
+        },
+    )
+    .expect("command should save");
+    add_ignored_suggestion(
+        &mut conn,
+        "dangerous suggestion".to_owned(),
+        SuggestionType::ShellCommand,
+    )
+    .expect("ignored suggestion should save");
+    conn.batch_execute(&format!(
+        "INSERT INTO agent_conversations \
+            (conversation_id, conversation_data, summary) \
+         VALUES ('{conversation_id}', '{{}}', NULL); \
+         INSERT INTO agent_tasks (conversation_id, task_id, task) \
+         VALUES ('{conversation_id}', 'malformed-task', X'FF');"
+    ))
+    .expect("historical Agent rows should save");
+
+    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::TerminalLocal)
+        .expect("terminal-local data should load without decoding Agent tasks");
+
+    assert_eq!(restored.terminal.command_history.len(), 1);
+    assert_eq!(restored.terminal.command_history[0].command, "printf local");
+    assert_eq!(
+        restored.terminal.ignored_suggestions,
+        vec![(
+            "dangerous suggestion".to_owned(),
+            SuggestionType::ShellCommand
+        )]
+    );
+    let restored_app_state = restored
+        .terminal
+        .app_state
+        .expect("terminal-local app state should be restored");
+    let PaneNodeSnapshot::Leaf(LeafSnapshot {
+        contents: LeafContents::Terminal(terminal),
+        ..
+    }) = &restored_app_state.windows[0].tabs[0].root
+    else {
+        panic!("restored layout should contain a terminal");
+    };
+    assert_eq!(terminal.cwd.as_deref(), Some("/tmp"));
+    assert!(terminal.llm_model_override.is_none());
+    assert!(terminal.conversation_ids_to_restore.is_empty());
+    assert!(terminal.active_conversation_id.is_none());
+    assert!(restored.agent.multi_agent_conversations.is_empty());
+    assert!(restored.cloud.cloud_objects.is_empty());
+    assert!(restored.ide.codebase_indices.is_empty());
+
+    let agent_row_count: i64 = crate::persistence::schema::agent_conversations::table
+        .count()
+        .get_result(&mut conn)
+        .expect("historical Agent rows should remain queryable");
+    assert_eq!(agent_row_count, 1);
+
+    #[cfg(feature = "local_only")]
+    assert!(
+        crate::persistence::agent::read_agent_conversation_by_id(
+            &mut conn,
+            &conversation_id.to_string()
+        )
+        .expect("local-only Agent loader should be inert")
+        .is_none()
+    );
 }
 
 /// Mirrors `init_db(&PersistenceScope::Tui)` in an isolated tempdir: the TUI
@@ -187,7 +301,7 @@ fn tui_database_in_tui_subdirectory_round_trips_data() {
     let writer = start_writer(conn, database_path.clone()).expect("writer should start");
     writer
         .sender
-        .send(ModelEvent::InsertCommand {
+        .send(ModelEvent::Terminal(TerminalModelEvent::InsertCommand {
             metadata: StartedCommandMetadata {
                 command: "ls".to_owned(),
                 start_ts: Some(Local::now()),
@@ -201,7 +315,7 @@ fn tui_database_in_tui_subdirectory_round_trips_data() {
                 workflow_command: None,
                 is_agent_executed: false,
             },
-        })
+        }))
         .expect("insert command event should send");
     writer
         .sender
@@ -216,7 +330,7 @@ fn tui_database_in_tui_subdirectory_round_trips_data() {
         .expect("user profile event should send");
     writer
         .sender
-        .send(ModelEvent::Terminate)
+        .send(ModelEvent::Terminal(TerminalModelEvent::Terminate))
         .expect("terminate event should send");
     writer.handle.join().expect("writer should terminate");
 
@@ -225,18 +339,18 @@ fn tui_database_in_tui_subdirectory_round_trips_data() {
     let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::TuiFrontend)
         .expect("persisted data should load");
     // The TUI data scope skips GUI session restoration...
-    assert!(restored.app_state.is_none());
+    assert!(restored.terminal.app_state.is_none());
     // ...but restores command history and shared data like creator profiles and
     // codebase index metadata.
-    assert_eq!(restored.command_history.len(), 1);
-    assert_eq!(restored.command_history[0].command, "ls");
-    assert_eq!(restored.user_profiles.len(), 1);
+    assert_eq!(restored.terminal.command_history.len(), 1);
+    assert_eq!(restored.terminal.command_history[0].command, "ls");
+    assert_eq!(restored.cloud.user_profiles.len(), 1);
     assert_eq!(
-        restored.user_profiles[0].display_name.as_deref(),
+        restored.cloud.user_profiles[0].display_name.as_deref(),
         Some("MCP Creator")
     );
-    assert_eq!(restored.codebase_indices.len(), 1);
-    assert_eq!(restored.codebase_indices[0].path, metadata.path);
+    assert_eq!(restored.ide.codebase_indices.len(), 1);
+    assert_eq!(restored.ide.codebase_indices[0].path, metadata.path);
 }
 
 #[test]
@@ -255,7 +369,7 @@ fn sqlite_writer_reuses_codebase_index_metadata_events() {
         .expect("upsert event should send");
     writer
         .sender
-        .send(ModelEvent::Terminate)
+        .send(ModelEvent::Terminal(TerminalModelEvent::Terminate))
         .expect("terminate event should send");
     writer.handle.join().expect("writer should terminate");
 
@@ -273,7 +387,7 @@ fn sqlite_writer_reuses_codebase_index_metadata_events() {
         .expect("delete event should send");
     writer
         .sender
-        .send(ModelEvent::Terminate)
+        .send(ModelEvent::Terminal(TerminalModelEvent::Terminate))
         .expect("terminate event should send");
     writer.handle.join().expect("writer should terminate");
 
@@ -327,11 +441,11 @@ fn test_deduplicate_snapshots() {
         ModelEvent::UpsertNotebook {
             notebook: local_notebook.clone(),
         },
-        ModelEvent::Snapshot(snapshot_1.clone()),
-        ModelEvent::SaveBlock(completed_block_1.clone()),
-        ModelEvent::Snapshot(snapshot_2.clone()),
-        ModelEvent::SaveBlock(completed_block_2.clone()),
-        ModelEvent::Snapshot(snapshot_3.clone()),
+        ModelEvent::Terminal(TerminalModelEvent::Snapshot(snapshot_1.clone())),
+        ModelEvent::Terminal(TerminalModelEvent::SaveBlock(completed_block_1.clone())),
+        ModelEvent::Terminal(TerminalModelEvent::Snapshot(snapshot_2.clone())),
+        ModelEvent::Terminal(TerminalModelEvent::SaveBlock(completed_block_2.clone())),
+        ModelEvent::Terminal(TerminalModelEvent::Snapshot(snapshot_3.clone())),
         ModelEvent::UpsertNotebook {
             notebook: local_notebook.clone(),
         },
@@ -345,13 +459,21 @@ fn test_deduplicate_snapshots() {
         &ModelEvent::UpsertNotebook { .. }
     ));
     // The first snapshot should have been filtered out.
-    assert!(matches!(&filtered_events[1], &ModelEvent::SaveBlock(_)));
+    assert!(matches!(
+        &filtered_events[1],
+        &ModelEvent::Terminal(TerminalModelEvent::SaveBlock(_))
+    ));
     // The second snapshot should have been filtered out.
-    assert!(matches!(&filtered_events[2], &ModelEvent::SaveBlock(_)));
+    assert!(matches!(
+        &filtered_events[2],
+        &ModelEvent::Terminal(TerminalModelEvent::SaveBlock(_))
+    ));
     // The third snapshot should be preserved.
     match &filtered_events[3] {
-        ModelEvent::Snapshot(snapshot) => assert_eq!(snapshot, &snapshot_3),
-        other => panic!("Expected ModelEvent::Snapshot, got {other:?}"),
+        ModelEvent::Terminal(TerminalModelEvent::Snapshot(snapshot)) => {
+            assert_eq!(snapshot, &snapshot_3)
+        }
+        other => panic!("Expected TerminalModelEvent::Snapshot, got {other:?}"),
     }
     assert!(matches!(
         &filtered_events[4],
@@ -361,14 +483,19 @@ fn test_deduplicate_snapshots() {
 
 #[test]
 fn test_deduplicate_no_snapshots() {
-    let original_events = vec![ModelEvent::SaveBlock(BlockCompleted {
-        pane_id: vec![1, 2, 3],
-        block: Default::default(),
-        is_local: true,
-    })];
+    let original_events = vec![ModelEvent::Terminal(TerminalModelEvent::SaveBlock(
+        BlockCompleted {
+            pane_id: vec![1, 2, 3],
+            block: Default::default(),
+            is_local: true,
+        },
+    ))];
     let filtered_events = deduplicate_events(original_events);
     assert_eq!(filtered_events.len(), 1);
-    assert!(matches!(&filtered_events[0], &ModelEvent::SaveBlock(_)));
+    assert!(matches!(
+        &filtered_events[0],
+        &ModelEvent::Terminal(TerminalModelEvent::SaveBlock(_))
+    ));
 }
 
 fn test_terminal_window_snapshot(vertical_tabs_panel_open: bool) -> WindowSnapshot {
@@ -439,6 +566,7 @@ fn test_sqlite_round_trips_vertical_tabs_panel_open() {
 
     let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
         .expect("app state should load")
+        .terminal
         .app_state
         .expect("app state should be present for the full scope");
 
@@ -473,6 +601,7 @@ fn test_sqlite_round_trips_window_team_uid() {
 
     let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
         .expect("app state should load")
+        .terminal
         .app_state
         .expect("app state should be present for the full scope");
 
@@ -541,6 +670,7 @@ fn test_sqlite_round_trips_custom_vertical_tabs_title() {
 
     let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
         .expect("app state should load")
+        .terminal
         .app_state
         .expect("app state should be present for the full scope");
 
@@ -620,6 +750,7 @@ fn test_sqlite_round_trips_code_pane_with_multiple_tabs() {
 
     let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
         .expect("app state should load")
+        .terminal
         .app_state
         .expect("app state should be present for the full scope");
 
@@ -745,6 +876,7 @@ fn test_sqlite_round_trips_tab_groups() {
 
     let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
         .expect("app state should load")
+        .terminal
         .app_state
         .expect("app state should be present for the full scope");
 
@@ -906,6 +1038,7 @@ fn test_sqlite_round_trips_pinned_state() {
 
     let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
         .expect("app state should load")
+        .terminal
         .app_state
         .expect("app state should be present for the full scope");
 
@@ -1084,6 +1217,7 @@ fn test_sqlite_drops_too_small_bounds_on_read() {
 
     let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
         .expect("app state should load")
+        .terminal
         .app_state
         .expect("app state should be present for the full scope");
 

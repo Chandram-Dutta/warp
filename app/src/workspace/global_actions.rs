@@ -11,7 +11,7 @@ use crate::ai::agent::AIAgentExchangeId;
 use crate::ai::agent::conversation::AIConversationId;
 use crate::app_state::get_app_state;
 use crate::network::NetworkStatus;
-use crate::persistence::ModelEvent;
+use crate::persistence::{ModelEvent, TerminalModelEvent};
 use crate::root_view::OpenPath;
 use crate::server::server_api::ServerApiProvider;
 use crate::terminal::alt_screen_reporting::AltScreenReporting;
@@ -167,7 +167,7 @@ fn save_app(_: &(), ctx: &mut AppContext) {
 
     // Only compute the app state if we're definitely going to use it.
     let app_state = get_app_state(ctx);
-    let event = ModelEvent::Snapshot(app_state);
+    let event = ModelEvent::Terminal(TerminalModelEvent::Snapshot(app_state));
 
     if let Err(err) = model_event_sender.send(event) {
         report_error!(anyhow::Error::new(err).context("Error trying to send model event"));

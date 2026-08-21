@@ -4,7 +4,7 @@ use std::sync::mpsc::SyncSender;
 use parking_lot::FairMutex;
 use warpui::{AppContext, ModelHandle, SingletonEntity};
 
-use crate::persistence::{ModelEvent, StartedCommandMetadata};
+use crate::persistence::{ModelEvent, StartedCommandMetadata, TerminalModelEvent};
 use crate::terminal::model::session::Sessions;
 use crate::terminal::view::ExecuteCommandEvent;
 use crate::terminal::{History, HistoryEntry, TerminalModel};
@@ -47,7 +47,7 @@ pub fn update_command_history(
 
     if let Some(sender) = model_event_sender {
         let sender_clone = sender.clone();
-        let insert_command_event = ModelEvent::InsertCommand {
+        let insert_command_event = ModelEvent::Terminal(TerminalModelEvent::InsertCommand {
             metadata: StartedCommandMetadata {
                 command: event.command.to_owned(),
                 start_ts: active_block.start_ts().copied(),
@@ -63,7 +63,7 @@ pub fn update_command_history(
                     .map(|git_branch| git_branch.to_owned()),
                 is_agent_executed,
             },
-        };
+        });
         ctx.background_executor()
             .spawn(async move {
                 // Sending over a sync sender can block the current thread, so we do this async.

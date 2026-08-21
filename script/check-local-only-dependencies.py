@@ -65,6 +65,11 @@ def package_dependencies(package: str) -> set[str]:
 def main() -> None:
     manifest = tomllib.loads((REPO_ROOT / "app" / "Cargo.toml").read_text())
     app_root = (REPO_ROOT / "app" / "src" / "lib.rs").read_text()
+    persistence_root = (REPO_ROOT / "app" / "src" / "persistence" / "mod.rs").read_text()
+    sqlite = (REPO_ROOT / "app" / "src" / "persistence" / "sqlite.rs").read_text()
+    restored_conversations = (
+        REPO_ROOT / "app" / "src" / "ai" / "restored_conversations.rs"
+    ).read_text()
     agent_mode = set(manifest["features"]["agent_mode"])
     agent_runtime = set(manifest["features"]["warp_agent_runtime"])
     local_only = set(manifest["features"]["local_only"])
@@ -81,6 +86,23 @@ def main() -> None:
     assert "agent_mode" not in local_only
     assert "warp_agent_runtime" not in local_only
     assert '#[cfg(all(feature = "local_only", feature = "warp_agent_runtime"))]' in app_root
+    assert (
+        '#[cfg(feature = "local_only")]\n'
+        "    let persisted_data_scope = persistence::PersistedDataScope::TerminalLocal;"
+        in app_root
+    )
+    assert "pub struct TerminalPersistedData" in persistence_root
+    assert "pub enum TerminalModelEvent" in persistence_root
+    terminal_scope_exit = sqlite.index(
+        "if matches!(data_scope, PersistedDataScope::TerminalLocal)"
+    )
+    agent_conversation_load = sqlite.index("read_agent_conversation_metadata(conn)?")
+    assert terminal_scope_exit < agent_conversation_load
+    assert (
+        '#[cfg(all(feature = "local_fs", not(feature = "local_only")))]\n'
+        "    db_connection: Option<Arc<Mutex<SqliteConnection>>>"
+        in restored_conversations
+    )
 
     local_only_packages = dependency_packages("local_only")
     unexpected = EXCLUDED_PACKAGES & local_only_packages

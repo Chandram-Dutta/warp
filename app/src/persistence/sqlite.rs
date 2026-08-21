@@ -64,8 +64,9 @@ use super::model::{
     TabGroup, WORKFLOW_PANE_KIND, Window, WorkspaceMetadata as WorkspaceMetadataModel,
 };
 use super::{
-    BlockCompleted, FinishedCommandMetadata, ModelEvent, PersistedData, PersistedDataScope,
-    PersistenceScope, StartedCommandMetadata, WriterHandles, schema,
+    AgentPersistedData, BlockCompleted, CloudPersistedData, FinishedCommandMetadata,
+    IdePersistedData, ModelEvent, PersistedData, PersistedDataScope, PersistenceScope,
+    StartedCommandMetadata, TerminalModelEvent, TerminalPersistedData, WriterHandles, schema,
 };
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
@@ -159,7 +160,8 @@ pub fn initialize(
             if let (Some(persisted_data), Some(writer_handles)) =
                 (persisted_data.as_mut(), writer_handles.as_ref())
             {
-                let backfills = std::mem::take(&mut persisted_data.conversation_summary_backfills);
+                let backfills =
+                    std::mem::take(&mut persisted_data.agent.conversation_summary_backfills);
                 if !backfills.is_empty() {
                     log::info!("Backfilling {} conversation summaries", backfills.len());
                     report_if_error!(
@@ -601,7 +603,7 @@ fn start_writer(conn: SqliteConnection, database_path: PathBuf) -> Result<Writer
                                 log::info!("Removed SQLite database");
                             }
                         }
-                        ModelEvent::Terminate => {
+                        ModelEvent::Terminal(TerminalModelEvent::Terminate) => {
                             log::info!("Shutting down SQLite writer thread");
                             return;
                         }
@@ -625,27 +627,16 @@ fn start_writer(conn: SqliteConnection, database_path: PathBuf) -> Result<Writer
 /// Events which affect the SQLite writer event loop _must_ instead be handled by the event loop itself:
 /// * [`ModelEvent::PauseAndRemoveDatabase`]
 /// * [`ModelEvent::ReconstructAndResume`]
-/// * [`ModelEvent::Terminate`]
+/// * [`TerminalModelEvent::Terminate`]
 fn handle_model_event(event: ModelEvent, connection: &mut SqliteConnection) -> anyhow::Result<()> {
     match event {
-        ModelEvent::PauseAndRemoveDatabase
-        | ModelEvent::ReconstructAndResume
-        | ModelEvent::Terminate => {
+        ModelEvent::PauseAndRemoveDatabase | ModelEvent::ReconstructAndResume => {
             panic!("Unhandled control-flow event {event:?}");
         }
-        ModelEvent::SaveBlock(BlockCompleted {
-            pane_id,
-            block,
-            is_local,
-        }) => save_block(connection, pane_id, &block, is_local).context("error saving block"),
-        ModelEvent::DeleteBlocks(pane_id) => {
-            // Delete the blocks even if the setting is off so users can still remove
-            // panes and have their data deleted locally.
-            delete_blocks(connection, pane_id).context("error deleting blocks")
+        ModelEvent::Terminal(TerminalModelEvent::Terminate) => {
+            panic!("Unhandled control-flow event {event:?}");
         }
-        ModelEvent::Snapshot(app_state) => {
-            save_app_state(connection, &app_state).context("error saving app state")
-        }
+        ModelEvent::Terminal(event) => handle_terminal_model_event(event, connection),
         ModelEvent::UpsertWorkflows(workflows) => {
             upsert_workflows(connection, workflows).context("error saving workflows")
         }
@@ -721,12 +712,6 @@ fn handle_model_event(event: ModelEvent, connection: &mut SqliteConnection) -> a
         ModelEvent::UpdateObjectMetadata { id, metadata } => {
             update_object_metadata(connection, id, metadata).context("error updating metadata")
         }
-        ModelEvent::InsertCommand { metadata } => {
-            insert_command(connection, metadata).context("error inserting command")
-        }
-        ModelEvent::UpdateFinishedCommand { metadata } => {
-            update_finished_command(connection, metadata).context("error updating finished command")
-        }
         ModelEvent::UpsertUserProfiles { profiles } => {
             upsert_user_profiles(connection, profiles).context("error updating user profiles")
         }
@@ -796,16 +781,6 @@ fn handle_model_event(event: ModelEvent, connection: &mut SqliteConnection) -> a
         ModelEvent::DeleteProjectRules { path } => {
             delete_project_rules(connection, path).context("error deleting project rules")
         }
-        ModelEvent::AddIgnoredSuggestion {
-            suggestion,
-            suggestion_type,
-        } => add_ignored_suggestion(connection, suggestion, suggestion_type)
-            .context("error adding ignored suggestion"),
-        ModelEvent::RemoveIgnoredSuggestion {
-            suggestion,
-            suggestion_type,
-        } => remove_ignored_suggestion(connection, suggestion, suggestion_type)
-            .context("error removing ignored suggestion"),
         ModelEvent::UpsertMCPServerInstallation {
             mcp_server_installation,
         } => upsert_mcp_server_installation(connection, mcp_server_installation),
@@ -838,6 +813,44 @@ fn handle_model_event(event: ModelEvent, connection: &mut SqliteConnection) -> a
             title,
         } => save_ai_document_content(connection, &document_id, &content, version, &title)
             .context("error saving AI document content"),
+    }
+}
+
+fn handle_terminal_model_event(
+    event: TerminalModelEvent,
+    connection: &mut SqliteConnection,
+) -> anyhow::Result<()> {
+    match event {
+        TerminalModelEvent::SaveBlock(BlockCompleted {
+            pane_id,
+            block,
+            is_local,
+        }) => save_block(connection, pane_id, &block, is_local).context("error saving block"),
+        TerminalModelEvent::DeleteBlocks(pane_id) => {
+            // Delete the blocks even if the setting is off so users can still remove
+            // panes and have their data deleted locally.
+            delete_blocks(connection, pane_id).context("error deleting blocks")
+        }
+        TerminalModelEvent::Snapshot(app_state) => {
+            save_app_state(connection, &app_state).context("error saving app state")
+        }
+        TerminalModelEvent::InsertCommand { metadata } => {
+            insert_command(connection, metadata).context("error inserting command")
+        }
+        TerminalModelEvent::UpdateFinishedCommand { metadata } => {
+            update_finished_command(connection, metadata).context("error updating finished command")
+        }
+        TerminalModelEvent::AddIgnoredSuggestion {
+            suggestion,
+            suggestion_type,
+        } => add_ignored_suggestion(connection, suggestion, suggestion_type)
+            .context("error adding ignored suggestion"),
+        TerminalModelEvent::RemoveIgnoredSuggestion {
+            suggestion,
+            suggestion_type,
+        } => remove_ignored_suggestion(connection, suggestion, suggestion_type)
+            .context("error removing ignored suggestion"),
+        TerminalModelEvent::Terminate => panic!("Unhandled control-flow event {event:?}"),
     }
 }
 
@@ -886,18 +899,22 @@ fn report_db_error(err_kind: &str, err: anyhow::Error, database_path: &Path) {
 }
 
 /// Filter a collection of model events to remove skippable events:
-/// * [`ModelEvent::Snapshot`] includes the entire app state, so we only need the latest one.
+/// * [`TerminalModelEvent::Snapshot`] includes the entire app state, so we only need the latest one.
 fn deduplicate_events(events: Vec<ModelEvent>) -> Vec<ModelEvent> {
     let last_snapshot = events
         .iter()
         .enumerate()
-        .rfind(|(_, event)| matches!(event, ModelEvent::Snapshot(_)));
+        .rfind(|(_, event)| matches!(event, ModelEvent::Terminal(TerminalModelEvent::Snapshot(_))));
     match last_snapshot {
         Some((last_snapshot_index, _)) => events
             .into_iter()
             .enumerate()
             .filter_map(|(index, event)| match event {
-                ModelEvent::Snapshot(_) if index < last_snapshot_index => None,
+                ModelEvent::Terminal(TerminalModelEvent::Snapshot(_))
+                    if index < last_snapshot_index =>
+                {
+                    None
+                }
                 event => Some(event),
             })
             .collect(),
@@ -2484,30 +2501,15 @@ fn read_sqlite_data(
 ) -> Result<PersistedData, Error> {
     if matches!(data_scope, PersistedDataScope::CodebaseIndicesOnly) {
         return Ok(PersistedData {
-            app_state: None,
-            cloud_objects: Default::default(),
-            workspaces: Default::default(),
-            current_workspace_uid: None,
-            command_history: Default::default(),
-            user_profiles: Default::default(),
-            time_of_next_force_object_refresh: None,
-            object_actions: Default::default(),
-            experiments: Default::default(),
-            ai_queries: Default::default(),
-            nld_prompts: Default::default(),
-            codebase_indices: get_all_codebase_index_metadata(conn)?,
-            workspace_language_servers: Default::default(),
-            multi_agent_conversations: Default::default(),
-            projects: Default::default(),
-            project_rules: Default::default(),
-            ignored_suggestions: Default::default(),
-            mcp_server_installations: Default::default(),
-            mcp_servers_to_restore: Default::default(),
-            conversation_summary_backfills: Default::default(),
+            ide: IdePersistedData {
+                codebase_indices: get_all_codebase_index_metadata(conn)?,
+                ..Default::default()
+            },
+            ..Default::default()
         });
     }
 
-    let app_state = if data_scope.session_restoration() {
+    let mut app_state = if data_scope.session_restoration() {
         use schema::windows::dsl::*;
 
         let active_window_id = schema::app::dsl::app
@@ -2705,8 +2707,11 @@ fn read_sqlite_data(
 
         let restored_blocks = get_all_restored_blocks(conn)?;
 
-        // Load active MCP servers from database
-        let running_mcp_servers = load_active_mcp_servers(conn)?;
+        let running_mcp_servers = if data_scope.agent_data() {
+            load_active_mcp_servers(conn)?
+        } else {
+            Default::default()
+        };
 
         Some(AppState {
             windows: saved_windows,
@@ -2717,6 +2722,26 @@ fn read_sqlite_data(
     } else {
         None
     };
+
+    if matches!(data_scope, PersistedDataScope::TerminalLocal) {
+        if let Some(app_state) = app_state.as_mut() {
+            strip_agent_restore_state(app_state);
+        }
+        let command_history = schema::commands::dsl::commands
+            .order(schema::commands::columns::id.desc())
+            .load_iter::<model::Command, DefaultLoadingMode>(conn)?
+            .filter_map(|command| command.ok())
+            .map(PersistedCommand::from)
+            .collect();
+        return Ok(PersistedData {
+            terminal: TerminalPersistedData {
+                app_state,
+                command_history,
+                ignored_suggestions: get_all_ignored_suggestions(conn)?,
+            },
+            ..Default::default()
+        });
+    }
 
     let read_context = load_cloud_object_read_context(conn, current_user_id)?;
     let mut cloud_objects: Vec<Box<dyn CloudObject>> = Vec::new();
@@ -2898,27 +2923,65 @@ fn read_sqlite_data(
     let mcp_servers_to_restore = get_mcp_servers_to_restore(conn)?;
 
     Ok(PersistedData {
-        app_state,
-        cloud_objects,
-        workspaces,
-        current_workspace_uid,
-        command_history: commands,
-        user_profiles,
-        time_of_next_force_object_refresh,
-        object_actions,
-        experiments: server_experiments,
-        ai_queries,
-        nld_prompts,
-        codebase_indices,
-        workspace_language_servers,
-        multi_agent_conversations,
-        projects,
-        project_rules,
-        ignored_suggestions,
-        mcp_server_installations,
-        mcp_servers_to_restore,
-        conversation_summary_backfills,
+        terminal: TerminalPersistedData {
+            app_state,
+            command_history: commands,
+            ignored_suggestions,
+        },
+        cloud: CloudPersistedData {
+            cloud_objects,
+            workspaces,
+            current_workspace_uid,
+            user_profiles,
+            time_of_next_force_object_refresh,
+            object_actions,
+            experiments: server_experiments,
+        },
+        agent: AgentPersistedData {
+            ai_queries,
+            nld_prompts,
+            multi_agent_conversations,
+            projects,
+            project_rules,
+            mcp_server_installations,
+            mcp_servers_to_restore,
+            conversation_summary_backfills,
+        },
+        ide: IdePersistedData {
+            codebase_indices,
+            workspace_language_servers,
+        },
     })
+}
+
+fn strip_agent_restore_state(app_state: &mut AppState) {
+    fn strip_node(node: &mut PaneNodeSnapshot) {
+        match node {
+            PaneNodeSnapshot::Branch(branch) => {
+                for (_, child) in &mut branch.children {
+                    strip_node(child);
+                }
+            }
+            PaneNodeSnapshot::Leaf(LeafSnapshot {
+                contents: LeafContents::Terminal(terminal),
+                ..
+            }) => {
+                terminal.llm_model_override = None;
+                terminal.active_profile_id = None;
+                terminal.conversation_ids_to_restore.clear();
+                terminal.active_conversation_id = None;
+            }
+            PaneNodeSnapshot::Leaf(_) => {}
+        }
+    }
+
+    app_state.running_mcp_servers.clear();
+    for window in &mut app_state.windows {
+        window.agent_management_filters = None;
+        for tab in &mut window.tabs {
+            strip_node(&mut tab.root);
+        }
+    }
 }
 
 impl From<StartedCommandMetadata> for model::NewCommand {

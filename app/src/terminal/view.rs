@@ -12601,15 +12601,16 @@ impl TerminalView {
                         });
 
                         let sender_clone = model_event_sender.clone();
-                        let update_finished_command_event =
-                            persistence::ModelEvent::UpdateFinishedCommand {
+                        let update_finished_command_event = persistence::ModelEvent::Terminal(
+                            persistence::TerminalModelEvent::UpdateFinishedCommand {
                                 metadata: FinishedCommandMetadata {
                                     exit_code,
                                     start_ts,
                                     completed_ts,
                                     session_id: active_session_id,
                                 },
-                            };
+                            },
+                        );
                         let _ = ctx.spawn(
                             async move {
                                 // Sending over a sync sender can block the current thread, so we do this async.

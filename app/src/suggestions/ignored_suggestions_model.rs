@@ -5,7 +5,7 @@ use warp_errors::report_error;
 use warpui::{Entity, ModelContext, SingletonEntity};
 
 use crate::GlobalResourceHandlesProvider;
-use crate::persistence::ModelEvent;
+use crate::persistence::{ModelEvent, TerminalModelEvent};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum SuggestionType {
@@ -75,10 +75,10 @@ impl IgnoredSuggestionsModel {
         let global_resource_handles = GlobalResourceHandlesProvider::as_ref(ctx).get();
 
         if let Some(sender) = &global_resource_handles.model_event_sender {
-            let event = ModelEvent::AddIgnoredSuggestion {
+            let event = ModelEvent::Terminal(TerminalModelEvent::AddIgnoredSuggestion {
                 suggestion,
                 suggestion_type,
-            };
+            });
             if let Err(err) = sender.send(event) {
                 report_error!(
                     anyhow::Error::new(err)
@@ -110,10 +110,10 @@ impl IgnoredSuggestionsModel {
         let global_resource_handles = GlobalResourceHandlesProvider::as_ref(ctx).get();
 
         if let Some(sender) = &global_resource_handles.model_event_sender {
-            let event = ModelEvent::RemoveIgnoredSuggestion {
+            let event = ModelEvent::Terminal(TerminalModelEvent::RemoveIgnoredSuggestion {
                 suggestion,
                 suggestion_type,
-            };
+            });
             if let Err(err) = sender.send(event) {
                 report_error!(
                     anyhow::Error::new(err)

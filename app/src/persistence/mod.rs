@@ -115,19 +115,28 @@ pub enum PersistedDataScope {
     TuiFrontend,
     /// The remote server daemon: only codebase index metadata.
     CodebaseIndicesOnly,
+    /// The local-only terminal: local windows, panes, blocks, command history,
+    /// and ignored shell suggestions. Cloud, Agent, MCP, and IDE rows remain
+    /// untouched in the database but are not loaded.
+    TerminalLocal,
 }
 
 impl PersistedDataScope {
     /// Window/tab/pane snapshots and restored blocks.
     fn session_restoration(self) -> bool {
-        matches!(self, PersistedDataScope::Full)
+        matches!(
+            self,
+            PersistedDataScope::Full | PersistedDataScope::TerminalLocal
+        )
     }
 
     /// Shell-command history consumed by both interactive front-ends.
     fn command_history(self) -> bool {
         matches!(
             self,
-            PersistedDataScope::Full | PersistedDataScope::TuiFrontend
+            PersistedDataScope::Full
+                | PersistedDataScope::TuiFrontend
+                | PersistedDataScope::TerminalLocal
         )
     }
 
@@ -139,6 +148,13 @@ impl PersistedDataScope {
     /// Pending object actions, which only the GUI consumes.
     fn gui_only_data(self) -> bool {
         matches!(self, PersistedDataScope::Full)
+    }
+
+    fn agent_data(self) -> bool {
+        matches!(
+            self,
+            PersistedDataScope::Full | PersistedDataScope::TuiFrontend
+        )
     }
 }
 
@@ -250,7 +266,7 @@ impl PersistenceWriter {
                 report_error!("Model event sender should exist if thread handle is set");
                 return;
             };
-            if let Err(err) = sender.send(ModelEvent::Terminate) {
+            if let Err(err) = sender.send(ModelEvent::Terminal(TerminalModelEvent::Terminate)) {
                 report_error!(
                     anyhow::Error::new(err).context("Could not terminate SQLite writer thread")
                 );
@@ -282,34 +298,53 @@ impl SingletonEntity for PersistenceWriter {}
 /// of user ID->SqliteData and get the respective AppState after the user logs in.
 ///
 /// For now, to address the global scoping here, we clear all persisted data on logout.
+#[derive(Default)]
 pub struct PersistedData {
+    pub terminal: TerminalPersistedData,
+    pub cloud: CloudPersistedData,
+    pub agent: AgentPersistedData,
+    pub ide: IdePersistedData,
+}
+
+#[derive(Default)]
+pub struct TerminalPersistedData {
     /// Session restoration data. `None` when the launch mode's
     /// [`PersistedDataScope`] excludes it entirely (the daemon).
     pub app_state: Option<AppState>,
+    pub command_history: Vec<PersistedCommand>,
+    pub ignored_suggestions: Vec<(String, SuggestionType)>,
+}
 
-    /// Shareable objects.
+#[derive(Default)]
+pub struct CloudPersistedData {
     pub cloud_objects: Vec<Box<dyn CloudObject>>,
     pub workspaces: Vec<WorkspaceMetadata>,
     pub current_workspace_uid: Option<WorkspaceUid>,
-    pub command_history: Vec<PersistedCommand>,
     pub user_profiles: Vec<UserProfileWithUID>,
     pub time_of_next_force_object_refresh: Option<DateTime<Utc>>,
     pub object_actions: Vec<ObjectAction>,
     pub experiments: Vec<ServerExperiment>,
+}
+
+#[derive(Default)]
+pub struct AgentPersistedData {
     pub ai_queries: Vec<PersistedAIInput>,
     pub nld_prompts: Vec<(String, DateTime<Local>)>,
-    pub codebase_indices: Vec<CodeWorkspaceMetadata>,
-    pub workspace_language_servers: HashMap<PathBuf, HashMap<LSPServerType, EnablementState>>,
     pub multi_agent_conversations: Vec<AgentConversation>,
     pub projects: Vec<Project>,
     pub project_rules: Vec<ProjectRulePath>,
-    pub ignored_suggestions: Vec<(String, SuggestionType)>,
     pub mcp_server_installations: HashMap<Uuid, TemplatableMCPServerInstallation>,
     pub mcp_servers_to_restore: Vec<Uuid>,
     /// Conversation summaries derived at read time for pre-`summary`-column
     /// rows. Drained by `sqlite::initialize`, which hands them to the writer
     /// thread for persistence; not intended for other consumers.
     pub conversation_summary_backfills: Vec<ConversationSummaryBackfill>,
+}
+
+#[derive(Default)]
+pub struct IdePersistedData {
+    pub codebase_indices: Vec<CodeWorkspaceMetadata>,
+    pub workspace_language_servers: HashMap<PathBuf, HashMap<LSPServerType, EnablementState>>,
 }
 
 #[derive(Clone, Debug)]
@@ -344,10 +379,31 @@ pub struct FinishedCommandMetadata {
 }
 
 #[derive(Debug)]
-pub enum ModelEvent {
+pub enum TerminalModelEvent {
     SaveBlock(BlockCompleted),
     DeleteBlocks(Vec<u8>),
     Snapshot(AppState),
+    InsertCommand {
+        metadata: StartedCommandMetadata,
+    },
+    UpdateFinishedCommand {
+        metadata: FinishedCommandMetadata,
+    },
+    AddIgnoredSuggestion {
+        suggestion: String,
+        suggestion_type: SuggestionType,
+    },
+    RemoveIgnoredSuggestion {
+        suggestion: String,
+        suggestion_type: SuggestionType,
+    },
+    /// Close the SQLite writer thread when the app is about to quit.
+    Terminate,
+}
+
+#[derive(Debug)]
+pub enum ModelEvent {
+    Terminal(TerminalModelEvent),
     UpsertWorkflows(Vec<CloudWorkflow>),
     UpsertNotebooks(Vec<CloudNotebook>),
     UpsertFolders(Vec<CloudFolder>),
@@ -390,12 +446,6 @@ pub enum ModelEvent {
         id: String,
         metadata: CloudObjectMetadata,
     },
-    InsertCommand {
-        metadata: StartedCommandMetadata,
-    },
-    UpdateFinishedCommand {
-        metadata: FinishedCommandMetadata,
-    },
     UpsertUserProfiles {
         profiles: Vec<UserProfileWithUID>,
     },
@@ -418,8 +468,6 @@ pub enum ModelEvent {
     SyncObjectActions {
         actions_to_sync: Vec<ObjectAction>,
     },
-    /// Close the SQLite writer thread when the app is about to quit.
-    Terminate,
     UpsertAIQuery {
         query: Arc<PersistedAIInput>,
     },
@@ -465,14 +513,6 @@ pub enum ModelEvent {
     },
     DeleteProjectRules {
         path: Vec<PathBuf>,
-    },
-    AddIgnoredSuggestion {
-        suggestion: String,
-        suggestion_type: SuggestionType,
-    },
-    RemoveIgnoredSuggestion {
-        suggestion: String,
-        suggestion_type: SuggestionType,
     },
     UpsertMCPServerInstallation {
         mcp_server_installation: TemplatableMCPServerInstallation,

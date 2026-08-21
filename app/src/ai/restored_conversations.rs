@@ -1,10 +1,10 @@
 //! A singleton model for restoring conversations by ID across terminal views.
 
 use std::collections::{HashMap, HashSet};
-#[cfg(feature = "local_fs")]
+#[cfg(all(feature = "local_fs", not(feature = "local_only")))]
 use std::sync::{Arc, Mutex};
 
-#[cfg(feature = "local_fs")]
+#[cfg(all(feature = "local_fs", not(feature = "local_only")))]
 use diesel::SqliteConnection;
 use warpui::{Entity, SingletonEntity};
 
@@ -13,16 +13,13 @@ use crate::ai::agent::conversation::{AIConversation, AIConversationId};
 use crate::ai::blocklist::history_model::convert_persisted_conversation_to_ai_conversation_with_metadata;
 #[cfg(test)]
 use crate::persistence::model::AgentConversation;
-#[cfg(feature = "local_fs")]
+#[cfg(all(feature = "local_fs", not(feature = "local_only")))]
 use crate::persistence::{database_file_path_for_current_scope, establish_ro_connection};
 
 /// Singleton model that restores agent conversations on demand.
 ///
-/// Startup only loads conversation metadata, so the full task payloads are
-/// loaded lazily from the local database the first time a consumer (e.g. pane
-/// restoration) asks for a conversation. Consuming restored data this way
-/// avoids piping it from the root view down to the terminal view(s) that
-/// require it.
+/// Normal product builds load full task payloads lazily from the local
+/// database. The local-only product never opens the Agent conversation store.
 pub struct RestoredAgentConversations {
     /// Conversations already loaded (or test-seeded) but not yet taken.
     conversations: HashMap<AIConversationId, AIConversation>,
@@ -30,13 +27,13 @@ pub struct RestoredAgentConversations {
     /// historical take-once semantics now that the backing database can
     /// otherwise serve the same conversation repeatedly.
     taken: HashSet<AIConversationId>,
-    #[cfg(feature = "local_fs")]
+    #[cfg(all(feature = "local_fs", not(feature = "local_only")))]
     db_connection: Option<Arc<Mutex<SqliteConnection>>>,
 }
 
 impl RestoredAgentConversations {
     pub fn new() -> Self {
-        #[cfg(feature = "local_fs")]
+        #[cfg(all(feature = "local_fs", not(feature = "local_only")))]
         let db_connection = database_file_path_for_current_scope()
             .to_str()
             .and_then(|db_url| {
@@ -48,7 +45,7 @@ impl RestoredAgentConversations {
         Self {
             conversations: HashMap::new(),
             taken: HashSet::new(),
-            #[cfg(feature = "local_fs")]
+            #[cfg(all(feature = "local_fs", not(feature = "local_only")))]
             db_connection,
         }
     }
@@ -74,14 +71,14 @@ impl RestoredAgentConversations {
         Self {
             conversations: conversations_by_id,
             taken: HashSet::new(),
-            #[cfg(feature = "local_fs")]
+            #[cfg(all(feature = "local_fs", not(feature = "local_only")))]
             db_connection: None,
         }
     }
 
     /// Loads and converts a conversation from the local database.
     fn load_from_db(&self, id: &AIConversationId) -> Option<AIConversation> {
-        #[cfg(feature = "local_fs")]
+        #[cfg(all(feature = "local_fs", not(feature = "local_only")))]
         {
             let conn = self.db_connection.clone()?;
             let mut conn = conn.lock().ok()?;
@@ -99,7 +96,7 @@ impl RestoredAgentConversations {
                 }
             }
         }
-        #[cfg(not(feature = "local_fs"))]
+        #[cfg(any(not(feature = "local_fs"), feature = "local_only"))]
         {
             let _ = id;
             None

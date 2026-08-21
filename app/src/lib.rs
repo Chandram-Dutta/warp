@@ -1635,6 +1635,9 @@ pub(crate) fn initialize_app(
     };
     // Only read the subsets of persisted data this launch mode actually
     // consumes; loading everything is expensive on large databases.
+    #[cfg(feature = "local_only")]
+    let persisted_data_scope = persistence::PersistedDataScope::TerminalLocal;
+    #[cfg(not(feature = "local_only"))]
     let persisted_data_scope = match launch_mode {
         LaunchMode::Tui { .. } => persistence::PersistedDataScope::TuiFrontend,
         LaunchMode::RemoteServerDaemon { .. } => {
@@ -1703,25 +1706,25 @@ pub(crate) fn initialize_app(
     ) = sqlite_data
         .map(|sqlite_data| {
             (
-                sqlite_data.cloud_objects,
-                sqlite_data.workspaces,
-                sqlite_data.current_workspace_uid,
-                sqlite_data.app_state,
-                sqlite_data.command_history,
-                sqlite_data.user_profiles,
-                sqlite_data.time_of_next_force_object_refresh,
-                sqlite_data.object_actions,
-                sqlite_data.experiments,
-                sqlite_data.ai_queries,
-                sqlite_data.nld_prompts,
-                sqlite_data.codebase_indices,
-                sqlite_data.workspace_language_servers,
-                sqlite_data.multi_agent_conversations,
-                sqlite_data.projects,
-                sqlite_data.project_rules,
-                sqlite_data.ignored_suggestions,
-                sqlite_data.mcp_server_installations,
-                sqlite_data.mcp_servers_to_restore,
+                sqlite_data.cloud.cloud_objects,
+                sqlite_data.cloud.workspaces,
+                sqlite_data.cloud.current_workspace_uid,
+                sqlite_data.terminal.app_state,
+                sqlite_data.terminal.command_history,
+                sqlite_data.cloud.user_profiles,
+                sqlite_data.cloud.time_of_next_force_object_refresh,
+                sqlite_data.cloud.object_actions,
+                sqlite_data.cloud.experiments,
+                sqlite_data.agent.ai_queries,
+                sqlite_data.agent.nld_prompts,
+                sqlite_data.ide.codebase_indices,
+                sqlite_data.ide.workspace_language_servers,
+                sqlite_data.agent.multi_agent_conversations,
+                sqlite_data.agent.projects,
+                sqlite_data.agent.project_rules,
+                sqlite_data.terminal.ignored_suggestions,
+                sqlite_data.agent.mcp_server_installations,
+                sqlite_data.agent.mcp_servers_to_restore,
             )
         })
         .unwrap_or_else(|| {

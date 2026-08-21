@@ -6,13 +6,18 @@ use diesel::associations::HasTable;
 use diesel::prelude::*;
 use diesel::result::Error;
 use prost::Message;
+#[cfg(not(feature = "local_only"))]
 use warp_errors::report_error;
 use warp_multi_agent_api as api;
 
 use super::ConversationSummaryBackfill;
 use super::agent_protocol::agent_conversation_summary_from_tasks;
-use super::model::{AgentConversation, AgentConversationData, AgentConversationSummary};
-use crate::persistence::model::{AgentConversationRecord, AgentTaskRecord};
+#[cfg(not(feature = "local_only"))]
+use super::model::AgentConversationSummary;
+use super::model::{AgentConversation, AgentConversationData};
+use crate::persistence::model::AgentConversationRecord;
+#[cfg(not(feature = "local_only"))]
+use crate::persistence::model::AgentTaskRecord;
 use crate::persistence::schema::{self, agent_conversations, agent_tasks};
 
 #[derive(Debug, Insertable, AsChangeset)]
@@ -246,6 +251,7 @@ pub(super) fn select_conversations_to_evict(
 /// here from their own task snapshot (the one-time slow path); those
 /// derivations are returned as backfills so the writer thread can persist
 /// them and keep subsequent startups metadata-only.
+#[cfg(not(feature = "local_only"))]
 pub(super) fn read_agent_conversation_metadata(
     conn: &mut SqliteConnection,
 ) -> Result<(Vec<AgentConversation>, Vec<ConversationSummaryBackfill>), diesel::result::Error> {
@@ -355,6 +361,7 @@ pub(super) fn backfill_conversation_summaries(
 }
 
 /// Read a single agent conversation by its ID, including decoded tasks.
+#[cfg(not(feature = "local_only"))]
 pub(crate) fn read_agent_conversation_by_id(
     conn: &mut SqliteConnection,
     conversation_id_str: &str,
@@ -391,6 +398,23 @@ pub(crate) fn read_agent_conversation_by_id(
         conversation: conversation_record,
         tasks: decoded_tasks,
     }))
+}
+
+#[cfg(feature = "local_only")]
+pub(super) fn read_agent_conversation_metadata(
+    conn: &mut SqliteConnection,
+) -> Result<(Vec<AgentConversation>, Vec<ConversationSummaryBackfill>), diesel::result::Error> {
+    let _ = conn;
+    Ok(Default::default())
+}
+
+#[cfg(feature = "local_only")]
+pub(crate) fn read_agent_conversation_by_id(
+    conn: &mut SqliteConnection,
+    conversation_id: &str,
+) -> Result<Option<AgentConversation>, diesel::result::Error> {
+    let _ = (conn, conversation_id);
+    Ok(None)
 }
 
 pub(super) fn delete_agent_conversations(
