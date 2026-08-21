@@ -7,6 +7,9 @@ use warp_multi_agent_api::{self as api, ResponseEvent};
 use crate::ai::agent::conversation::AIConversation;
 use crate::ai::agent::task::TaskId;
 use crate::ai::agent::{AIAgentExchange, MessageId};
+use crate::persistence::agent_protocol::{
+    ModelTokenUsageProtoExt as _, context_window_segment_to_proto, tool_usage_metadata_to_proto,
+};
 
 // Reconstructs all response events from conversations for use in session sharing.
 // These messages are used to replay conversations as if they were happening live.
@@ -178,7 +181,9 @@ fn create_finished_event_from_conversation(conversation: &AIConversation) -> Res
                 .iter()
                 .map(|u| u.to_proto_combined())
                 .collect(),
-            tool_usage_metadata: Some(conversation.tool_usage_metadata().into()),
+            tool_usage_metadata: Some(tool_usage_metadata_to_proto(
+                conversation.tool_usage_metadata(),
+            )),
             warp_token_usage: conversation
                 .token_usage()
                 .iter()
@@ -197,7 +202,7 @@ fn create_finished_event_from_conversation(conversation: &AIConversation) -> Res
             context_window_segments: conversation
                 .context_window_segments()
                 .iter()
-                .map(Into::into)
+                .map(context_window_segment_to_proto)
                 .collect(),
         },
     );

@@ -9,7 +9,8 @@ cfg_if::cfg_if! {
     }
 }
 
-pub use persistence::model;
+mod agent_protocol;
+pub mod model;
 #[cfg_attr(not(feature = "local_fs"), expect(unused_imports))]
 pub use persistence::schema;
 

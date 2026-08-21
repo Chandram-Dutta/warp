@@ -5,8 +5,6 @@ use std::collections::{HashMap, HashSet};
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize};
-use warp_multi_agent_api::response_event::stream_finished;
-use warp_multi_agent_api::{self as api};
 
 use super::schema::{
     active_mcp_servers, agent_conversations, agent_tasks, ai_document_panes, ai_memory_panes,
@@ -949,95 +947,6 @@ pub struct NewAIDocumentPane {
     pub title: Option<String>,
 }
 
-#[derive(Debug, PartialEq, Default, Clone)]
-pub struct AgentConversation {
-    pub conversation: AgentConversationRecord,
-    pub tasks: Vec<api::Task>,
-}
-
-impl AgentConversation {
-    /// Returns `true` if the conversation is restorable.
-    ///
-    /// See [`tasks_are_restorable`] for the exact rules.
-    pub fn is_restorable(&self) -> bool {
-        tasks_are_restorable(self.tasks.iter())
-    }
-}
-
-/// Returns `true` if a conversation with the given task snapshot is
-/// restorable.
-///
-/// A conversation is restorable if:
-/// - It contains a single task or fewer, OR
-/// - It has exactly one parentless (root) task, OR
-/// - It has multiple parentless tasks but exactly one of them has
-///   non-empty `messages`. This permits restoring conversations whose
-///   persisted state was corrupted by the pre-QUALITY-774 optimistic-root
-///   writer bug, where a stub root row co-existed with the real server
-///   root row. `AIConversation::new_restored` deterministically picks
-///   the real root in that shape via its restore-side dedupe.
-///
-/// Non-root tasks need not be validated here: any task that does not
-/// match the parentless predicate has, by construction, a non-empty
-/// `parent_task_id`.
-pub fn tasks_are_restorable<'a>(tasks: impl IntoIterator<Item = &'a api::Task>) -> bool {
-    let tasks: Vec<&api::Task> = tasks.into_iter().collect();
-    if tasks.len() <= 1 {
-        return true;
-    }
-
-    // Find parentless (root) tasks - tasks with no dependencies or with an
-    // empty parent_task_id.
-    let root_tasks: Vec<_> = tasks
-        .iter()
-        .filter(|task| {
-            task.dependencies
-                .as_ref()
-                .map(|deps| deps.parent_task_id.is_empty())
-                .unwrap_or(true)
-        })
-        .collect();
-
-    match root_tasks.len() {
-        // Malformed: no parentless task means no root to anchor restore on.
-        0 => false,
-        // Single root: the normal happy path.
-        1 => true,
-        // Multi-root: only permit the specific [stub + real] shape
-        // produced by the pre-QUALITY-774 optimistic-root writer bug,
-        // where exactly one parentless row carries the real conversation
-        // content. The restore-side dedupe in
-        // `AIConversation::new_restored` will pick that real root.
-        _ => root_tasks.iter().filter(|t| !t.messages.is_empty()).count() == 1,
-    }
-}
-
-/// Returns the working directory of the first message in the task that
-/// carries directory context, if any.
-pub fn api_task_initial_working_directory(task: &api::Task) -> Option<String> {
-    task.messages
-        .iter()
-        .find_map(|message| {
-            message.message.as_ref().and_then(|content| {
-                let context = match content {
-                    api::message::Message::UserQuery(user_query) => user_query.context.as_ref(),
-                    api::message::Message::ToolCallResult(tool_call_result) => {
-                        tool_call_result.context.as_ref()
-                    }
-                    api::message::Message::SystemQuery(system_query) => {
-                        system_query.context.as_ref()
-                    }
-                    _ => None,
-                };
-
-                context
-                    .and_then(|ctx| ctx.directory.as_ref())
-                    .map(|dir| dir.pwd.clone())
-            })
-        })
-        .filter(|pwd| !pwd.is_empty())
-}
-
 /// Task-derived conversation metadata, serialized into the `summary` column
 /// of `agent_conversations` at write time.
 ///
@@ -1057,84 +966,13 @@ pub struct AgentConversationSummary {
     /// The working directory of the first message carrying directory context.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initial_working_directory: Option<String>,
-    /// Mirror of [`tasks_are_restorable`] over the persisted task snapshot.
+    /// Whether the Agent runtime can restore the persisted task snapshot.
     pub is_restorable: bool,
     /// True when the conversation only contains passive `AutoCodeDiff` system
     /// queries and no user queries; such conversations are hidden from the
     /// history list.
     #[serde(default, skip_serializing_if = "is_false")]
     pub is_unlisted_auto_code_diff: bool,
-}
-
-impl AgentConversationSummary {
-    /// Derives the summary from a conversation's full task snapshot.
-    pub fn from_tasks<'a>(tasks: impl IntoIterator<Item = &'a api::Task>) -> Self {
-        let tasks: Vec<&api::Task> = tasks.into_iter().collect();
-
-        let mut has_user_query = false;
-        let mut has_auto_code_diff = false;
-        for task in &tasks {
-            for message in &task.messages {
-                match &message.message {
-                    Some(api::message::Message::UserQuery(_)) => {
-                        has_user_query = true;
-                    }
-                    Some(api::message::Message::SystemQuery(sys)) => {
-                        if let Some(api::message::system_query::Type::AutoCodeDiff(_)) = &sys.r#type
-                        {
-                            has_auto_code_diff = true;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        let root_task = tasks.iter().find(|task| task.dependencies.is_none());
-
-        // The first user query in the root task (or, for a passive code
-        // diff, the summary of the diff).
-        let initial_query = root_task
-            .map(|task| {
-                task.messages
-                    .iter()
-                    .find_map(|msg| match &msg.message {
-                        Some(api::message::Message::UserQuery(user_query)) => {
-                            Some(user_query.query.clone())
-                        }
-                        Some(api::message::Message::ToolCall(tool_call)) => {
-                            match tool_call.tool.as_ref()? {
-                                api::message::tool_call::Tool::ApplyFileDiffs(diff_suggestion) => {
-                                    Some(diff_suggestion.summary.clone())
-                                }
-                                _ => None,
-                            }
-                        }
-                        _ => None,
-                    })
-                    .unwrap_or_default()
-            })
-            .unwrap_or_default();
-
-        // The title is the root task description, falling back to
-        // `initial_query` when the description is empty.
-        let title = root_task
-            .map(|task| task.description.clone())
-            .filter(|desc| !desc.is_empty())
-            .unwrap_or_else(|| initial_query.clone());
-
-        let initial_working_directory = tasks
-            .iter()
-            .find_map(|task| api_task_initial_working_directory(task));
-
-        Self {
-            initial_query,
-            title,
-            initial_working_directory,
-            is_restorable: tasks_are_restorable(tasks.iter().copied()),
-            is_unlisted_auto_code_diff: has_auto_code_diff && !has_user_query,
-        }
-    }
 }
 
 #[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq, Default)]
@@ -1267,92 +1105,9 @@ pub struct ModelTokenUsage {
     pub custom_endpoint_token_usage_by_category: HashMap<TokenUsageCategory, u32>,
 }
 
-impl ModelTokenUsage {
-    #[allow(deprecated)]
-    fn to_proto_usage(
-        &self,
-        total_tokens: u32,
-        usage_by_category: &HashMap<TokenUsageCategory, u32>,
-    ) -> Option<(String, stream_finished::ModelTokenUsage)> {
-        if total_tokens == 0 {
-            return None;
-        }
-        Some((
-            self.model_id.clone(),
-            stream_finished::ModelTokenUsage {
-                model_id: self.model_id.clone(),
-                total_tokens,
-                token_usage_by_category: usage_by_category
-                    .iter()
-                    .map(|(cat, tokens)| (cat.clone(), *tokens))
-                    .collect(),
-            },
-        ))
-    }
-
-    pub fn to_proto_warp_usage(&self) -> Option<(String, stream_finished::ModelTokenUsage)> {
-        self.to_proto_usage(self.warp_tokens, &self.warp_token_usage_by_category)
-    }
-
-    pub fn to_proto_byok_usage(&self) -> Option<(String, stream_finished::ModelTokenUsage)> {
-        self.to_proto_usage(self.byok_tokens, &self.byok_token_usage_by_category)
-    }
-    #[allow(deprecated)]
-    pub fn to_proto_custom_endpoint_usage(
-        &self,
-    ) -> Option<(String, stream_finished::ModelTokenUsage)> {
-        if self.custom_endpoint_tokens == 0 {
-            return None;
-        }
-        Some((
-            self.model_id.clone(),
-            stream_finished::ModelTokenUsage {
-                model_id: self.model_id.clone(),
-                total_tokens: self.custom_endpoint_tokens,
-                token_usage_by_category: self
-                    .custom_endpoint_token_usage_by_category
-                    .iter()
-                    .map(|(cat, tokens)| (cat.clone(), *tokens))
-                    .collect(),
-            },
-        ))
-    }
-
-    #[allow(deprecated)]
-    pub fn to_proto_combined(&self) -> stream_finished::ModelTokenUsage {
-        stream_finished::ModelTokenUsage {
-            model_id: self.model_id.clone(),
-            total_tokens: self.warp_tokens + self.byok_tokens + self.custom_endpoint_tokens,
-            token_usage_by_category: self
-                .warp_token_usage_by_category
-                .iter()
-                .chain(self.byok_token_usage_by_category.iter())
-                .chain(self.custom_endpoint_token_usage_by_category.iter())
-                .fold(HashMap::new(), |mut acc, (cat, tokens)| {
-                    *acc.entry(cat.clone()).or_insert(0) += tokens;
-                    acc
-                }),
-        }
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct ToolCallStats {
     pub count: i32,
-}
-
-impl From<&ToolCallStats> for stream_finished::ToolCallStats {
-    fn from(stats: &ToolCallStats) -> Self {
-        Self { count: stats.count }
-    }
-}
-
-impl From<&stream_finished::ToolCallStats> for ToolCallStats {
-    fn from(tool_call_stats: &stream_finished::ToolCallStats) -> Self {
-        Self {
-            count: tool_call_stats.count,
-        }
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -1361,52 +1116,12 @@ pub struct RunCommandStats {
     pub commands_executed: i32,
 }
 
-impl From<&RunCommandStats> for stream_finished::RunCommandStats {
-    fn from(stats: &RunCommandStats) -> Self {
-        Self {
-            count: stats.count,
-            command_executed: stats.commands_executed,
-        }
-    }
-}
-
-impl From<&stream_finished::RunCommandStats> for RunCommandStats {
-    fn from(stats: &stream_finished::RunCommandStats) -> Self {
-        Self {
-            count: stats.count,
-            commands_executed: stats.command_executed,
-        }
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct ApplyFileDiffStats {
     pub count: i32,
     pub lines_added: i32,
     pub lines_removed: i32,
     pub files_changed: i32,
-}
-
-impl From<&ApplyFileDiffStats> for stream_finished::ApplyFileDiffStats {
-    fn from(stats: &ApplyFileDiffStats) -> Self {
-        Self {
-            count: stats.count,
-            lines_added: stats.lines_added,
-            lines_removed: stats.lines_removed,
-            files_changed: stats.files_changed,
-        }
-    }
-}
-
-impl From<&stream_finished::ApplyFileDiffStats> for ApplyFileDiffStats {
-    fn from(file_diff_stats: &stream_finished::ApplyFileDiffStats) -> Self {
-        Self {
-            count: file_diff_stats.count,
-            lines_added: file_diff_stats.lines_added,
-            lines_removed: file_diff_stats.lines_removed,
-            files_changed: file_diff_stats.files_changed,
-        }
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -1444,64 +1159,6 @@ impl ToolUsageMetadata {
     }
 }
 
-impl From<&ToolUsageMetadata> for stream_finished::ToolUsageMetadata {
-    fn from(metadata: &ToolUsageMetadata) -> Self {
-        Self {
-            run_command_stats: Some((&metadata.run_command_stats).into()),
-            read_files_stats: Some((&metadata.read_files_stats).into()),
-            search_codebase_stats: Some((&metadata.search_codebase_stats).into()),
-            grep_stats: Some((&metadata.grep_stats).into()),
-            file_glob_stats: Some((&metadata.file_glob_stats).into()),
-            apply_file_diff_stats: Some((&metadata.apply_file_diff_stats).into()),
-            write_to_long_running_shell_command_stats: Some(
-                (&metadata.write_to_long_running_shell_command_stats).into(),
-            ),
-            read_mcp_resource_stats: Some((&metadata.read_mcp_resource_stats).into()),
-            call_mcp_tool_stats: Some((&metadata.call_mcp_tool_stats).into()),
-            suggest_plan_stats: Some((&metadata.suggest_plan_stats).into()),
-            suggest_create_plan_stats: Some((&metadata.suggest_create_plan_stats).into()),
-            read_shell_command_output_stats: Some(
-                (&metadata.read_shell_command_output_stats).into(),
-            ),
-            use_computer_stats: Some((&metadata.use_computer_stats).into()),
-        }
-    }
-}
-
-impl From<&stream_finished::ToolUsageMetadata> for ToolUsageMetadata {
-    fn from(tool_usage_metadata: &stream_finished::ToolUsageMetadata) -> Self {
-        let convert = |opt: &Option<_>| opt.as_ref().map(Into::into).unwrap_or_default();
-
-        Self {
-            run_command_stats: tool_usage_metadata
-                .run_command_stats
-                .as_ref()
-                .map(Into::into)
-                .unwrap_or_default(),
-            read_files_stats: convert(&tool_usage_metadata.read_files_stats),
-            search_codebase_stats: convert(&tool_usage_metadata.search_codebase_stats),
-            grep_stats: convert(&tool_usage_metadata.grep_stats),
-            file_glob_stats: convert(&tool_usage_metadata.file_glob_stats),
-            apply_file_diff_stats: tool_usage_metadata
-                .apply_file_diff_stats
-                .as_ref()
-                .map(Into::into)
-                .unwrap_or_default(),
-            write_to_long_running_shell_command_stats: convert(
-                &tool_usage_metadata.write_to_long_running_shell_command_stats,
-            ),
-            read_mcp_resource_stats: convert(&tool_usage_metadata.read_mcp_resource_stats),
-            call_mcp_tool_stats: convert(&tool_usage_metadata.call_mcp_tool_stats),
-            suggest_plan_stats: convert(&tool_usage_metadata.suggest_plan_stats),
-            suggest_create_plan_stats: convert(&tool_usage_metadata.suggest_create_plan_stats),
-            read_shell_command_output_stats: convert(
-                &tool_usage_metadata.read_shell_command_output_stats,
-            ),
-            use_computer_stats: convert(&tool_usage_metadata.use_computer_stats),
-        }
-    }
-}
-
 /// The kind of a context-window segment, mirroring the proto
 /// `ContextWindowSegmentType` enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -1532,51 +1189,6 @@ impl ContextWindowSegmentType {
     }
 }
 
-impl From<i32> for ContextWindowSegmentType {
-    fn from(value: i32) -> Self {
-        match stream_finished::ContextWindowSegmentType::try_from(value) {
-            Ok(stream_finished::ContextWindowSegmentType::SystemPrompt) => Self::SystemPrompt,
-            Ok(stream_finished::ContextWindowSegmentType::ToolDefinitions) => Self::ToolDefinitions,
-            Ok(stream_finished::ContextWindowSegmentType::ConversationHistory) => {
-                Self::ConversationHistory
-            }
-            Ok(stream_finished::ContextWindowSegmentType::LatestInput) => Self::LatestInput,
-            Ok(stream_finished::ContextWindowSegmentType::Images) => Self::Images,
-            Ok(stream_finished::ContextWindowSegmentType::Other) => Self::Other,
-            // Unknown (0) and any unrecognized value map to Unknown.
-            _ => Self::Unknown,
-        }
-    }
-}
-
-impl From<ContextWindowSegmentType> for i32 {
-    fn from(value: ContextWindowSegmentType) -> Self {
-        match value {
-            ContextWindowSegmentType::Unknown => {
-                stream_finished::ContextWindowSegmentType::Unknown as i32
-            }
-            ContextWindowSegmentType::SystemPrompt => {
-                stream_finished::ContextWindowSegmentType::SystemPrompt as i32
-            }
-            ContextWindowSegmentType::ToolDefinitions => {
-                stream_finished::ContextWindowSegmentType::ToolDefinitions as i32
-            }
-            ContextWindowSegmentType::ConversationHistory => {
-                stream_finished::ContextWindowSegmentType::ConversationHistory as i32
-            }
-            ContextWindowSegmentType::LatestInput => {
-                stream_finished::ContextWindowSegmentType::LatestInput as i32
-            }
-            ContextWindowSegmentType::Images => {
-                stream_finished::ContextWindowSegmentType::Images as i32
-            }
-            ContextWindowSegmentType::Other => {
-                stream_finished::ContextWindowSegmentType::Other as i32
-            }
-        }
-    }
-}
-
 /// A single portion of the context window, described by its kind and an
 /// estimated token count. Segment token counts add up to the token total
 /// represented by `context_window_usage`.
@@ -1585,24 +1197,6 @@ pub struct ContextWindowSegment {
     pub segment_type: ContextWindowSegmentType,
     /// Estimated number of tokens this segment occupies in the context window.
     pub token_count: u32,
-}
-
-impl From<&stream_finished::ContextWindowSegment> for ContextWindowSegment {
-    fn from(segment: &stream_finished::ContextWindowSegment) -> Self {
-        Self {
-            segment_type: segment.segment_type.into(),
-            token_count: segment.token_count,
-        }
-    }
-}
-
-impl From<&ContextWindowSegment> for stream_finished::ContextWindowSegment {
-    fn from(segment: &ContextWindowSegment) -> Self {
-        Self {
-            segment_type: segment.segment_type.into(),
-            token_count: segment.token_count,
-        }
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]

@@ -65,6 +65,9 @@ use crate::ai::skills::SkillDescriptor;
 use crate::code_review::CodeReviewTelemetryEvent;
 use crate::notebooks::NotebookId;
 use crate::persistence::ModelEvent;
+use crate::persistence::agent_protocol::{
+    context_window_segment_from_proto, tool_usage_metadata_from_proto,
+};
 use crate::persistence::model::{
     AgentConversationData, ContextWindowSegment, ConversationUsageMetadata, ModelTokenUsage,
     PersistedAutoexecuteMode, ToolUsageMetadata,
@@ -2261,13 +2264,13 @@ impl AIConversation {
             self.conversation_usage_metadata.tool_usage_metadata = usage_metadata
                 .tool_usage_metadata
                 .as_ref()
-                .map(Into::into)
+                .map(tool_usage_metadata_from_proto)
                 .unwrap_or_default();
 
             self.conversation_usage_metadata.context_window_segments = usage_metadata
                 .context_window_segments
                 .iter()
-                .map(Into::into)
+                .map(context_window_segment_from_proto)
                 .collect();
 
             // A conversation can never go from summarized to un-summarized,

@@ -7,7 +7,7 @@ use chrono::Utc;
 use instant::Instant;
 use pathfinder_geometry::rect::RectF;
 use persistence::model::{
-    AgentConversation, AgentConversationData, AgentConversationRecord, ConversationUsageMetadata,
+    AgentConversationData, AgentConversationRecord, ConversationUsageMetadata,
 };
 #[cfg(feature = "local_fs")]
 use repo_metadata::RepoMetadataModel;
@@ -70,6 +70,7 @@ use crate::network::NetworkStatus;
 use crate::notebooks::editor::keys::NotebookKeybindings;
 use crate::notebooks::manager::NotebookManager;
 use crate::notebooks::notebook::NotebookView;
+use crate::persistence::model::AgentConversation;
 use crate::pricing::PricingInfoModel;
 use crate::resource_center::TipsCompleted;
 use crate::search::files::model::FileSearchModel;

@@ -12,6 +12,7 @@ EXCLUDED_PACKAGES = {
     "aws-sdk-sts",
     "warp_multi_agent_client",
 }
+PERSISTENCE_RUNTIME_PACKAGES = {"warp_multi_agent_api"}
 
 
 def dependency_packages(features: str) -> set[str]:
@@ -24,6 +25,28 @@ def dependency_packages(features: str) -> set[str]:
             "--no-default-features",
             "--features",
             features,
+            "--edges",
+            "normal",
+            "--prefix",
+            "none",
+            "--format",
+            "{p}",
+        ],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return {line.split(maxsplit=1)[0] for line in result.stdout.splitlines() if line}
+
+
+def package_dependencies(package: str) -> set[str]:
+    result = subprocess.run(
+        [
+            "cargo",
+            "tree",
+            "-p",
+            package,
             "--edges",
             "normal",
             "--prefix",
@@ -66,6 +89,10 @@ def main() -> None:
     agent_packages = dependency_packages("agent_mode")
     missing = EXCLUDED_PACKAGES - agent_packages
     assert not missing, f"Agent dependency graph is missing: {sorted(missing)}"
+
+    persistence_packages = package_dependencies("persistence")
+    unexpected = PERSISTENCE_RUNTIME_PACKAGES & persistence_packages
+    assert not unexpected, f"persistence dependency graph contains: {sorted(unexpected)}"
 
     print("local-only dependency boundary verified")
 

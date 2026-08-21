@@ -21,6 +21,9 @@ use crate::ai::attachment_utils::{
 };
 use crate::ai::blocklist::agent_view::AgentViewEntryOrigin;
 use crate::ai::blocklist::history_model::BlocklistAIHistoryModel;
+use crate::persistence::agent_protocol::{
+    ModelTokenUsageProtoExt as _, context_window_segment_to_proto, tool_usage_metadata_to_proto,
+};
 use crate::server::server_api::ServerApiProvider;
 use crate::terminal::model::block::BlockId;
 
@@ -528,7 +531,9 @@ impl BlocklistAIController {
                         .iter()
                         .map(|u| u.to_proto_combined())
                         .collect(),
-                    tool_usage_metadata: Some(conversation.tool_usage_metadata().into()),
+                    tool_usage_metadata: Some(tool_usage_metadata_to_proto(
+                        conversation.tool_usage_metadata(),
+                    )),
                     warp_token_usage: conversation
                         .token_usage()
                         .iter()
@@ -547,7 +552,7 @@ impl BlocklistAIController {
                     context_window_segments: conversation
                         .context_window_segments()
                         .iter()
-                        .map(Into::into)
+                        .map(context_window_segment_to_proto)
                         .collect(),
                 })
         });

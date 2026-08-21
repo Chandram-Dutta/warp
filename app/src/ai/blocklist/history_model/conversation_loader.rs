@@ -24,6 +24,7 @@ use crate::ai::agent::conversation::{
 };
 #[cfg(feature = "local_fs")]
 use crate::persistence::agent::read_agent_conversation_by_id;
+use crate::persistence::agent_protocol::agent_conversation_summary_from_tasks;
 use crate::persistence::model::{
     AgentConversation, AgentConversationData, AgentConversationSummary,
 };
@@ -521,7 +522,7 @@ impl BlocklistAIHistoryModel {
                     .as_deref()
                     .and_then(|json| serde_json::from_str::<AgentConversationSummary>(json).ok())
                     .unwrap_or_else(|| {
-                        AgentConversationSummary::from_tasks(agent_conversation.tasks.iter())
+                        agent_conversation_summary_from_tasks(agent_conversation.tasks.iter())
                     });
 
                 if !summary.is_restorable {

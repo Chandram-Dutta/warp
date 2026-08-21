@@ -10,6 +10,7 @@ use warp_errors::report_error;
 use warp_multi_agent_api as api;
 
 use super::ConversationSummaryBackfill;
+use super::agent_protocol::agent_conversation_summary_from_tasks;
 use super::model::{AgentConversation, AgentConversationData, AgentConversationSummary};
 use crate::persistence::model::{AgentConversationRecord, AgentTaskRecord};
 use crate::persistence::schema::{self, agent_conversations, agent_tasks};
@@ -68,8 +69,10 @@ pub(super) fn upsert_agent_conversation<'a>(
     // Derive the task-based summary here (on the writer thread) so every
     // write path keeps the `summary` column in sync with the task snapshot,
     // letting startup list conversations without loading `agent_tasks`.
-    let serialized_summary =
-        serde_json::to_string(&AgentConversationSummary::from_tasks(tasks.iter().copied())).ok();
+    let serialized_summary = serde_json::to_string(&agent_conversation_summary_from_tasks(
+        tasks.iter().copied(),
+    ))
+    .ok();
 
     conn.transaction::<_, Error, _>(|conn| {
         // Upsert the conversation level metadata
@@ -285,7 +288,7 @@ pub(super) fn read_agent_conversation_metadata(
                 continue;
             }
 
-            let derived = AgentConversationSummary::from_tasks(decoded_tasks.iter());
+            let derived = agent_conversation_summary_from_tasks(decoded_tasks.iter());
             let Ok(summary_json) = serde_json::to_string(&derived) else {
                 continue;
             };
