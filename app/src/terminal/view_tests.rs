@@ -59,6 +59,7 @@ use crate::settings::{AISettings, AppEditorSettings, WarpPromptSeparator};
 use crate::terminal::alt_screen::should_intercept_mouse;
 use crate::terminal::block_list_element::{SnackbarPoint, SnackbarTranslationMode};
 use crate::terminal::block_list_viewport::{ClampingMode, ScrollLines};
+use crate::terminal::cli_agent::CLIAgentRuntimeExt as _;
 use crate::terminal::cli_agent_sessions::event::{
     CLI_AGENT_NOTIFICATION_SENTINEL, CLIAgentEvent, CLIAgentEventPayload, CLIAgentEventSource,
     CLIAgentEventType,

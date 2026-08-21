@@ -276,6 +276,7 @@ use crate::suggestions::ignored_suggestions_model::{
 };
 use crate::terminal::CLIAgent;
 use crate::terminal::buy_credits_banner::{BuyCreditsBanner, BuyCreditsBannerEvent};
+use crate::terminal::cli_agent::CLIAgentRuntimeExt as _;
 #[cfg(not(target_family = "wasm"))]
 use crate::terminal::cli_agent_sessions::plugin_manager::PluginModalKind;
 use crate::terminal::cli_agent_sessions::{

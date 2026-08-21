@@ -1,7 +1,7 @@
-use warp_core::cli_agent_protocol::CLIAgentNotification;
+use warp_core::cli_agent_protocol::{CLIAgent, CLIAgentNotification};
 
 use super::{CLIAgentEvent, CLIAgentEventPayload, CLIAgentEventSource, CLIAgentEventType};
-use crate::terminal::CLIAgent;
+use crate::terminal::cli_agent::CLIAgentRuntimeExt as _;
 
 /// Resolves a CLI agent from the `"agent"` string in a CLI agent event.
 /// Returns `None` if the string doesn't match any known agent.

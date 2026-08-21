@@ -65,8 +65,16 @@ def package_dependencies(package: str) -> set[str]:
 def main() -> None:
     manifest = tomllib.loads((REPO_ROOT / "app" / "Cargo.toml").read_text())
     app_root = (REPO_ROOT / "app" / "src" / "lib.rs").read_text()
+    core_cli_agent = (
+        REPO_ROOT / "crates" / "warp_core" / "src" / "cli_agent_protocol.rs"
+    ).read_text()
+    app_cli_agent = (REPO_ROOT / "app" / "src" / "terminal" / "cli_agent.rs").read_text()
     core_input = (REPO_ROOT / "crates" / "warp_core" / "src" / "input.rs").read_text()
     editor = (REPO_ROOT / "crates" / "editor" / "src" / "editor.rs").read_text()
+    session_config = (REPO_ROOT / "app" / "src" / "tab_configs" / "session_config.rs").read_text()
+    cli_agent_sessions = (
+        REPO_ROOT / "app" / "src" / "terminal" / "cli_agent_sessions" / "mod.rs"
+    ).read_text()
     terminal_input = (REPO_ROOT / "app" / "src" / "terminal" / "input.rs").read_text()
     terminal_block_filter = (
         REPO_ROOT / "app" / "src" / "terminal" / "block_filter.rs"
@@ -116,6 +124,14 @@ def main() -> None:
     assert "use warp_core::input::NavigationKey;" in terminal_block_filter
     for source in (REPO_ROOT / "app" / "src").rglob("*.rs"):
         assert "warp_editor::editor::NavigationKey" not in source.read_text(), source
+    assert "pub enum CLIAgent" in core_cli_agent
+    assert "pub enum CLIAgent" not in app_cli_agent
+    assert "pub use warp_core::cli_agent_protocol::CLIAgent;" in app_cli_agent
+    assert "trait CLIAgentRuntimeExt" in app_cli_agent
+    for runtime_dependency in ("AppContext", "SkillProvider", "warp_cli::agent", "Icon"):
+        assert runtime_dependency not in core_cli_agent
+    assert "use warp_core::cli_agent_protocol::CLIAgent;" in session_config
+    assert "use warp_core::cli_agent_protocol::CLIAgent;" in cli_agent_sessions
 
     local_only_packages = dependency_packages("local_only")
     unexpected = EXCLUDED_PACKAGES & local_only_packages

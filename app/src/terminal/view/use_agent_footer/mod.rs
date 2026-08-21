@@ -59,6 +59,7 @@ use crate::settings::{
 };
 pub use crate::terminal::CLIAgent;
 use crate::terminal::TerminalModel;
+use crate::terminal::cli_agent::CLIAgentRuntimeExt as _;
 use crate::terminal::cli_agent_sessions::CLIAgentRichInputCloseReason;
 use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
 use crate::ui_components::blended_colors;

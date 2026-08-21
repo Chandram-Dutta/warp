@@ -59,6 +59,7 @@ use crate::tab::{
     SelectedTabColor, TAB_ACTIVATE_BINDING_NAMES, TAB_INDICATOR_SYNCED_COLOR, TabData,
     reveals_tab_shortcut_hints, tab_position_id,
 };
+use crate::terminal::cli_agent::CLIAgentRuntimeExt as _;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::session_settings::SessionSettings;
 use crate::terminal::view::TerminalViewState;

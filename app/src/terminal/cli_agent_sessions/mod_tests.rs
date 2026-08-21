@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use warp_core::cli_agent_protocol::CLIAgent;
 use warpui::r#async::Timer;
 use warpui::{App, EntityId};
 
@@ -11,7 +12,6 @@ use super::{
     CLIAgentSessionStatus, CLIAgentSessionsModel,
 };
 use crate::ai::blocklist::{InputConfig, InputType};
-use crate::terminal::CLIAgent;
 
 #[test]
 fn parse_stop_notification() {

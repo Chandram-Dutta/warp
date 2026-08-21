@@ -30,6 +30,7 @@ use crate::ai::ambient_agents::task::HarnessModelConfig;
 use crate::server::server_api::ServerApi;
 use crate::server::server_api::harness_support::HarnessSupportClient;
 use crate::terminal::CLIAgent;
+use crate::terminal::cli_agent::CLIAgentRuntimeExt as _;
 use crate::terminal::model::block::BlockId;
 
 pub(crate) struct GeminiHarness;

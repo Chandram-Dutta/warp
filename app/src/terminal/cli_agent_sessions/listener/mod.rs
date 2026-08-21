@@ -1,8 +1,8 @@
+use warp_core::cli_agent_protocol::CLIAgent;
 use warpui::{EntityId, ModelContext, ModelHandle, SingletonEntity};
 
 use super::{CLIAgentEvent, CLIAgentSessionsModel};
 use crate::features::FeatureFlag;
-use crate::terminal::CLIAgent;
 use crate::terminal::cli_agent_sessions::event::{
     CLIAgentEventPayload, CLIAgentEventSource, CLIAgentEventType, parse_event,
 };

@@ -7,13 +7,12 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use ai::skills::SkillProvider;
-use enum_iterator::Sequence;
 use markdown_parser::parse_markdown;
 use pathfinder_color::ColorU;
-use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 use warp_cli::agent::Harness;
 use warp_completer::parsers::simple::top_level_command;
+pub use warp_core::cli_agent_protocol::CLIAgent;
 use warp_editor::content::buffer::Buffer;
 use warp_editor::content::markdown::MarkdownStyle;
 use warp_util::path::EscapeChar;
@@ -135,33 +134,31 @@ const MISTRAL_ORANGE: ColorU = ColorU {
     a: 255,
 };
 
-/// Represents a CLI agent (e.g., Claude Code, Gemini CLI, Codex, Amp, Droid, OpenCode, Copilot, Pi, Auggie, Cursor, Goose, Hermes, Mistral Vibe)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Sequence, Serialize, Deserialize)]
-pub enum CLIAgent {
-    Claude,
-    Gemini,
-    Codex,
-    Amp,
-    Droid,
-    OpenCode,
-    Copilot,
-    Pi,
-    OhMyPi,
-    Auggie,
-    CursorCli,
-    Goose,
-    Hermes,
-    Vibe,
-    Antigravity,
-    /// Warp's own headless TUI.
-    WarpTui,
-    /// Represents an unknown/custom CLI agent matched by user-configured regex patterns.
-    Unknown,
+pub(crate) trait CLIAgentRuntimeExt {
+    fn command_prefixes(&self) -> &'static [&'static str];
+    fn command_prefix(&self) -> &'static str;
+    fn from_harness(harness: Harness) -> Option<Self>
+    where
+        Self: Sized;
+    fn display_name(&self) -> &'static str;
+    fn icon(&self) -> Option<Icon>;
+    fn supported_skill_providers(&self) -> &'static [SkillProvider];
+    fn skill_command_prefix(&self) -> &'static str;
+    fn supports_bash_mode(&self) -> bool;
+    fn supports_cli_agent_footer(&self) -> bool;
+    fn brand_color(&self) -> Option<ColorU>;
+    fn brand_icon_color(&self) -> ColorU;
+    fn matches_command(&self, command: &str, escape_char: Option<EscapeChar>) -> bool;
+    fn detect(
+        command: &str,
+        escape_char: Option<EscapeChar>,
+        aliases: Option<&HashMap<SmolStr, String>>,
+        ctx: &AppContext,
+    ) -> Option<CLIAgent>;
 }
 
-impl CLIAgent {
-    /// Command prefixes that identify this CLI agent.
-    pub(crate) fn command_prefixes(&self) -> &'static [&'static str] {
+impl CLIAgentRuntimeExt for CLIAgent {
+    fn command_prefixes(&self) -> &'static [&'static str] {
         match self {
             CLIAgent::Claude => &["claude"],
             CLIAgent::Gemini => &["gemini"],
@@ -190,30 +187,11 @@ impl CLIAgent {
         }
     }
 
-    /// The canonical command prefix used to identify this CLI agent in places
-    /// that require one stable value.
-    pub fn command_prefix(&self) -> &'static str {
+    fn command_prefix(&self) -> &'static str {
         self.command_prefixes().first().copied().unwrap_or_default()
     }
 
-    /// Serialized version of the CLIAgent name (e.g. "Claude", "Gemini"). Used for the
-    /// session-sharing protocol's opaque `cli_agent` string field.
-    pub fn to_serialized_name(&self) -> String {
-        serde_json::to_value(self)
-            .ok()
-            .and_then(|v| v.as_str().map(str::to_owned))
-            .unwrap_or_default()
-    }
-
-    /// Inverse of `to_serialized_name`. Falls back to `Unknown`.
-    pub fn from_serialized_name(name: &str) -> CLIAgent {
-        serde_json::from_value(name.into()).unwrap_or(CLIAgent::Unknown)
-    }
-
-    /// Returns the [`CLIAgent`] corresponding to a cloud-agent [`Harness`] when it represents a
-    /// third-party agent. Returns `None` for [`Harness::Oz`] (Warp's built-in harness has no
-    /// distinct CLI agent identity).
-    pub fn from_harness(harness: Harness) -> Option<Self> {
+    fn from_harness(harness: Harness) -> Option<Self> {
         match harness {
             Harness::Oz => None,
             Harness::Claude => Some(CLIAgent::Claude),
@@ -224,7 +202,7 @@ impl CLIAgent {
         }
     }
 
-    pub fn display_name(&self) -> &'static str {
+    fn display_name(&self) -> &'static str {
         match self {
             CLIAgent::Claude => "Claude Code",
             CLIAgent::Gemini => "Gemini",
@@ -247,7 +225,7 @@ impl CLIAgent {
     }
 
     /// Returns the Icon for this CLI agent, or `None` for unknown/custom agents.
-    pub fn icon(&self) -> Option<Icon> {
+    fn icon(&self) -> Option<Icon> {
         match self {
             CLIAgent::Claude => Some(Icon::ClaudeLogo),
             CLIAgent::Gemini => Some(Icon::GeminiLogo),
@@ -275,7 +253,7 @@ impl CLIAgent {
     /// Returns the skill providers whose skills this CLI agent can natively interpret.
     /// When the CLI agent rich input is open, only skills from these providers are shown
     /// in the slash menu. Returns an empty slice for agents with no known skills support.
-    pub fn supported_skill_providers(&self) -> &'static [SkillProvider] {
+    fn supported_skill_providers(&self) -> &'static [SkillProvider] {
         match self {
             CLIAgent::Claude => &[SkillProvider::Claude],
             CLIAgent::Codex => &[
@@ -305,35 +283,26 @@ impl CLIAgent {
         }
     }
 
-    /// Returns the prefix character used for skill invocations by this CLI agent.
-    /// Most agents use `/` (e.g. `/skill-name`), but Codex uses `$` (e.g. `$skill-name`).
-    pub fn skill_command_prefix(&self) -> &'static str {
+    fn skill_command_prefix(&self) -> &'static str {
         match self {
             CLIAgent::Codex => "$",
             _ => "/",
         }
     }
 
-    /// Whether this CLI agent supports the `!` bash mode prefix in the rich input.
-    /// When `true`, typing `!` in the CLI agent rich input activates shell mode with
-    /// decorations, completions, and error underlining.
-    ///
-    /// TODO(advait): Check whether Gemini, Amp, Droid, and Copilot support `!` bash
-    /// mode and enable them here if so.
-    pub fn supports_bash_mode(&self) -> bool {
+    fn supports_bash_mode(&self) -> bool {
         matches!(
             self,
             CLIAgent::Claude | CLIAgent::Codex | CLIAgent::OpenCode | CLIAgent::OhMyPi
         )
     }
 
-    /// Whether Warp should show its CLI-agent footer for this agent.
-    pub(crate) fn supports_cli_agent_footer(&self) -> bool {
+    fn supports_cli_agent_footer(&self) -> bool {
         !matches!(self, CLIAgent::WarpTui)
     }
 
     /// Returns the brand color for this CLI agent, or `None` for unknown/custom agents.
-    pub fn brand_color(&self) -> Option<ColorU> {
+    fn brand_color(&self) -> Option<ColorU> {
         match self {
             CLIAgent::Claude => Some(CLAUDE_ORANGE),
             CLIAgent::Gemini => Some(GEMINI_BLUE),
@@ -357,7 +326,7 @@ impl CLIAgent {
 
     /// Returns the icon color to use when rendered on the brand-colored circle background.
     /// Agents with light brand colors use a dark icon for contrast.
-    pub fn brand_icon_color(&self) -> ColorU {
+    fn brand_icon_color(&self) -> ColorU {
         match self {
             CLIAgent::Pi
             | CLIAgent::OhMyPi
@@ -368,22 +337,9 @@ impl CLIAgent {
         }
     }
 
-    /// Extracts the first meaningful command token from a command string.
-    ///
-    /// When `escape_char` is provided, uses shell parsing to skip leading
-    /// env-var assignments (e.g. `FOO=1 claude` → `claude`).
-    /// Otherwise falls back to a simple whitespace split.
-    fn extract_first_command(command: &str, escape_char: Option<EscapeChar>) -> Option<String> {
-        match escape_char {
-            Some(esc) => top_level_command(command, esc),
-            None => command.split_whitespace().next().map(String::from),
-        }
-    }
-
     /// Returns whether the command's executable name identifies this CLI agent.
-    pub(super) fn matches_command(&self, command: &str, escape_char: Option<EscapeChar>) -> bool {
-        let Some(first_word) = Self::extract_first_command(command.trim_start(), escape_char)
-        else {
+    fn matches_command(&self, command: &str, escape_char: Option<EscapeChar>) -> bool {
+        let Some(first_word) = extract_first_command(command.trim_start(), escape_char) else {
             return false;
         };
         let basename = first_word.rsplit(['/', '\\']).next().unwrap_or(&first_word);
@@ -401,14 +357,14 @@ impl CLIAgent {
     /// produce the resolved command used for detection.
     ///
     /// Returns `Some(CLIAgent)` if the command matches a known CLI agent, `None` otherwise.
-    pub fn detect(
+    fn detect(
         command: &str,
         escape_char: Option<EscapeChar>,
         aliases: Option<&HashMap<SmolStr, String>>,
         ctx: &AppContext,
     ) -> Option<CLIAgent> {
         let trimmed = command.trim_start();
-        let first_word = Self::extract_first_command(trimmed, escape_char)?;
+        let first_word = extract_first_command(trimmed, escape_char)?;
 
         // Resolve the full command through aliases. If the first word matches an
         // alias, replace it with the alias value to produce the resolved command.
@@ -430,26 +386,25 @@ impl CLIAgent {
             .find(|agent| {
                 agent.matches_command(&resolved_command, escape_char)
                     || (matches!(agent, CLIAgent::Claude)
-                        && Self::is_aifx_agent_run_claude(&resolved_command, ctx))
+                        && is_aifx_agent_run_claude(&resolved_command, ctx))
             })
     }
+}
 
-    /// Returns true if the resolved command is `aifx agent run claude` (Uber's
-    /// internal wrapper around Claude) and the user is on the Uber team.
-    /// We special-case this so Uber employees get the toolbar without needing
-    /// to configure anything.
-    fn is_aifx_agent_run_claude(resolved_command: &str, ctx: &AppContext) -> bool {
-        resolved_command.starts_with("aifx agent run claude")
-            && Self::is_on_uber_team(UserWorkspaces::as_ref(ctx))
+fn extract_first_command(command: &str, escape_char: Option<EscapeChar>) -> Option<String> {
+    match escape_char {
+        Some(escape_char) => top_level_command(command, escape_char),
+        None => command.split_whitespace().next().map(String::from),
     }
+}
 
-    fn is_on_uber_team(user_workspaces: &UserWorkspaces) -> bool {
-        user_workspaces
+fn is_aifx_agent_run_claude(resolved_command: &str, ctx: &AppContext) -> bool {
+    resolved_command.starts_with("aifx agent run claude")
+        && UserWorkspaces::as_ref(ctx)
             .workspaces()
             .iter()
             .flat_map(|workspace| workspace.teams.iter())
             .any(|team| team.uid.uid() == UBER_TEAM_UID)
-    }
 }
 
 /// Builds a prompt string from a batch of code review comments suitable for

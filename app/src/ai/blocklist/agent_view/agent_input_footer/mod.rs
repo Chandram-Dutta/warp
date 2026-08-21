@@ -80,6 +80,7 @@ use crate::settings::{
 use crate::settings_view::SettingsSection;
 #[cfg(not(target_family = "wasm"))]
 use crate::terminal::ShellLaunchData;
+use crate::terminal::cli_agent::CLIAgentRuntimeExt as _;
 #[cfg(not(target_family = "wasm"))]
 use crate::terminal::cli_agent_sessions::plugin_manager::{
     CliAgentPluginManager, PluginInstallError, PluginModalKind, compare_versions,

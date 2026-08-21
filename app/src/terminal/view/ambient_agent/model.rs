@@ -45,6 +45,7 @@ use crate::server::server_api::ai::{
     AgentConfigSnapshot, AmbientAgentTaskState, AttachmentInput, SpawnAgentRequest,
 };
 use crate::terminal::CLIAgent;
+use crate::terminal::cli_agent::CLIAgentRuntimeExt as _;
 use crate::terminal::view::ambient_agent::{SetupCommandGroupId, SetupCommandState};
 
 /// Tracks progress timestamps for each step during ambient agent spawning.

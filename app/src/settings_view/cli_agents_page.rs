@@ -46,6 +46,7 @@ use crate::settings::{
     SubmitRichInputOnCtrlEnter,
 };
 use crate::terminal::CLIAgent;
+use crate::terminal::cli_agent::CLIAgentRuntimeExt as _;
 use crate::util::bindings;
 use crate::view_components::dropdown::DropdownAction;
 use crate::view_components::{Dropdown, SubmittableTextInput, SubmittableTextInputEvent};

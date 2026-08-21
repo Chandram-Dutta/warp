@@ -391,6 +391,7 @@ use crate::terminal::block_list_viewport::{
     ScrollState, ViewportState,
 };
 use crate::terminal::bootstrap::init_subshell_command;
+use crate::terminal::cli_agent::CLIAgentRuntimeExt as _;
 use crate::terminal::cli_agent_sessions::event::{
     CLI_AGENT_NOTIFICATION_SENTINEL, CLIAgentEvent, CLIAgentEventPayload, CLIAgentEventSource,
     CLIAgentEventType, parse_event,

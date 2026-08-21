@@ -6,6 +6,7 @@ use warp_util::local_or_remote_path::LocalOrRemotePath;
 use warpui::{AppContext, EntityId, SingletonEntity as _};
 
 use crate::ai::skills::SkillManager;
+use crate::terminal::cli_agent::CLIAgentRuntimeExt as _;
 use crate::terminal::cli_agent_sessions::{CLIAgentInputState, CLIAgentSessionsModel};
 pub const LOCAL_SKILLS_REMOTE_EXECUTION_ERROR_MESSAGE: &str = "Local skills cannot run on a remote machine. Try forking the conversation locally and running the skill.";
 

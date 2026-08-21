@@ -18,6 +18,7 @@ use crate::ai::blocklist::code_block::{
 };
 use crate::appearance::Appearance;
 use crate::terminal::CLIAgent;
+use crate::terminal::cli_agent::CLIAgentRuntimeExt as _;
 use crate::terminal::cli_agent_sessions::plugin_manager::PluginInstructions;
 use crate::ui_components::icons::Icon;
 use crate::view_components::DismissibleToast;

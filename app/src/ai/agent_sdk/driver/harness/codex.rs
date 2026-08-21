@@ -39,6 +39,7 @@ use crate::ai::mcp::JSONTransportType;
 use crate::server::server_api::ServerApi;
 use crate::server::server_api::harness_support::{HarnessSupportClient, upload_to_target};
 use crate::terminal::CLIAgent;
+use crate::terminal::cli_agent::CLIAgentRuntimeExt as _;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::model::block::BlockId;
 

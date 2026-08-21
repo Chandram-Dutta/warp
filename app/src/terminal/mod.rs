@@ -90,7 +90,7 @@ pub use writeable_pty::{PtyIntent, PtyIntentEvent, TerminalSurface};
 pub mod wsl;
 
 pub mod cli_agent;
-pub use cli_agent::CLIAgent;
+pub use warp_core::cli_agent_protocol::CLIAgent;
 pub(crate) mod cli_agent_sessions;
 
 pub use block_list_settings::*;

@@ -33,6 +33,7 @@ use crate::editor::EditorView;
 use crate::features::FeatureFlag;
 use crate::menu::{MenuItem, MenuItemFields};
 use crate::settings::{AISettings, AISettingsChangedEvent, InputSettings, WarpPromptSeparator};
+use crate::terminal::cli_agent::CLIAgentRuntimeExt as _;
 use crate::terminal::event::BlockType;
 use crate::terminal::model::block::{Block, BlockMetadata};
 use crate::terminal::model::session::{ExecuteCommandOptions, Session, Sessions, SessionsEvent};

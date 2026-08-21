@@ -1,7 +1,8 @@
 use std::cmp::Ordering;
 
+use warp_core::cli_agent_protocol::CLIAgent;
+
 use super::{compare_versions, plugin_manager_for};
-use crate::terminal::CLIAgent;
 
 #[test]
 fn returns_manager_for_claude() {

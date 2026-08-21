@@ -13,9 +13,9 @@ use claude::ClaudeCodePluginManager;
 use codex::CodexPluginManager;
 use gemini::GeminiPluginManager;
 use opencode::OpenCodePluginManager;
+use warp_core::cli_agent_protocol::CLIAgent;
 
 use crate::features::FeatureFlag;
-use crate::terminal::CLIAgent;
 use crate::terminal::model::session::LocalCommandExecutor;
 use crate::terminal::shell::ShellType;
 

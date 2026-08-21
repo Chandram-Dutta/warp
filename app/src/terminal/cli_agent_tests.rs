@@ -9,7 +9,7 @@ use warp_util::path::EscapeChar;
 use warpui::App;
 
 use super::{
-    CLIAgent, UBER_TEAM_UID, build_diff_hunk_prompt, build_review_prompt,
+    CLIAgent, CLIAgentRuntimeExt as _, UBER_TEAM_UID, build_diff_hunk_prompt, build_review_prompt,
     build_selection_line_range_prompt, build_selection_substring_prompt,
 };
 use crate::ai::agent::{AgentReviewCommentBatch, DiffSetHunk};

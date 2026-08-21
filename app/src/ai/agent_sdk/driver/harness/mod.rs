@@ -32,6 +32,7 @@ use crate::ai::mcp::JSONMCPServer;
 use crate::server::server_api::ServerApi;
 use crate::server::server_api::harness_support::{HarnessSupportClient, upload_to_target};
 use crate::terminal::CLIAgent;
+use crate::terminal::cli_agent::CLIAgentRuntimeExt as _;
 use crate::terminal::cli_agent_sessions::{CLIAgentSessionStatus, CLIAgentSessionsModel};
 use crate::terminal::model::block::{BlockId, SerializedBlock};
 use crate::util::path::resolve_executable;

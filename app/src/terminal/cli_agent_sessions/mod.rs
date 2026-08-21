@@ -7,11 +7,11 @@ use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use event::{CLIAgentEvent, CLIAgentEventSource, CLIAgentEventType};
+use warp_core::cli_agent_protocol::CLIAgent;
 use warpui::r#async::SpawnedFutureHandle;
 use warpui::{Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
 
 use self::listener::CLIAgentSessionListener;
-use super::CLIAgent;
 use crate::ai::blocklist::InputConfig;
 
 /// How long to wait, after observing a synthesized Ctrl-C write to a working

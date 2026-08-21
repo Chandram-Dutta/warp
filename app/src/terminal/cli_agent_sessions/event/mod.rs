@@ -1,10 +1,8 @@
 mod v1;
 
 use serde::Deserialize;
-pub use warp_core::cli_agent_protocol::CLI_AGENT_NOTIFICATION_SENTINEL;
+pub use warp_core::cli_agent_protocol::{CLI_AGENT_NOTIFICATION_SENTINEL, CLIAgent};
 use warp_errors::report_error;
-
-use crate::terminal::CLIAgent;
 
 #[cfg_attr(not(feature = "local_tty"), allow(dead_code))]
 type EventParser = fn(&str) -> Option<CLIAgentEvent>;

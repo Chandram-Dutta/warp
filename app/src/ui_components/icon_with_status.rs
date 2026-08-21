@@ -10,6 +10,7 @@ use warpui::elements::{
 
 use crate::ai::agent::conversation::{ConversationStatus, StatusColorStyle};
 use crate::terminal::CLIAgent;
+use crate::terminal::cli_agent::CLIAgentRuntimeExt as _;
 use crate::themes::theme::Fill as ThemeFill;
 
 /// Background color used for the Oz agent's circle when it is running in an ambient (cloud)

@@ -94,6 +94,7 @@ use crate::server::server_api::harness_support::{
     HarnessSupportClient, ResolvePromptAttachedSkill, ResolvePromptRequest,
 };
 use crate::server::server_api::managed_mcp::ManagedMcpClient;
+use crate::terminal::cli_agent::CLIAgentRuntimeExt as _;
 use crate::terminal::cli_agent_sessions::plugin_manager::{
     CliAgentPluginManager, plugin_manager_for,
 };

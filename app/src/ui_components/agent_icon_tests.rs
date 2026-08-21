@@ -28,6 +28,7 @@ use crate::ai::agent_conversations_model::{
 };
 use crate::ai::ambient_agents::ExecutionLocation;
 use crate::terminal::CLIAgent;
+use crate::terminal::cli_agent::CLIAgentRuntimeExt as _;
 use crate::ui_components::icon_with_status::IconWithStatusVariant;
 
 /// Projection of the fields we care about for cross-surface equivalence.

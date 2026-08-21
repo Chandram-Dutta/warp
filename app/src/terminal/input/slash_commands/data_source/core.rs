@@ -24,6 +24,7 @@ use crate::search::slash_command_menu::{SlashCommandId, StaticCommand};
 use crate::settings::{
     AISettings, AISettingsChangedEvent, PrivacySettings, PrivacySettingsChangedEvent,
 };
+use crate::terminal::cli_agent::CLIAgentRuntimeExt as _;
 use crate::terminal::cli_agent_sessions::{
     CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
 };
