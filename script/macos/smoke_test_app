@@ -1,0 +1,141 @@
+#!/bin/bash
+
+set -u
+
+if [[ $# -ne 2 ]]; then
+  echo "Usage: $0 <app-path> <log-directory>" >&2
+  exit 2
+fi
+
+APP_PATH="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
+LOG_DIR="$2"
+INFO_PLIST="$APP_PATH/Contents/Info.plist"
+EXECUTABLE_NAME="$(plutil -extract CFBundleExecutable raw -o - "$INFO_PLIST")"
+EXECUTABLE="$APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
+BUNDLE_IDENTIFIER="$(plutil -extract CFBundleIdentifier raw -o - "$INFO_PLIST")"
+SMOKE_SECONDS="${WARP_APP_SMOKE_SECONDS:-15}"
+FAILED=false
+
+mkdir -p "$LOG_DIR"
+
+{
+  echo "app_path=$APP_PATH"
+  echo "executable=$EXECUTABLE"
+  echo "bundle_identifier=$BUNDLE_IDENTIFIER"
+  echo "runner_arch=$(uname -m)"
+  echo "macos_version=$(sw_vers -productVersion)"
+  file "$EXECUTABLE"
+  lipo -info "$EXECUTABLE"
+  otool -L "$EXECUTABLE"
+  plutil -p "$INFO_PLIST"
+  find "$APP_PATH/Contents" -maxdepth 3 -print
+} > "$LOG_DIR/bundle-metadata.txt" 2>&1
+
+if [[ "$EXECUTABLE_NAME" != "warp-local-only" ]]; then
+  echo "Unexpected CFBundleExecutable: $EXECUTABLE_NAME" >&2
+  FAILED=true
+fi
+if [[ "$BUNDLE_IDENTIFIER" != "dev.warp.Warp-LocalOnly" ]]; then
+  echo "Unexpected CFBundleIdentifier: $BUNDLE_IDENTIFIER" >&2
+  FAILED=true
+fi
+if [[ ! -x "$EXECUTABLE" ]]; then
+  echo "Bundle executable is missing or not executable: $EXECUTABLE" >&2
+  FAILED=true
+fi
+
+wait_until_stable() {
+  local pid="$1"
+  local label="$2"
+  local elapsed
+
+  for ((elapsed = 0; elapsed < SMOKE_SECONDS; elapsed++)); do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      wait "$pid"
+      local status=$?
+      echo "$label exited after ${elapsed}s with status $status" >&2
+      return 1
+    fi
+    sleep 1
+  done
+
+  echo "$label remained alive for ${SMOKE_SECONDS}s (pid $pid)."
+  return 0
+}
+
+terminate_process() {
+  local pid="$1"
+  local elapsed
+
+  kill -TERM "$pid" 2>/dev/null || return 0
+  for ((elapsed = 0; elapsed < 10; elapsed++)); do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      wait "$pid" 2>/dev/null || true
+      return 0
+    fi
+    sleep 1
+  done
+  kill -KILL "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+}
+
+export RUST_BACKTRACE=full
+export RUST_LOG="${RUST_LOG:-info}"
+export WARP_DATA_PROFILE="ci-launch-${GITHUB_RUN_ID:-local}"
+
+echo "Launching bundle executable directly..."
+"$EXECUTABLE" > "$LOG_DIR/direct-stdout.log" 2> "$LOG_DIR/direct-stderr.log" &
+DIRECT_PID=$!
+if wait_until_stable "$DIRECT_PID" "Direct launch"; then
+  terminate_process "$DIRECT_PID"
+else
+  FAILED=true
+fi
+
+echo "Launching app through LaunchServices..."
+OPEN_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+if ! open -n "$APP_PATH" > "$LOG_DIR/open-stdout.log" 2> "$LOG_DIR/open-stderr.log"; then
+  echo "open failed; see $LOG_DIR/open-stderr.log" >&2
+  FAILED=true
+fi
+
+OPEN_PID=""
+for _ in {1..10}; do
+  OPEN_PID="$(ps -axo pid=,command= | awk -v executable="$EXECUTABLE" 'index($0, executable) { print $1; exit }')"
+  [[ -n "$OPEN_PID" ]] && break
+  sleep 1
+done
+
+if [[ -z "$OPEN_PID" ]]; then
+  echo "LaunchServices did not leave $EXECUTABLE running." >&2
+  FAILED=true
+elif wait_until_stable "$OPEN_PID" "LaunchServices launch"; then
+  terminate_process "$OPEN_PID"
+else
+  FAILED=true
+fi
+
+sleep 2
+log show --start "$OPEN_STARTED_AT" --style compact \
+  --predicate 'process == "warp-local-only" OR process == "WarpLocalOnly" OR eventMessage CONTAINS[c] "dev.warp.Warp-LocalOnly"' \
+  > "$LOG_DIR/unified.log" 2>&1 || true
+
+if [[ -d "$HOME/Library/Logs/DiagnosticReports" ]]; then
+  find "$HOME/Library/Logs/DiagnosticReports" -type f -mmin -15 \
+    \( -name 'warp-local-only*' -o -name 'WarpLocalOnly*' \) \
+    -exec cp {} "$LOG_DIR/" \; 2>/dev/null || true
+fi
+find "$HOME/Library/Logs" -maxdepth 1 -type f -name 'warp-local-only.log*' \
+  -exec cp {} "$LOG_DIR/" \; 2>/dev/null || true
+
+if [[ "$FAILED" = true ]]; then
+  echo "Bundle launch smoke test failed."
+  for log_file in "$LOG_DIR"/*.log "$LOG_DIR"/*.crash "$LOG_DIR"/*.ips; do
+    [[ -f "$log_file" ]] || continue
+    echo "===== $log_file ====="
+    tail -n 300 "$log_file"
+  done
+  exit 1
+fi
+
+echo "Direct and LaunchServices launch smoke tests passed."

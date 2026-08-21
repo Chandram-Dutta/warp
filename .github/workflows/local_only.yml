@@ -12,6 +12,7 @@ on:
       - 'Cargo.lock'
       - 'Cargo.toml'
       - 'script/check-local-only-dependencies.py'
+      - 'script/macos/**'
   workflow_dispatch:
 
 env:
@@ -152,6 +153,22 @@ jobs:
           hdiutil detach "$mount_dir"
           rm -rf "$mount_dir" "$quarantine_dir"
           trap - EXIT
+
+      - name: Smoke test direct and LaunchServices app launches
+        id: launch-smoke
+        run: >-
+          script/macos/smoke_test_app
+          target/aarch64-apple-darwin/debug/bundle/osx/WarpLocalOnly.app
+          "${RUNNER_TEMP}/warp-local-only-launch-logs"
+
+      - name: Upload failed launch diagnostics
+        if: failure() && steps.launch-smoke.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: warp-local-only-macos-arm64-launch-failure-${{ github.sha }}
+          path: ${{ runner.temp }}/warp-local-only-launch-logs
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload ad-hoc signed macOS DMG
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
