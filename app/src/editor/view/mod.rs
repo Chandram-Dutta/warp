@@ -8296,7 +8296,8 @@ impl EditorView {
         let should_show_image = !FeatureFlag::AgentView.is_enabled()
             && self.image_context_options.should_show_button()
             && !is_universal_input_enabled;
-        let should_show_at_context_menu = !FeatureFlag::AgentView.is_enabled()
+        let should_show_at_context_menu = !cfg!(feature = "local_only")
+            && !FeatureFlag::AgentView.is_enabled()
             && !is_universal_input_enabled
             && is_any_ai_enabled
             && {

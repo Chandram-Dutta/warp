@@ -94,6 +94,9 @@ def main() -> None:
         REPO_ROOT / "app" / "src" / "terminal" / "input" / "classic.rs"
     ).read_text()
     terminal_view = (REPO_ROOT / "app" / "src" / "terminal" / "view.rs").read_text()
+    block_list_element = (
+        REPO_ROOT / "app" / "src" / "terminal" / "block_list_element.rs"
+    ).read_text()
     terminal_actions = (
         REPO_ROOT / "app" / "src" / "terminal" / "view" / "action.rs"
     ).read_text()
@@ -121,6 +124,20 @@ def main() -> None:
     workspace_state = (
         REPO_ROOT / "app" / "src" / "workspace" / "util.rs"
     ).read_text()
+    ai_settings = (REPO_ROOT / "app" / "src" / "settings" / "ai.rs").read_text()
+    drive_settings = (
+        REPO_ROOT / "app" / "src" / "drive" / "settings.rs"
+    ).read_text()
+    editor_view = (
+        REPO_ROOT / "app" / "src" / "editor" / "view" / "mod.rs"
+    ).read_text()
+    command_palette_sources = (
+        REPO_ROOT / "app" / "src" / "search" / "command_palette" / "data_sources.rs"
+    ).read_text()
+    command_search = (
+        REPO_ROOT / "app" / "src" / "search" / "command_search" / "view.rs"
+    ).read_text()
+    root_view = (REPO_ROOT / "app" / "src" / "root_view.rs").read_text()
     agent_mode = set(manifest["features"]["agent_mode"])
     agent_runtime = set(manifest["features"]["warp_agent_runtime"])
     local_only = set(manifest["features"]["local_only"])
@@ -220,6 +237,16 @@ def main() -> None:
         "        if FeatureFlag::AgentView.is_enabled()"
         in terminal_view
     )
+    assert (
+        '#[cfg(not(feature = "local_only"))]\n'
+        "        if AISettings::as_ref(app).is_any_ai_enabled(app)"
+        in block_list_element
+    )
+    assert (
+        '#[cfg(not(feature = "local_only"))]\n'
+        "        if WarpDriveSettings::is_warp_drive_enabled(app)"
+        in block_list_element
+    )
     assert "fn is_available_in_product(&self) -> bool" in terminal_actions
     assert "ContextMenu(action) if !action.is_available_in_product()" in terminal_actions
     assert "InputContextMenuItem(action) if !action.is_available_in_product()" in terminal_actions
@@ -248,6 +275,25 @@ def main() -> None:
         "        return false;"
         in workspace_state
     )
+    assert (
+        'pub fn is_any_ai_enabled(&self, app: &AppContext) -> bool {\n'
+        '        #[cfg(feature = "local_only")]'
+        in ai_settings
+    )
+    assert ai_settings.count('let _ = app;\n            return false;') >= 1
+    assert drive_settings.count('let _ = app;\n            return false;') >= 2
+    assert 'let should_show_at_context_menu = !cfg!(feature = "local_only")' in editor_view
+    assert command_palette_sources.count('#[cfg(not(feature = "local_only"))]') >= 12
+    assert command_search.count('#[cfg(not(feature = "local_only"))]') >= 3
+    assert (
+        '#[cfg(not(feature = "local_only"))]\n'
+        '    app.add_action("root_view:log_out", RootView::log_out);'
+        in root_view
+    )
+    assert '"root_view:open_cloud_conversation_in_existing_window"' in root_view
+    assert '"root_view:open_drive_object_existing_window"' in root_view
+    assert '"root_view:open_mcp_settings_in_existing_window"' in root_view
+    assert '"root_view:open_linear_issue_work_in_existing_window"' in root_view
 
     local_only_packages = dependency_packages("local_only")
     unexpected = EXCLUDED_PACKAGES & local_only_packages

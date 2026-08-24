@@ -84,6 +84,7 @@ impl ZeroState {
         let show_warp_drive = WarpDriveSettings::is_warp_drive_enabled(app);
 
         let mut valid_filters = vec![];
+        #[cfg(not(feature = "local_only"))]
         if show_warp_drive {
             valid_filters.push(QueryFilter::Workflows);
             if FeatureFlag::AgentModeWorkflows.is_enabled()
@@ -97,6 +98,7 @@ impl ZeroState {
         }
 
         // Don't show Files filter if the user is a viewer of a shared session
+        #[cfg(not(feature = "local_only"))]
         if FeatureFlag::CommandPaletteFileSearch.is_enabled() {
             let is_shared_session_viewer_focused = app
                 .views_of_type::<Workspace>(window_id)
@@ -109,6 +111,7 @@ impl ZeroState {
             }
         }
 
+        #[cfg(not(feature = "local_only"))]
         if show_warp_drive {
             valid_filters.push(QueryFilter::Drive);
         }
@@ -118,6 +121,7 @@ impl ZeroState {
             valid_filters.push(QueryFilter::LaunchConfigurations);
         }
 
+        #[cfg(not(feature = "local_only"))]
         if AISettings::as_ref(app).is_any_ai_enabled(app) {
             valid_filters.push(QueryFilter::Conversations);
         }

@@ -26471,13 +26471,16 @@ impl View for Workspace {
             context.set.insert("IsOnline");
         }
 
+        #[cfg(not(feature = "local_only"))]
         if AISettings::as_ref(app).is_any_ai_enabled(app) {
             context.set.insert(flags::IS_ANY_AI_ENABLED);
         }
 
+        #[cfg(not(feature = "local_only"))]
         if AISettings::as_ref(app).is_active_ai_enabled(app) {
             context.set.insert(flags::IS_ACTIVE_AI_ENABLED);
         }
+        #[cfg(not(feature = "local_only"))]
         if AISettings::as_ref(app).is_voice_input_enabled(app)
             && UserWorkspaces::as_ref(app).is_voice_enabled()
         {

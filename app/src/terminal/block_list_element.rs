@@ -1134,6 +1134,7 @@ impl BlockListElement {
             .finish(),
         );
 
+        #[cfg(not(feature = "local_only"))]
         if AISettings::as_ref(app).is_any_ai_enabled(app) {
             let icon = Container::new(
                 ConstrainedBox::new(if FeatureFlag::AgentView.is_enabled() {
@@ -1199,6 +1200,7 @@ impl BlockListElement {
             self.ask_ai_assistant_button = Some(element);
         }
 
+        #[cfg(not(feature = "local_only"))]
         if WarpDriveSettings::is_warp_drive_enabled(app) {
             let icon = Container::new(
                 ConstrainedBox::new(

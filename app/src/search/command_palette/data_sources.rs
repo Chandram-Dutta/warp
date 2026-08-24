@@ -6,6 +6,7 @@ use warp_core::features::FeatureFlag;
 use warpui::keymap::BindingId;
 use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity, WindowId};
 
+#[cfg(not(feature = "local_only"))]
 use super::{conversations, warp_drive};
 use crate::drive::settings::WarpDriveSettings;
 use crate::search::QueryFilter;
@@ -13,6 +14,7 @@ use crate::search::action::CommandBindingDataSource;
 use crate::search::binding_source::BindingSource;
 use crate::search::command_palette::mixer::{CommandPaletteItemAction, ItemSummary};
 use crate::search::command_palette::new_session::NewSessionDataSource;
+#[cfg(not(feature = "local_only"))]
 use crate::search::command_palette::repos::RepoDataSource;
 use crate::search::command_palette::{CommandPaletteMixer, files, launch_config, navigation, tabs};
 use crate::search::data_source::QueryResult;
@@ -25,10 +27,13 @@ use crate::settings::AISettings;
 pub struct DataSourceStore {
     actions_data_source: ModelHandle<CommandBindingDataSource>,
     sessions_data_source: ModelHandle<navigation::DataSource>,
+    #[cfg(not(feature = "local_only"))]
     warp_drive_data_source: ModelHandle<warp_drive::DataSource>,
     launch_config_data_source: ModelHandle<launch_config::DataSource>,
     new_session_data_source: Option<ModelHandle<NewSessionDataSource>>,
+    #[cfg(not(feature = "local_only"))]
     all_conversation_data_source: ModelHandle<conversations::DataSource>,
+    #[cfg(not(feature = "local_only"))]
     repo_data_source: ModelHandle<RepoDataSource>,
     tabs_data_source: Option<ModelHandle<tabs::DataSource>>,
 }
@@ -46,6 +51,7 @@ impl DataSourceStore {
         let sessions_data_source =
             ctx.add_model(|_| navigation::DataSource::new(active_session_handle));
 
+        #[cfg(not(feature = "local_only"))]
         let warp_drive_data_source =
             ctx.add_model(|ctx| warp_drive::DataSource::new(window_id, ctx));
 
@@ -55,18 +61,23 @@ impl DataSourceStore {
             && cfg!(feature = "local_tty"))
         .then_some(ctx.add_model(|ctx| NewSessionDataSource::new(binding_source, ctx)));
 
+        #[cfg(not(feature = "local_only"))]
         let all_conversation_data_source: ModelHandle<conversations::DataSource> =
             ctx.add_model(|_| conversations::DataSource::new());
 
+        #[cfg(not(feature = "local_only"))]
         let repo_data_source = ctx.add_model(|_| RepoDataSource::new());
 
         Self {
             actions_data_source,
             sessions_data_source,
+            #[cfg(not(feature = "local_only"))]
             warp_drive_data_source,
             launch_config_data_source,
             new_session_data_source,
+            #[cfg(not(feature = "local_only"))]
             all_conversation_data_source,
+            #[cfg(not(feature = "local_only"))]
             repo_data_source,
             tabs_data_source: None,
         }
@@ -94,6 +105,7 @@ impl DataSourceStore {
                 HashSet::from([QueryFilter::Sessions]),
             );
 
+            #[cfg(not(feature = "local_only"))]
             if WarpDriveSettings::is_warp_drive_enabled(ctx) {
                 let mut warp_drive_filters = HashSet::from([
                     QueryFilter::Notebooks,
@@ -122,6 +134,7 @@ impl DataSourceStore {
                 );
             }
 
+            #[cfg(not(feature = "local_only"))]
             if FeatureFlag::CommandPaletteFileSearch.is_enabled() && !is_shared_session_viewer {
                 let file_search_model = FileSearchModel::as_ref(ctx);
                 let is_in_git_repo = file_search_model.repo_root_location(ctx).is_some();
@@ -144,6 +157,7 @@ impl DataSourceStore {
             }
 
             // Add conversation search if AI is enabled
+            #[cfg(not(feature = "local_only"))]
             if AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
                 mixer.add_sync_source(
                     self.all_conversation_data_source.clone(),
@@ -151,6 +165,7 @@ impl DataSourceStore {
                 );
             }
 
+            #[cfg(not(feature = "local_only"))]
             mixer.add_sync_source(
                 self.repo_data_source.clone(),
                 HashSet::from([QueryFilter::Repos]),

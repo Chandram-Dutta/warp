@@ -369,7 +369,9 @@ pub fn init(app: &mut AppContext) {
         "root_view:maybe_stop_active_voice_input",
         RootView::maybe_stop_active_voice_input,
     );
+    #[cfg(not(feature = "local_only"))]
     app.add_action("root_view:log_out", RootView::log_out);
+    #[cfg(not(feature = "local_only"))]
     app.add_action(
         "root_view:handle_incoming_auth_url",
         RootView::handle_incoming_auth_url,
@@ -378,14 +380,17 @@ pub fn init(app: &mut AppContext) {
         "root_view:add_session_at_path",
         RootView::add_session_at_path,
     );
+    #[cfg(not(feature = "local_only"))]
     app.add_action(
         "root_view:handle_team_intent_link_action",
         RootView::handle_team_intent_link_action,
     );
+    #[cfg(not(feature = "local_only"))]
     app.add_action(
         "root_view:open_team_settings_page",
         RootView::open_team_settings_page,
     );
+    #[cfg(not(feature = "local_only"))]
     app.add_action(
         "root_view:handle_notification_click",
         RootView::handle_notification_click,
@@ -406,56 +411,59 @@ pub fn init(app: &mut AppContext) {
     );
     app.add_action("root_view:toggle_fullscreen", RootView::toggle_fullscreen);
 
-    if FeatureFlag::ViewingSharedSessions.is_enabled() {
+    #[cfg(not(feature = "local_only"))]
+    {
+        if FeatureFlag::ViewingSharedSessions.is_enabled() {
+            app.add_global_action(
+                "root_view:join_shared_session",
+                open_shared_session_as_viewer,
+            );
+            app.add_action(
+                "root_view:join_shared_session_in_existing_window",
+                RootView::join_shared_session_in_existing_window,
+            );
+        }
+
         app.add_global_action(
-            "root_view:join_shared_session",
-            open_shared_session_as_viewer,
+            "root_view:open_conversation_viewer",
+            open_conversation_viewer,
         );
         app.add_action(
-            "root_view:join_shared_session_in_existing_window",
-            RootView::join_shared_session_in_existing_window,
+            "root_view:open_cloud_conversation_in_existing_window",
+            RootView::open_cloud_conversation_in_existing_window,
+        );
+
+        app.add_global_action("root_view:create_environment", create_environment);
+        app.add_global_action(
+            "root_view:create_environment_and_run",
+            create_environment_and_run,
+        );
+        app.add_action(
+            "root_view:create_environment_in_existing_window",
+            RootView::create_environment_in_existing_window,
+        );
+        app.add_action(
+            "root_view:create_environment_in_existing_window_and_run",
+            RootView::create_environment_in_existing_window_and_run,
+        );
+        app.add_global_action(
+            "root_view:open_drive_object_new_window",
+            open_warp_drive_object,
+        );
+        app.add_action(
+            "root_view:open_drive_object_existing_window",
+            RootView::open_warp_drive_object_in_existing_window,
+        );
+
+        app.add_global_action(
+            "root_view:open_team_settings_with_email_invite_in_new_window",
+            open_team_settings_with_email_invite_in_new_window,
+        );
+        app.add_action(
+            "root_view:open_team_settings_with_email_invite_in_existing_window",
+            RootView::open_team_settings_with_email_invite_in_existing_window,
         );
     }
-
-    app.add_global_action(
-        "root_view:open_conversation_viewer",
-        open_conversation_viewer,
-    );
-    app.add_action(
-        "root_view:open_cloud_conversation_in_existing_window",
-        RootView::open_cloud_conversation_in_existing_window,
-    );
-
-    app.add_global_action("root_view:create_environment", create_environment);
-    app.add_global_action(
-        "root_view:create_environment_and_run",
-        create_environment_and_run,
-    );
-    app.add_action(
-        "root_view:create_environment_in_existing_window",
-        RootView::create_environment_in_existing_window,
-    );
-    app.add_action(
-        "root_view:create_environment_in_existing_window_and_run",
-        RootView::create_environment_in_existing_window_and_run,
-    );
-    app.add_global_action(
-        "root_view:open_drive_object_new_window",
-        open_warp_drive_object,
-    );
-    app.add_action(
-        "root_view:open_drive_object_existing_window",
-        RootView::open_warp_drive_object_in_existing_window,
-    );
-
-    app.add_global_action(
-        "root_view:open_team_settings_with_email_invite_in_new_window",
-        open_team_settings_with_email_invite_in_new_window,
-    );
-    app.add_action(
-        "root_view:open_team_settings_with_email_invite_in_existing_window",
-        RootView::open_team_settings_with_email_invite_in_existing_window,
-    );
 
     app.add_global_action(
         "root_view:open_settings_page_in_new_window",
@@ -475,38 +483,41 @@ pub fn init(app: &mut AppContext) {
         RootView::open_settings_in_existing_window,
     );
 
-    app.add_global_action(
-        "root_view:open_mcp_settings_in_new_window",
-        open_mcp_settings_in_new_window,
-    );
-    app.add_action(
-        "root_view:open_mcp_settings_in_existing_window",
-        RootView::open_mcp_settings_in_existing_window,
-    );
+    #[cfg(not(feature = "local_only"))]
+    {
+        app.add_global_action(
+            "root_view:open_mcp_settings_in_new_window",
+            open_mcp_settings_in_new_window,
+        );
+        app.add_action(
+            "root_view:open_mcp_settings_in_existing_window",
+            RootView::open_mcp_settings_in_existing_window,
+        );
 
-    app.add_global_action(
-        "root_view:open_codex_in_new_window",
-        open_codex_in_new_window,
-    );
-    app.add_action(
-        "root_view:open_codex_in_existing_window",
-        RootView::open_codex_in_existing_window,
-    );
+        app.add_global_action(
+            "root_view:open_codex_in_new_window",
+            open_codex_in_new_window,
+        );
+        app.add_action(
+            "root_view:open_codex_in_existing_window",
+            RootView::open_codex_in_existing_window,
+        );
 
-    app.add_global_action(
-        "root_view:open_linear_issue_work_in_new_window",
-        open_linear_issue_work_in_new_window,
-    );
-    app.add_action(
-        "root_view:open_linear_issue_work_in_existing_window",
-        RootView::open_linear_issue_work_in_existing_window,
-    );
+        app.add_global_action(
+            "root_view:open_linear_issue_work_in_new_window",
+            open_linear_issue_work_in_new_window,
+        );
+        app.add_action(
+            "root_view:open_linear_issue_work_in_existing_window",
+            RootView::open_linear_issue_work_in_existing_window,
+        );
 
-    app.add_action("root_view:add_file_pane", RootView::add_file_pane);
-    app.add_global_action(
-        "root_view:open_new_with_file_notebook",
-        open_new_with_file_notebook,
-    );
+        app.add_action("root_view:add_file_pane", RootView::add_file_pane);
+        app.add_global_action(
+            "root_view:open_new_with_file_notebook",
+            open_new_with_file_notebook,
+        );
+    }
 
     app.register_fixed_bindings([
         FixedBinding::empty(

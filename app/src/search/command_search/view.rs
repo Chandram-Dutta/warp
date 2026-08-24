@@ -230,6 +230,7 @@ impl CommandSearchView {
             // Add data sources in lowest->highest priority order.  If results from two
             // data sources produce the same ranking score, the data source added first
             // will show up higher in the list (i.e.: further away from the input).
+            #[cfg(not(feature = "local_only"))]
             if AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
                 mixer.add_sync_source(
                     WarpAIDataSource::new(self.ai_client.clone(), None),
@@ -247,6 +248,7 @@ impl CommandSearchView {
                 );
             }
 
+            #[cfg(not(feature = "local_only"))]
             if WarpDriveSettings::is_warp_drive_enabled(ctx) {
                 mixer.add_sync_source(
                     WorkflowsDataSource::new(session_context.as_ref(), ctx),
@@ -290,6 +292,7 @@ impl CommandSearchView {
                 );
             }
 
+            #[cfg(not(feature = "local_only"))]
             if FeatureFlag::AgentMode.is_enabled() && AISettings::as_ref(ctx).is_any_ai_enabled(ctx)
             {
                 mixer.add_sync_source(
