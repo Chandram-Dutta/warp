@@ -29,6 +29,7 @@ use crate::editor::{
     TextOptions,
 };
 use crate::keyboard::{UserDefinedKeybinding, write_custom_keybinding};
+use crate::search::action::binding_is_available_in_product;
 use crate::search_bar::SearchBar;
 use crate::settings::CloudPreferencesSettings;
 use crate::util::bindings::{
@@ -757,6 +758,7 @@ impl SettingsPageMeta for KeybindingsView {
             lenses
                 .into_iter()
                 .map(|lens| CommandBinding::from_editable_lens(lens, ctx))
+                .filter(binding_is_available_in_product)
                 .sorted_by(|a, b| {
                     // Sort by description then name so that we can deduplicate bindings by name.
                     a.description

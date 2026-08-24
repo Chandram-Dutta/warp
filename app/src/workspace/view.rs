@@ -324,6 +324,7 @@ use crate::search::command_palette::view::{
 use crate::search::command_search::searcher::{
     AcceptedHistoryItem, AcceptedWorkflow, CommandSearchItemAction,
 };
+#[cfg(not(feature = "local_only"))]
 use crate::search::command_search::settings::CommandSearchSettings;
 use crate::search::command_search::view::{CommandSearchEvent, CommandSearchView};
 #[cfg(target_family = "wasm")]
@@ -343,6 +344,7 @@ use crate::server::telemetry::{
     PaletteSource, SharingDialogSource, TabRenameEvent, TierLimitHitEvent, WarpDriveSource,
 };
 use crate::session_management::{SessionNavigationData, SessionSource, TabNavigationData};
+#[cfg(not(feature = "local_only"))]
 use crate::settings::cloud_preferences::CloudPreferencesSettings;
 use crate::settings::{
     AISettings, AISettingsChangedEvent, AccessibilitySettings, AliasExpansionSettings,
@@ -540,6 +542,7 @@ use crate::workspace::view::orchestration_launch_modal::{
 use crate::workspace::view::right_panel::{RightPanelEvent, RightPanelView};
 use crate::workspace::{ForkFromExchange, ForkedConversationDestination};
 use crate::workspaces::user_workspaces::UserWorkspaces;
+#[cfg(not(feature = "local_only"))]
 use crate::workspaces::workspace::AdminEnablementSetting;
 use crate::{
     AgentNotificationsModel, BlocklistAIHistoryModel, GlobalResourceHandles, TelemetryEvent,
@@ -6762,6 +6765,7 @@ impl Workspace {
     ) -> Vec<MenuItem<WorkspaceAction>> {
         let mut menu_items = vec![];
 
+        #[cfg(not(feature = "local_only"))]
         let is_any_ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
         let ai_settings = AISettings::as_ref(ctx);
         let effective_default = ai_settings.default_session_mode(ctx);
@@ -6771,6 +6775,7 @@ impl Workspace {
             keybinding_name_to_display_string("app:reopen_closed_session", ctx);
 
         // 1. Agent (if AI enabled)
+        #[cfg(not(feature = "local_only"))]
         if is_any_ai_enabled {
             let mut agent_item = MenuItemFields::new("Agent")
                 .with_on_select_action(WorkspaceAction::AddAgentTab)
@@ -6838,6 +6843,7 @@ impl Workspace {
         }
 
         // 3. Cloud Agent (if flags enabled)
+        #[cfg(not(feature = "local_only"))]
         if is_any_ai_enabled
             && FeatureFlag::AgentView.is_enabled()
             && FeatureFlag::CloudMode.is_enabled()
@@ -6852,6 +6858,7 @@ impl Workspace {
         }
 
         // 3b. Local Docker Sandbox
+        #[cfg(not(feature = "local_only"))]
         if FeatureFlag::LocalDockerSandbox.is_enabled() {
             let mut docker_item = MenuItemFields::new("Local Docker Sandbox")
                 .with_on_select_action(WorkspaceAction::AddDockerSandboxTab)
@@ -18446,18 +18453,24 @@ impl Workspace {
                 self.open_command_palette(ctx);
             } else if self.current_workspace_state.is_theme_chooser_open {
                 self.focus_theme_chooser(ctx);
-            } else if self.current_workspace_state.is_resource_center_open {
+            } else if !cfg!(feature = "local_only")
+                && self.current_workspace_state.is_resource_center_open
+            {
                 ctx.focus(&self.resource_center_view);
-            } else if self.current_workspace_state.is_ai_assistant_panel_open {
+            } else if !cfg!(feature = "local_only")
+                && self.current_workspace_state.is_ai_assistant_panel_open
+            {
                 ctx.focus(&self.ai_assistant_panel);
-            } else if self
-                .current_workspace_state
-                .is_close_session_confirmation_dialog_open
+            } else if !cfg!(feature = "local_only")
+                && self
+                    .current_workspace_state
+                    .is_close_session_confirmation_dialog_open
             {
                 ctx.focus(&self.close_session_confirmation_dialog);
-            } else if self
-                .current_workspace_state
-                .is_rewind_confirmation_dialog_open
+            } else if !cfg!(feature = "local_only")
+                && self
+                    .current_workspace_state
+                    .is_rewind_confirmation_dialog_open
             {
                 ctx.focus(&self.rewind_confirmation_dialog);
             } else if self.current_workspace_state.is_native_quit_modal_open {
@@ -21281,9 +21294,9 @@ impl Workspace {
             );
         }
 
-        let is_online = NetworkStatus::as_ref(ctx).is_online();
+        let is_online = cfg!(feature = "local_only") || NetworkStatus::as_ref(ctx).is_online();
 
-        if !is_online {
+        if !cfg!(feature = "local_only") && !is_online {
             target.add_child(
                 Container::new(self.render_offline_button(appearance))
                     .with_margin_right(4.)
@@ -21298,7 +21311,8 @@ impl Workspace {
         }
 
         // Legacy AI assistant button (non-agent-mode only)
-        if is_online
+        if !cfg!(feature = "local_only")
+            && is_online
             && !FeatureFlag::AgentMode.is_enabled()
             && !is_web_anonymous_user
             && !self.current_workspace_state.is_ai_assistant_panel_open
@@ -22080,7 +22094,8 @@ impl Workspace {
     ) -> Box<dyn Element> {
         let active_tab_data = &self.tabs[self.active_tab_index];
 
-        let active_content = if FeatureFlag::AgentManagementView.is_enabled()
+        let active_content = if !cfg!(feature = "local_only")
+            && FeatureFlag::AgentManagementView.is_enabled()
             && self.current_workspace_state.is_agent_management_view_open
         {
             ChildView::new(&self.agent_management_view).finish()
@@ -22814,7 +22829,7 @@ impl Workspace {
         }
 
         // Resource center and AI assistant are workspace-level panels, not configurable.
-        #[cfg(not(target_family = "wasm"))]
+        #[cfg(all(not(target_family = "wasm"), not(feature = "local_only")))]
         if self.current_workspace_state.is_right_panel_open() {
             let right_panel_content = if self.current_workspace_state.is_resource_center_open {
                 Some(self.render_panel(app, self.render_resource_center(), &PanelPosition::Right))
@@ -22998,8 +23013,10 @@ impl Workspace {
         let block_list_settings = BlockListSettings::as_ref(app);
         let tab_settings = TabSettings::as_ref(app);
         let alias_expansion_settings = AliasExpansionSettings::as_ref(app);
+        #[cfg(not(feature = "local_only"))]
         let code_settings = CodeSettings::as_ref(app);
         let input_settings = InputSettings::as_ref(app);
+        #[cfg(not(feature = "local_only"))]
         let font_settings = FontSettings::as_ref(app);
         let reporting_setings = AltScreenReporting::as_ref(app);
         let general_settings = GeneralSettings::as_ref(app);
@@ -23009,6 +23026,7 @@ impl Workspace {
         let window_settings = WindowSettings::as_ref(app);
         let pane_settings = PaneSettings::as_ref(app);
         let keys_settings = KeysSettings::as_ref(app);
+        #[cfg(not(feature = "local_only"))]
         let command_search_settings = CommandSearchSettings::as_ref(app);
         let ssh_settings = SshSettings::as_ref(app);
 
@@ -23094,18 +23112,21 @@ impl Workspace {
         if session_settings.notifications.is_long_running_enabled {
             context.set.insert(flags::LONG_RUNNING_NOTIFICATIONS_FLAG);
         }
-        if session_settings
-            .notifications
-            .is_agent_task_completed_enabled
+        #[cfg(not(feature = "local_only"))]
         {
-            context
-                .set
-                .insert(flags::AGENT_TASK_COMPLETED_NOTIFICATIONS_FLAG);
-        }
-        if session_settings.notifications.is_needs_attention_enabled {
-            context
-                .set
-                .insert(flags::NEEDS_ATTENTION_NOTIFICATIONS_FLAG);
+            if session_settings
+                .notifications
+                .is_agent_task_completed_enabled
+            {
+                context
+                    .set
+                    .insert(flags::AGENT_TASK_COMPLETED_NOTIFICATIONS_FLAG);
+            }
+            if session_settings.notifications.is_needs_attention_enabled {
+                context
+                    .set
+                    .insert(flags::NEEDS_ATTENTION_NOTIFICATIONS_FLAG);
+            }
         }
         if session_settings.notifications.play_notification_sound {
             context.set.insert(flags::NOTIFICATION_SOUND_FLAG);
@@ -23137,9 +23158,12 @@ impl Workspace {
             context.set.insert(flags::TELEMETRY_FLAG);
         }
 
-        let cloud_preferences_settings = CloudPreferencesSettings::as_ref(app);
-        if *cloud_preferences_settings.settings_sync_enabled.value() {
-            context.set.insert(flags::SETTINGS_SYNC_FLAG);
+        #[cfg(not(feature = "local_only"))]
+        {
+            let cloud_preferences_settings = CloudPreferencesSettings::as_ref(app);
+            if *cloud_preferences_settings.settings_sync_enabled.value() {
+                context.set.insert(flags::SETTINGS_SYNC_FLAG);
+            }
         }
 
         if *block_list_settings
@@ -23158,18 +23182,21 @@ impl Workspace {
         if *safe_mode_settings.safe_mode_enabled.value() {
             context.set.insert(flags::SAFE_MODE_FLAG);
         }
-        if !privacy_settings.is_telemetry_force_enabled()
-            && matches!(
-                UserWorkspaces::as_ref(app).get_cloud_conversation_storage_enablement_setting(),
-                AdminEnablementSetting::RespectUserSetting
-            )
+        #[cfg(not(feature = "local_only"))]
         {
-            context
-                .set
-                .insert(flags::CLOUD_CONVERSATION_STORAGE_EDITABLE_FLAG);
-        }
-        if privacy_settings.is_cloud_conversation_storage_enabled {
-            context.set.insert(flags::CLOUD_CONVERSATION_STORAGE_FLAG);
+            if !privacy_settings.is_telemetry_force_enabled()
+                && matches!(
+                    UserWorkspaces::as_ref(app).get_cloud_conversation_storage_enablement_setting(),
+                    AdminEnablementSetting::RespectUserSetting
+                )
+            {
+                context
+                    .set
+                    .insert(flags::CLOUD_CONVERSATION_STORAGE_EDITABLE_FLAG);
+            }
+            if privacy_settings.is_cloud_conversation_storage_enabled {
+                context.set.insert(flags::CLOUD_CONVERSATION_STORAGE_FLAG);
+            }
         }
 
         if privacy_settings.is_crash_reporting_enabled {
@@ -23207,16 +23234,19 @@ impl Workspace {
                 .insert(flags::LEFT_PANEL_VISIBILITY_ACROSS_TABS_FLAG);
         }
 
-        if *font_settings.match_ai_font_to_terminal_font {
-            context
-                .set
-                .insert(flags::MATCH_AI_FONT_TO_TERMINAL_FONT_FLAG);
-        }
+        #[cfg(not(feature = "local_only"))]
+        {
+            if *font_settings.match_ai_font_to_terminal_font {
+                context
+                    .set
+                    .insert(flags::MATCH_AI_FONT_TO_TERMINAL_FONT_FLAG);
+            }
 
-        if *font_settings.match_notebook_to_monospace_font_size {
-            context
-                .set
-                .insert(flags::MATCH_NOTEBOOK_FONT_SIZE_TO_TERMINAL_FONT_SIZE_FLAG);
+            if *font_settings.match_notebook_to_monospace_font_size {
+                context
+                    .set
+                    .insert(flags::MATCH_NOTEBOOK_FONT_SIZE_TO_TERMINAL_FONT_SIZE_FLAG);
+            }
         }
 
         if *pane_settings.focus_panes_on_hover {
@@ -23238,17 +23268,20 @@ impl Workspace {
         if *tab_settings.show_indicators.value() {
             context.set.insert(flags::TAB_INDICATORS_FLAG);
         }
-        if *tab_settings.show_code_review_button.value() {
-            context.set.insert(flags::SHOW_CODE_REVIEW_BUTTON_FLAG);
-        }
-        if *tab_settings.show_code_review_diff_stats.value() {
-            context.set.insert(flags::SHOW_CODE_REVIEW_DIFF_STATS_FLAG);
-        }
-        if *general_settings
-            .auto_open_code_review_pane_on_first_agent_change
-            .value()
+        #[cfg(not(feature = "local_only"))]
         {
-            context.set.insert(flags::AUTO_OPEN_CODE_REVIEW_PANE_FLAG);
+            if *tab_settings.show_code_review_button.value() {
+                context.set.insert(flags::SHOW_CODE_REVIEW_BUTTON_FLAG);
+            }
+            if *tab_settings.show_code_review_diff_stats.value() {
+                context.set.insert(flags::SHOW_CODE_REVIEW_DIFF_STATS_FLAG);
+            }
+            if *general_settings
+                .auto_open_code_review_pane_on_first_agent_change
+                .value()
+            {
+                context.set.insert(flags::AUTO_OPEN_CODE_REVIEW_PANE_FLAG);
+            }
         }
         if *tab_settings.use_vertical_tabs.value() {
             context.set.insert(flags::USE_VERTICAL_TABS_FLAG);
@@ -23264,19 +23297,23 @@ impl Workspace {
                 .set
                 .insert(flags::SHOW_VERTICAL_TAB_PANEL_IN_RESTORED_WINDOWS_FLAG);
         }
-        if *tab_settings
-            .use_latest_user_prompt_as_conversation_title_in_tab_names
-            .value()
+        #[cfg(not(feature = "local_only"))]
         {
-            context
-                .set
-                .insert(flags::USE_LATEST_USER_PROMPT_AS_CONVERSATION_TITLE_IN_TAB_NAMES_FLAG);
+            if *tab_settings
+                .use_latest_user_prompt_as_conversation_title_in_tab_names
+                .value()
+            {
+                context
+                    .set
+                    .insert(flags::USE_LATEST_USER_PROMPT_AS_CONVERSATION_TITLE_IN_TAB_NAMES_FLAG);
+            }
         }
         if self.should_show_session_config_tab_config_chip() {
             context
                 .set
                 .insert(flags::SESSION_CONFIG_TAB_CONFIG_CHIP_OPEN);
         }
+        #[cfg(not(feature = "local_only"))]
         if self.is_feature_intro_visible_on_active_tab(app) {
             context.set.insert(flags::FEATURE_INTRO_MODAL_OPEN);
         }
@@ -23299,22 +23336,26 @@ impl Workspace {
             context.set.insert(flags::MIDDLE_CLICK_PASTE_FLAG);
         }
 
-        if *code_settings.code_as_default_editor.value() {
-            context.set.insert(flags::CODE_AS_DEFAULT_EDITOR);
-        }
+        #[cfg(not(feature = "local_only"))]
+        {
+            if *code_settings.code_as_default_editor.value() {
+                context.set.insert(flags::CODE_AS_DEFAULT_EDITOR);
+            }
 
-        if *code_settings.codebase_context_enabled.value() {
-            context.set.insert(flags::IS_CODEBASE_INDEXING_ENABLED);
-        }
+            if *code_settings.codebase_context_enabled.value() {
+                context.set.insert(flags::IS_CODEBASE_INDEXING_ENABLED);
+            }
 
-        if *code_settings.auto_indexing_enabled.value() {
-            context.set.insert(flags::IS_AUTOINDEXING_ENABLED);
+            if *code_settings.auto_indexing_enabled.value() {
+                context.set.insert(flags::IS_AUTOINDEXING_ENABLED);
+            }
         }
 
         if *input_settings.show_hint_text.value() {
             context.set.insert(flags::SHOW_INPUT_HINT_TEXT_CONTEXT_FLAG);
         }
 
+        #[cfg(not(feature = "local_only"))]
         if *input_settings.show_agent_tips.value() {
             context.set.insert(flags::SHOW_AGENT_TIPS_FLAG);
         }
@@ -23348,6 +23389,7 @@ impl Workspace {
         if *terminal_settings.use_audible_bell {
             context.set.insert(flags::USE_AUDIBLE_BELL_CONTEXT_FLAG);
         }
+        #[cfg(not(feature = "local_only"))]
         if *terminal_settings.show_terminal_zero_state_block.value() {
             context
                 .set
@@ -23365,181 +23407,187 @@ impl Workspace {
             context.set.insert(flags::PREFER_LOW_POWER_GPU_FLAG);
         }
 
-        let ai_settings = AISettings::as_ref(app);
-        if ai_settings.is_ai_autodetection_enabled(app) {
-            context.set.insert(flags::AI_INPUT_AUTODETECTION_FLAG);
-        }
-        if ai_settings.is_nld_in_terminal_enabled(app) {
-            context.set.insert(flags::NLD_IN_TERMINAL_FLAG);
-        }
-        if ai_settings.is_intelligent_autosuggestions_enabled(app) {
-            context.set.insert(flags::INTELLIGENT_AUTOSUGGESTIONS_FLAG);
-        }
-        if ai_settings.is_prompt_suggestions_enabled(app) {
-            context.set.insert(flags::PROMPT_SUGGESTIONS_FLAG);
-        }
-        if ai_settings.is_code_suggestions_enabled(app) {
-            context.set.insert(flags::CODE_SUGGESTIONS_FLAG);
-        }
-        if ai_settings.is_natural_language_autosuggestions_enabled(app) {
-            context
-                .set
-                .insert(flags::NATURAL_LANGUAGE_AUTOSUGGESTIONS_FLAG);
-        }
-
-        if ai_settings.is_shared_block_title_generation_enabled(app) {
-            context
-                .set
-                .insert(flags::SHARED_BLOCK_TITLE_GENERATION_FLAG);
-        }
-
-        if *ai_settings.should_show_oz_updates_in_zero_state.value() {
-            context
-                .set
-                .insert(flags::SHOW_OZ_UPDATES_IN_ZERO_STATE_FLAG);
-        }
-        if *ai_settings.git_operations_autogen_enabled_internal.value() {
-            context.set.insert(flags::GIT_OPERATIONS_AUTOGEN_FLAG);
-        }
-        if *ai_settings.include_agent_commands_in_history.value() {
-            context
-                .set
-                .insert(flags::INCLUDE_AGENT_COMMANDS_IN_HISTORY_FLAG);
-        }
-
-        if *ai_settings.auto_approve_bypasses_command_denylist.value() {
-            context
-                .set
-                .insert(flags::AUTO_APPROVE_BYPASSES_COMMAND_DENYLIST_FLAG);
-        }
-
-        if *ai_settings.memory_enabled.value() {
-            context.set.insert(flags::AI_RULES_FLAG);
-        }
-        if *ai_settings.rule_suggestions_enabled_internal.value() {
-            context.set.insert(flags::SUGGESTED_RULES_FLAG);
-        }
-        if *ai_settings.warp_drive_context_enabled.value() {
-            context.set.insert(flags::WARP_DRIVE_CONTEXT_FLAG);
-        }
-        if *ai_settings.file_based_mcp_enabled.value() {
-            context.set.insert(flags::FILE_BASED_MCP_FLAG);
-        }
-        if *ai_settings.can_use_warp_credits_for_fallback.value() {
-            context.set.insert(flags::WARP_CREDIT_FALLBACK_FLAG);
-        }
-        if *session_settings.show_model_selectors_in_prompt.value() {
-            context
-                .set
-                .insert(flags::SHOW_BASE_MODEL_PICKER_IN_PROMPT_FLAG);
-        }
-        if *ai_settings.should_render_cli_agent_footer.value() {
-            context.set.insert(flags::CLI_AGENT_FOOTER_ENABLED);
-        }
-        if *ai_settings.auto_toggle_rich_input.value() {
-            context.set.insert(flags::AUTO_TOGGLE_RICH_INPUT_FLAG);
-        }
-        if *ai_settings.auto_open_rich_input_on_cli_agent_start.value() {
-            context
-                .set
-                .insert(flags::AUTO_OPEN_RICH_INPUT_ON_CLI_AGENT_START_FLAG);
-        }
-        if *ai_settings.auto_dismiss_rich_input_after_submit.value() {
-            context
-                .set
-                .insert(flags::AUTO_DISMISS_RICH_INPUT_AFTER_SUBMIT_FLAG);
-        }
-        if *ai_settings.show_agent_notifications.value() {
-            context.set.insert(flags::AGENT_IN_APP_NOTIFICATIONS_FLAG);
-        }
-
-        if *ai_settings
-            .should_render_use_agent_footer_for_user_commands
-            .value()
+        #[cfg(not(feature = "local_only"))]
         {
-            context.set.insert(flags::USE_AGENT_FOOTER_FLAG);
-        }
-
-        match ai_settings.thinking_display_mode {
-            crate::settings::ThinkingDisplayMode::ShowAndCollapse => {
+            let ai_settings = AISettings::as_ref(app);
+            if ai_settings.is_ai_autodetection_enabled(app) {
+                context.set.insert(flags::AI_INPUT_AUTODETECTION_FLAG);
+            }
+            if ai_settings.is_nld_in_terminal_enabled(app) {
+                context.set.insert(flags::NLD_IN_TERMINAL_FLAG);
+            }
+            if ai_settings.is_intelligent_autosuggestions_enabled(app) {
+                context.set.insert(flags::INTELLIGENT_AUTOSUGGESTIONS_FLAG);
+            }
+            if ai_settings.is_prompt_suggestions_enabled(app) {
+                context.set.insert(flags::PROMPT_SUGGESTIONS_FLAG);
+            }
+            if ai_settings.is_code_suggestions_enabled(app) {
+                context.set.insert(flags::CODE_SUGGESTIONS_FLAG);
+            }
+            if ai_settings.is_natural_language_autosuggestions_enabled(app) {
                 context
                     .set
-                    .insert(flags::THINKING_DISPLAY_SHOW_AND_COLLAPSE);
+                    .insert(flags::NATURAL_LANGUAGE_AUTOSUGGESTIONS_FLAG);
             }
-            crate::settings::ThinkingDisplayMode::AlwaysShow => {
-                context.set.insert(flags::THINKING_DISPLAY_ALWAYS_SHOW);
-            }
-            crate::settings::ThinkingDisplayMode::NeverShow => {
-                context.set.insert(flags::THINKING_DISPLAY_NEVER_SHOW);
-            }
-        }
 
-        match ai_settings.orchestration_message_display_mode {
-            crate::settings::OrchestrationMessageDisplayMode::ShowAndCollapse => {
+            if ai_settings.is_shared_block_title_generation_enabled(app) {
                 context
                     .set
-                    .insert(flags::ORCHESTRATION_MESSAGE_DISPLAY_SHOW_AND_COLLAPSE);
+                    .insert(flags::SHARED_BLOCK_TITLE_GENERATION_FLAG);
             }
-            crate::settings::OrchestrationMessageDisplayMode::AlwaysShow => {
+
+            if *ai_settings.should_show_oz_updates_in_zero_state.value() {
                 context
                     .set
-                    .insert(flags::ORCHESTRATION_MESSAGE_DISPLAY_ALWAYS_SHOW);
+                    .insert(flags::SHOW_OZ_UPDATES_IN_ZERO_STATE_FLAG);
             }
-            crate::settings::OrchestrationMessageDisplayMode::AlwaysCollapse => {
+            if *ai_settings.git_operations_autogen_enabled_internal.value() {
+                context.set.insert(flags::GIT_OPERATIONS_AUTOGEN_FLAG);
+            }
+            if *ai_settings.include_agent_commands_in_history.value() {
                 context
                     .set
-                    .insert(flags::ORCHESTRATION_MESSAGE_DISPLAY_ALWAYS_COLLAPSE);
+                    .insert(flags::INCLUDE_AGENT_COMMANDS_IN_HISTORY_FLAG);
             }
-        }
 
-        match ai_settings.default_prompt_submission_mode {
-            crate::settings::PromptSubmissionMode::Interrupt => {
-                context.set.insert(flags::PROMPT_SUBMISSION_INTERRUPT);
-            }
-            crate::settings::PromptSubmissionMode::Queue => {
-                context.set.insert(flags::PROMPT_SUBMISSION_QUEUE);
-            }
-        }
-
-        match ai_settings.long_running_command_submission_mode {
-            crate::settings::LongRunningCommandSubmissionMode::SendImmediately => {
-                context.set.insert(flags::LRC_SUBMISSION_SEND_IMMEDIATELY);
-            }
-            crate::settings::LongRunningCommandSubmissionMode::QueueUntilCommandCompletes => {
+            if *ai_settings.auto_approve_bypasses_command_denylist.value() {
                 context
                     .set
-                    .insert(flags::LRC_SUBMISSION_QUEUE_UNTIL_COMMAND_COMPLETES);
+                    .insert(flags::AUTO_APPROVE_BYPASSES_COMMAND_DENYLIST_FLAG);
+            }
+
+            if *ai_settings.memory_enabled.value() {
+                context.set.insert(flags::AI_RULES_FLAG);
+            }
+            if *ai_settings.rule_suggestions_enabled_internal.value() {
+                context.set.insert(flags::SUGGESTED_RULES_FLAG);
+            }
+            if *ai_settings.warp_drive_context_enabled.value() {
+                context.set.insert(flags::WARP_DRIVE_CONTEXT_FLAG);
+            }
+            if *ai_settings.file_based_mcp_enabled.value() {
+                context.set.insert(flags::FILE_BASED_MCP_FLAG);
+            }
+            if *ai_settings.can_use_warp_credits_for_fallback.value() {
+                context.set.insert(flags::WARP_CREDIT_FALLBACK_FLAG);
+            }
+            if *session_settings.show_model_selectors_in_prompt.value() {
+                context
+                    .set
+                    .insert(flags::SHOW_BASE_MODEL_PICKER_IN_PROMPT_FLAG);
+            }
+            if *ai_settings.should_render_cli_agent_footer.value() {
+                context.set.insert(flags::CLI_AGENT_FOOTER_ENABLED);
+            }
+            if *ai_settings.auto_toggle_rich_input.value() {
+                context.set.insert(flags::AUTO_TOGGLE_RICH_INPUT_FLAG);
+            }
+            if *ai_settings.auto_open_rich_input_on_cli_agent_start.value() {
+                context
+                    .set
+                    .insert(flags::AUTO_OPEN_RICH_INPUT_ON_CLI_AGENT_START_FLAG);
+            }
+            if *ai_settings.auto_dismiss_rich_input_after_submit.value() {
+                context
+                    .set
+                    .insert(flags::AUTO_DISMISS_RICH_INPUT_AFTER_SUBMIT_FLAG);
+            }
+            if *ai_settings.show_agent_notifications.value() {
+                context.set.insert(flags::AGENT_IN_APP_NOTIFICATIONS_FLAG);
+            }
+
+            if *ai_settings
+                .should_render_use_agent_footer_for_user_commands
+                .value()
+            {
+                context.set.insert(flags::USE_AGENT_FOOTER_FLAG);
+            }
+
+            match ai_settings.thinking_display_mode {
+                crate::settings::ThinkingDisplayMode::ShowAndCollapse => {
+                    context
+                        .set
+                        .insert(flags::THINKING_DISPLAY_SHOW_AND_COLLAPSE);
+                }
+                crate::settings::ThinkingDisplayMode::AlwaysShow => {
+                    context.set.insert(flags::THINKING_DISPLAY_ALWAYS_SHOW);
+                }
+                crate::settings::ThinkingDisplayMode::NeverShow => {
+                    context.set.insert(flags::THINKING_DISPLAY_NEVER_SHOW);
+                }
+            }
+
+            match ai_settings.orchestration_message_display_mode {
+                crate::settings::OrchestrationMessageDisplayMode::ShowAndCollapse => {
+                    context
+                        .set
+                        .insert(flags::ORCHESTRATION_MESSAGE_DISPLAY_SHOW_AND_COLLAPSE);
+                }
+                crate::settings::OrchestrationMessageDisplayMode::AlwaysShow => {
+                    context
+                        .set
+                        .insert(flags::ORCHESTRATION_MESSAGE_DISPLAY_ALWAYS_SHOW);
+                }
+                crate::settings::OrchestrationMessageDisplayMode::AlwaysCollapse => {
+                    context
+                        .set
+                        .insert(flags::ORCHESTRATION_MESSAGE_DISPLAY_ALWAYS_COLLAPSE);
+                }
+            }
+
+            match ai_settings.default_prompt_submission_mode {
+                crate::settings::PromptSubmissionMode::Interrupt => {
+                    context.set.insert(flags::PROMPT_SUBMISSION_INTERRUPT);
+                }
+                crate::settings::PromptSubmissionMode::Queue => {
+                    context.set.insert(flags::PROMPT_SUBMISSION_QUEUE);
+                }
+            }
+
+            match ai_settings.long_running_command_submission_mode {
+                crate::settings::LongRunningCommandSubmissionMode::SendImmediately => {
+                    context.set.insert(flags::LRC_SUBMISSION_SEND_IMMEDIATELY);
+                }
+                crate::settings::LongRunningCommandSubmissionMode::QueueUntilCommandCompletes => {
+                    context
+                        .set
+                        .insert(flags::LRC_SUBMISSION_QUEUE_UNTIL_COMMAND_COMPLETES);
+                }
             }
         }
 
-        if input_settings.is_terminal_input_message_bar_enabled() {
-            context
-                .set
-                .insert(flags::SHOW_TERMINAL_INPUT_MESSAGE_LINE_FLAG);
-        }
-
-        if *input_settings.enable_slash_commands_in_terminal.value() {
-            context.set.insert(flags::SLASH_COMMANDS_IN_TERMINAL_FLAG);
-        }
-        if *input_settings.at_context_menu_in_terminal_mode.value() {
-            context.set.insert(flags::AT_CONTEXT_MENU_IN_TERMINAL_FLAG);
-        }
-
-        if *input_settings
-            .outline_codebase_symbols_for_at_context_menu
-            .value()
+        #[cfg(not(feature = "local_only"))]
         {
-            context
-                .set
-                .insert(flags::OUTLINE_CODEBASE_SYMBOLS_FOR_AT_CONTEXT_MENU_FLAG);
-        }
-        if *command_search_settings
-            .show_global_workflows_in_universal_search
-            .value()
-        {
-            context
-                .set
-                .insert(flags::GLOBAL_WORKFLOWS_IN_COMMAND_SEARCH_FLAG);
+            if input_settings.is_terminal_input_message_bar_enabled() {
+                context
+                    .set
+                    .insert(flags::SHOW_TERMINAL_INPUT_MESSAGE_LINE_FLAG);
+            }
+
+            if *input_settings.enable_slash_commands_in_terminal.value() {
+                context.set.insert(flags::SLASH_COMMANDS_IN_TERMINAL_FLAG);
+            }
+            if *input_settings.at_context_menu_in_terminal_mode.value() {
+                context.set.insert(flags::AT_CONTEXT_MENU_IN_TERMINAL_FLAG);
+            }
+
+            if *input_settings
+                .outline_codebase_symbols_for_at_context_menu
+                .value()
+            {
+                context
+                    .set
+                    .insert(flags::OUTLINE_CODEBASE_SYMBOLS_FOR_AT_CONTEXT_MENU_FLAG);
+            }
+            if *command_search_settings
+                .show_global_workflows_in_universal_search
+                .value()
+            {
+                context
+                    .set
+                    .insert(flags::GLOBAL_WORKFLOWS_IN_COMMAND_SEARCH_FLAG);
+            }
         }
 
         if ChannelState::enable_debug_features() {
@@ -27283,10 +27331,12 @@ impl View for Workspace {
             stack.add_child(ChildView::new(&self.ctrl_tab_palette).finish());
         }
 
+        #[cfg(not(feature = "local_only"))]
         if self.current_workspace_state.is_require_login_modal_open {
             stack.add_child(ChildView::new(&self.require_login_modal).finish());
         }
 
+        #[cfg(not(feature = "local_only"))]
         if self.current_workspace_state.is_auth_override_modal_open {
             stack.add_child(ChildView::new(&self.auth_override_warning_modal).finish());
         }
@@ -27303,6 +27353,7 @@ impl View for Workspace {
             stack.add_child(ChildView::new(&self.theme_deletion_modal).finish());
         }
 
+        #[cfg(not(feature = "local_only"))]
         if self
             .current_workspace_state
             .is_shared_objects_creation_denied_modal_open
@@ -27310,6 +27361,7 @@ impl View for Workspace {
             stack.add_child(ChildView::new(&self.shared_objects_creation_denied_modal).finish());
         }
 
+        #[cfg(not(feature = "local_only"))]
         if self.current_workspace_state.is_reward_modal_open {
             stack.add_child(Clipped::new(ChildView::new(&self.reward_modal).finish()).finish());
         }
@@ -27362,18 +27414,22 @@ impl View for Workspace {
             }
         }
 
+        #[cfg(not(feature = "local_only"))]
         if self.new_worktree_modal.is_open() {
             stack.add_child(self.new_worktree_modal.render());
         }
 
+        #[cfg(not(feature = "local_only"))]
         if self.workflow_modal.as_ref(app).is_open() {
             stack.add_child(ChildView::new(&self.workflow_modal).finish());
         }
 
+        #[cfg(not(feature = "local_only"))]
         if self.current_workspace_state.is_prompt_editor_open {
             stack.add_child(ChildView::new(&self.prompt_editor_modal).finish());
         }
 
+        #[cfg(not(feature = "local_only"))]
         if FeatureFlag::AgentToolbarEditor.is_enabled()
             && self.current_workspace_state.is_agent_toolbar_editor_open
         {
@@ -27384,6 +27440,7 @@ impl View for Workspace {
             stack.add_child(ChildView::new(&self.header_toolbar_editor_modal).finish());
         }
 
+        #[cfg(not(feature = "local_only"))]
         if self
             .current_workspace_state
             .is_suggested_agent_mode_workflow_modal_open
@@ -27391,37 +27448,47 @@ impl View for Workspace {
             stack.add_child(ChildView::new(&self.suggested_agent_mode_workflow_modal).finish());
         }
 
+        #[cfg(not(feature = "local_only"))]
         if self.current_workspace_state.is_suggested_rule_modal_open {
             stack.add_child(ChildView::new(&self.suggested_rule_modal).finish());
         }
 
+        #[cfg(not(feature = "local_only"))]
         let one_time_modal_model = OneTimeModalModel::as_ref(app);
+        #[cfg(not(feature = "local_only"))]
         let should_show_modal = one_time_modal_model.target_window_id() == Some(self.window_id);
 
+        #[cfg(not(feature = "local_only"))]
         if should_show_modal && one_time_modal_model.is_oz_launch_modal_open() {
             stack.add_child(ChildView::new(&self.oz_launch_modal.view).finish());
         }
 
+        #[cfg(not(feature = "local_only"))]
         if should_show_modal && one_time_modal_model.is_openwarp_launch_modal_open() {
             stack.add_child(ChildView::new(&self.openwarp_launch_modal).finish());
         }
 
+        #[cfg(not(feature = "local_only"))]
         if should_show_modal && one_time_modal_model.is_orchestration_launch_modal_open() {
             stack.add_child(ChildView::new(&self.orchestration_launch_modal).finish());
         }
 
+        #[cfg(not(feature = "local_only"))]
         if should_show_modal && one_time_modal_model.is_agent_cli_launch_modal_open() {
             stack.add_child(ChildView::new(&self.agent_cli_launch_modal).finish());
         }
 
+        #[cfg(not(feature = "local_only"))]
         if should_show_modal && one_time_modal_model.is_auto_handoff_sleep_modal_open() {
             stack.add_child(ChildView::new(&self.auto_handoff_sleep_modal).finish());
         }
 
+        #[cfg(not(feature = "local_only"))]
         if should_show_modal && one_time_modal_model.is_free_ai_removal_modal_open() {
             stack.add_child(ChildView::new(&self.free_ai_removal_modal).finish());
         }
 
+        #[cfg(not(feature = "local_only"))]
         if self
             .current_workspace_state
             .is_prompt_suggestions_unavailable_modal_open
@@ -27429,6 +27496,7 @@ impl View for Workspace {
             stack.add_child(ChildView::new(&self.prompt_suggestions_unavailable_modal).finish());
         }
 
+        #[cfg(not(feature = "local_only"))]
         if let Some(hoa_flow) = &self.hoa_onboarding_flow {
             let step = hoa_flow.as_ref(app).step();
 
@@ -27545,6 +27613,7 @@ impl View for Workspace {
             }
         }
 
+        #[cfg(not(feature = "local_only"))]
         if self
             .current_workspace_state
             .is_enable_auto_reload_modal_open
@@ -27552,14 +27621,17 @@ impl View for Workspace {
             stack.add_child(ChildView::new(&self.enable_auto_reload_modal).finish());
         }
 
+        #[cfg(not(feature = "local_only"))]
         if should_show_modal && one_time_modal_model.is_build_plan_migration_modal_open() {
             stack.add_child(ChildView::new(&self.build_plan_migration_modal).finish());
         }
 
+        #[cfg(not(feature = "local_only"))]
         if self.current_workspace_state.is_codex_modal_open {
             stack.add_child(ChildView::new(&self.codex_modal).finish());
         }
 
+        #[cfg(not(feature = "local_only"))]
         if FeatureFlag::CloudMode.is_enabled()
             && self
                 .current_workspace_state
@@ -27568,18 +27640,22 @@ impl View for Workspace {
             stack.add_child(ChildView::new(&self.cloud_agent_capacity_modal).finish());
         }
 
+        #[cfg(not(feature = "local_only"))]
         if let Some(lightbox_view) = &self.lightbox_view {
             stack.add_child(ChildView::new(lightbox_view).finish());
         }
 
+        #[cfg(not(feature = "local_only"))]
         if let Some(handoff_modal) = &self.handoff_environment_creation_modal {
             stack.add_child(ChildView::new(handoff_modal).finish());
         }
 
+        #[cfg(not(feature = "local_only"))]
         if let Some(create_auth_secret_modal) = &self.create_auth_secret_modal {
             stack.add_child(ChildView::new(create_auth_secret_modal).finish());
         }
 
+        #[cfg(not(feature = "local_only"))]
         if FeatureFlag::CreatingSharedSessions.is_enabled()
             && ContextFlag::CreateSharedSession.is_enabled()
             && self
@@ -27597,6 +27673,7 @@ impl View for Workspace {
             );
         }
 
+        #[cfg(not(feature = "local_only"))]
         if self
             .current_workspace_state
             .is_rewind_confirmation_dialog_open
@@ -27612,6 +27689,7 @@ impl View for Workspace {
             );
         }
 
+        #[cfg(not(feature = "local_only"))]
         if self
             .current_workspace_state
             .is_delete_conversation_confirmation_dialog_open
@@ -27654,6 +27732,7 @@ impl View for Workspace {
             );
         }
 
+        #[cfg(not(feature = "local_only"))]
         if FeatureFlag::AvatarInTabBar.is_enabled() && self.is_user_menu_open {
             stack.add_positioned_overlay_child(
                 ChildView::new(&self.user_menu).finish(),
@@ -27667,6 +27746,7 @@ impl View for Workspace {
             );
         }
 
+        #[cfg(not(feature = "local_only"))]
         if self.current_workspace_state.is_notification_mailbox_open
             && let Some(view) = &self.notification_mailbox_view
         {
@@ -27689,6 +27769,7 @@ impl View for Workspace {
             );
         }
 
+        #[cfg(not(feature = "local_only"))]
         if !FeatureFlag::AgentMode.is_enabled()
             && AISettings::as_ref(app).is_any_ai_enabled(app)
             && self.should_show_ai_assistant_warm_welcome
@@ -27777,51 +27858,55 @@ impl View for Workspace {
         );
 
         // Render agent toast stack (for agent-related notifications) if popup is not open
-        if FeatureFlag::HOANotifications.is_enabled()
-            && *AISettings::as_ref(app).show_agent_notifications
+        #[cfg(not(feature = "local_only"))]
         {
-            if !self.current_workspace_state.is_notification_mailbox_open
-                && let Some(stack_view) = &self.notification_toast_stack
+            if FeatureFlag::HOANotifications.is_enabled()
+                && *AISettings::as_ref(app).show_agent_notifications
             {
-                let mailbox_on_left = Self::is_mailbox_on_left(
-                    &TabSettings::as_ref(app).header_toolbar_chip_selection,
-                );
-                let (anchor, child_anchor, offset_x) = if mailbox_on_left {
-                    (
-                        PositionedElementAnchor::BottomLeft,
-                        ChildAnchor::TopLeft,
-                        WORKSPACE_PADDING,
-                    )
-                } else {
-                    (
-                        PositionedElementAnchor::BottomRight,
-                        ChildAnchor::TopRight,
-                        -WORKSPACE_PADDING,
-                    )
-                };
+                if !self.current_workspace_state.is_notification_mailbox_open
+                    && let Some(stack_view) = &self.notification_toast_stack
+                {
+                    let mailbox_on_left = Self::is_mailbox_on_left(
+                        &TabSettings::as_ref(app).header_toolbar_chip_selection,
+                    );
+                    let (anchor, child_anchor, offset_x) = if mailbox_on_left {
+                        (
+                            PositionedElementAnchor::BottomLeft,
+                            ChildAnchor::TopLeft,
+                            WORKSPACE_PADDING,
+                        )
+                    } else {
+                        (
+                            PositionedElementAnchor::BottomRight,
+                            ChildAnchor::TopRight,
+                            -WORKSPACE_PADDING,
+                        )
+                    };
+                    stack.add_positioned_overlay_child(
+                        ChildView::new(stack_view).finish(),
+                        OffsetPositioning::offset_from_save_position_element(
+                            TAB_BAR_POSITION_ID,
+                            vec2f(offset_x, 4.),
+                            PositionedElementOffsetBounds::WindowByPosition,
+                            anchor,
+                            child_anchor,
+                        ),
+                    );
+                }
+            } else if !self.current_workspace_state.is_agent_management_popup_open {
                 stack.add_positioned_overlay_child(
-                    ChildView::new(stack_view).finish(),
-                    OffsetPositioning::offset_from_save_position_element(
-                        TAB_BAR_POSITION_ID,
-                        vec2f(offset_x, 4.),
-                        PositionedElementOffsetBounds::WindowByPosition,
-                        anchor,
-                        child_anchor,
-                    ),
+                    ChildView::new(&self.agent_toast_stack).finish(),
+                    self.agent_toast_positioning(),
                 );
             }
-        } else if !self.current_workspace_state.is_agent_management_popup_open {
-            stack.add_positioned_overlay_child(
-                ChildView::new(&self.agent_toast_stack).finish(),
-                self.agent_toast_positioning(),
-            );
         }
 
         // Feature-intro popover: a non-blocking bottom-right card anchored just above
         // the input box (or the window corner when there is no input). Pinned to
         // the tab that first received it so it does not follow tab switches.
         // Added before the changelog chip below so the chip renders above it.
-        let show_feature_intro = self.is_feature_intro_visible_on_active_tab(app);
+        let show_feature_intro =
+            !cfg!(feature = "local_only") && self.is_feature_intro_visible_on_active_tab(app);
         if show_feature_intro {
             let positioning = match &input_position_id {
                 Some(input_position_id) => {

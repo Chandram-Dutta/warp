@@ -7,6 +7,7 @@ use ::settings::{Setting, ToggleableSetting};
 use lazy_static::lazy_static;
 use strum::IntoEnumIterator;
 use warp_core::channel::ChannelState;
+#[cfg(not(feature = "local_only"))]
 use warp_core::context_flag::ContextFlag;
 use warp_core::semantic_selection::{
     SemanticSelection, SemanticSelectionChangedEvent, SmartSelectEnabled,
@@ -2919,6 +2920,7 @@ impl FeaturesPageView {
             general_widgets.push(Box::new(MouseScrollMultiplierWidget::default()));
         }
 
+        #[cfg(not(feature = "local_only"))]
         if FeatureFlag::AutoOpenCodeReviewPane.is_enabled()
             && !FeatureFlag::OpenWarpNewSettingsModes.is_enabled()
         {
@@ -2969,6 +2971,7 @@ impl FeaturesPageView {
             session_widgets.push(Box::new(UndoCloseWidget::default()));
         }
 
+        #[cfg(not(feature = "local_only"))]
         if FeatureFlag::CreatingSharedSessions.is_enabled()
             && ContextFlag::CreateSharedSession.is_enabled()
             && session_settings
@@ -3076,6 +3079,7 @@ impl FeaturesPageView {
             editor_widgets.push(Box::new(AtContextMenuInTerminalModeWidget::default()));
         }
 
+        #[cfg(not(feature = "local_only"))]
         if FeatureFlag::AgentView.is_enabled()
             && input_settings
                 .enable_slash_commands_in_terminal
@@ -3084,6 +3088,7 @@ impl FeaturesPageView {
             editor_widgets.push(Box::new(SlashCommandsInTerminalModeWidget::default()));
         }
 
+        #[cfg(not(feature = "local_only"))]
         if input_settings
             .outline_codebase_symbols_for_at_context_menu
             .is_supported_on_current_platform()
@@ -3094,6 +3099,7 @@ impl FeaturesPageView {
             ));
         }
 
+        #[cfg(not(feature = "local_only"))]
         if FeatureFlag::AgentView.is_enabled() {
             editor_widgets.push(Box::new(ShowTerminalInputMessageLineWidget::default()));
         }
@@ -3138,6 +3144,7 @@ impl FeaturesPageView {
             terminal_widgets.push(Box::new(AudibleBellWidget::default()));
         }
 
+        #[cfg(not(feature = "local_only"))]
         if FeatureFlag::AgentView.is_enabled() {
             terminal_widgets.push(Box::new(ShowTerminalZeroStateBlockWidget::default()));
         }
@@ -3187,12 +3194,18 @@ impl FeaturesPageView {
             Category::new("Terminal Input", editor_widgets),
             Category::new("Terminal", terminal_widgets),
             Category::new("Notifications", notifications_widgets),
+            Category::new("System", system_widgets),
+        ];
+        #[cfg(not(feature = "local_only"))]
+        let mut categories = categories;
+        #[cfg(not(feature = "local_only"))]
+        categories.insert(
+            categories.len() - 1,
             Category::new(
                 "Workflows",
                 vec![Box::new(WorkflowsInCommandSearch::default())],
             ),
-            Category::new("System", system_widgets),
-        ];
+        );
 
         PageType::new_categorized(categories, None)
     }
@@ -3811,9 +3824,7 @@ impl FeaturesPageView {
         dropdown.update(
             ctx,
             |dropdown: &mut FilterableDropdown<FeaturesPageAction>, ctx| {
-                let is_ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
-
-                if is_ai_enabled {
+                if cfg!(feature = "local_only") || AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
                     dropdown.set_enabled(ctx);
                 } else {
                     dropdown.set_disabled(ctx);
@@ -5481,6 +5492,7 @@ impl SettingsWidget for DesktopNotificationsWidget {
             column.add_child(render_group(toggles, appearance));
         }
 
+        #[cfg(not(feature = "local_only"))]
         if FeatureFlag::HOANotifications.is_enabled() {
             let ai_settings = AISettings::as_ref(app);
             let show_agent_notifications = *ai_settings.show_agent_notifications;
@@ -7473,7 +7485,11 @@ impl SettingsWidget for DefaultSessionModeWidget {
     type View = FeaturesPageView;
 
     fn search_terms(&self) -> &str {
-        "default session mode agent terminal new pane tab open config"
+        if cfg!(feature = "local_only") {
+            "default session mode terminal new pane tab open config"
+        } else {
+            "default session mode agent terminal new pane tab open config"
+        }
     }
 
     fn render(

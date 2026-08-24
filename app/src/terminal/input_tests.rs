@@ -9654,3 +9654,57 @@ fn local_only_input_actions_preserve_next_command_but_reject_agent_entrypoints()
     assert!(!Event::OpenViewMCPPane.is_available_in_product());
     assert!(!Event::OpenShareSessionModal.is_available_in_product());
 }
+
+#[test]
+#[cfg(feature = "local_only")]
+fn local_only_enter_executes_shell_command_even_when_agent_flags_and_state_are_enabled() {
+    App::test((), |mut app| async move {
+        let _agent_mode = FeatureFlag::AgentMode.override_enabled(true);
+        let _agent_view = FeatureFlag::AgentView.override_enabled(true);
+        initialize_app(&mut app);
+
+        let session_info = SessionInfo::new_for_test();
+        let session_id = session_info.session_id;
+        let terminal =
+            add_window_with_bootstrapped_terminal(&mut app, None, Some(session_info)).await;
+        simulate_directory_for_completion(session_id, &terminal, &mut app, "~");
+        let input = terminal.read(&app, |terminal, _| terminal.input().clone());
+        assert!(!input.read(&app, |input, ctx| {
+            input.should_show_universal_developer_input(ctx)
+        }));
+
+        input.update(&mut app, |input, ctx| {
+            input.ai_input_model().update(ctx, |ai_input, ctx| {
+                ai_input.set_input_config(
+                    InputConfig {
+                        input_type: InputType::AI,
+                        is_locked: false,
+                    },
+                    true,
+                    None,
+                    ctx,
+                );
+            });
+            input.replace_buffer_content("printf local-only", ctx);
+        });
+
+        let executed_commands = Rc::new(RefCell::new(Vec::new()));
+        let executed_commands_for_subscription = executed_commands.clone();
+        let ai_query_count = Rc::new(RefCell::new(0));
+        let ai_query_count_for_subscription = ai_query_count.clone();
+        app.update(|ctx| {
+            ctx.subscribe_to_view(&input, move |_, event: &Event, _| match event {
+                Event::ExecuteCommand(event) => executed_commands_for_subscription
+                    .borrow_mut()
+                    .push(event.command.clone()),
+                Event::ExecuteAIQuery => *ai_query_count_for_subscription.borrow_mut() += 1,
+                _ => {}
+            });
+        });
+
+        input.update(&mut app, |input, ctx| input.input_enter(ctx));
+
+        assert_eq!(executed_commands.borrow().as_slice(), ["printf local-only"]);
+        assert_eq!(*ai_query_count.borrow(), 0);
+    });
+}

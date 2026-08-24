@@ -50,6 +50,7 @@ mod tab_metadata;
 mod testing;
 mod tooltips;
 pub mod use_agent_footer;
+#[cfg(not(feature = "local_only"))]
 mod zero_state_block;
 
 use std::any::Any;
@@ -224,13 +225,16 @@ use crate::ai::ambient_agents::{
 use crate::ai::blocklist::agent_view::agent_input_footer::toolbar_item::AgentToolbarItemKind;
 use crate::ai::blocklist::agent_view::orchestration_conversation_links::pane_group_id_containing_terminal_view;
 use crate::ai::blocklist::agent_view::{
-    AgentViewController, AgentViewControllerEvent, AgentViewConversationSelection,
-    AgentViewDisplayMode, AgentViewEntryBlockParams, AgentViewEntryOrigin,
-    AgentViewHeaderDisabledTheme, AgentViewHeaderTheme, AgentViewZeroStateBlock,
-    AgentViewZeroStateEvent, ENTER_OR_EXIT_CONFIRMATION_WINDOW, EphemeralMessageModel,
-    ExitConfirmationTrigger, GuiInputModePolicy, InlineAgentViewHeader, OrchestrationPillBar,
-    fork_from_last_known_good_state_exchange_id, get_agent_view_entry_block_position_id,
+    AgentViewController, AgentViewConversationSelection, AgentViewEntryBlockParams,
+    AgentViewEntryOrigin, AgentViewHeaderDisabledTheme, AgentViewHeaderTheme,
+    ENTER_OR_EXIT_CONFIRMATION_WINDOW, EphemeralMessageModel, ExitConfirmationTrigger,
+    GuiInputModePolicy, OrchestrationPillBar, fork_from_last_known_good_state_exchange_id,
     is_in_cloud_context,
+};
+#[cfg(not(feature = "local_only"))]
+use crate::ai::blocklist::agent_view::{
+    AgentViewControllerEvent, AgentViewDisplayMode, AgentViewZeroStateBlock,
+    AgentViewZeroStateEvent, InlineAgentViewHeader, get_agent_view_entry_block_position_id,
 };
 use crate::ai::blocklist::block::cli::{CLISubagentView, CLISubagentViewEvent};
 use crate::ai::blocklist::block::cli_controller::{
@@ -256,19 +260,22 @@ use crate::ai::blocklist::usage::conversation_usage_view::{
     ConversationUsageInfo, ConversationUsageView, TimingInfo,
 };
 use crate::ai::blocklist::{
-    AIBlock, AIBlockEvent, ATTACH_AS_AGENT_MODE_CONTEXT_TEXT, AutofireAction,
-    BlocklistAIActionEvent, BlocklistAIActionModel, BlocklistAIContextEvent,
-    BlocklistAIContextModel, BlocklistAIController, BlocklistAIControllerEvent,
-    BlocklistAIHistoryEvent, BlocklistAIHistoryModel, BlocklistAIInputEvent, BlocklistAIInputModel,
-    ClientIdentifiers, ConversationSelection, ConversationStatusUpdate, InputConfig, InputType,
-    InputTypeAutoDetectionSource, LegacyPassiveSuggestionsEvent, LegacyPassiveSuggestionsModel,
-    MaaPassiveSuggestionsEvent, MaaPassiveSuggestionsModel, PRE_REWIND_PREFIX,
-    PassiveSuggestionsModels, PendingAttachment, PendingQueryState, QueuedQuery, QueuedQueryId,
-    QueuedQueryModel, QueuedQueryOrigin, RequestFileEditsFormatKind, ShellCommandExecutor,
-    ShellCommandExecutorEvent, SlashCommandRequest, StartAgentExecutor, StartAgentExecutorEvent,
-    StartAgentRequest, ai_brand_color, block_context_from_terminal_model,
-    get_ai_block_overflow_menu_element_position_id, get_attached_blocks_chip_element_position_id,
-    is_lrc_auto_queue_active,
+    AIBlock, AIBlockEvent, AutofireAction, BlocklistAIActionEvent, BlocklistAIActionModel,
+    BlocklistAIContextEvent, BlocklistAIContextModel, BlocklistAIController,
+    BlocklistAIControllerEvent, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
+    BlocklistAIInputEvent, BlocklistAIInputModel, ClientIdentifiers, ConversationSelection,
+    ConversationStatusUpdate, InputConfig, InputType, InputTypeAutoDetectionSource,
+    LegacyPassiveSuggestionsEvent, LegacyPassiveSuggestionsModel, MaaPassiveSuggestionsEvent,
+    MaaPassiveSuggestionsModel, PRE_REWIND_PREFIX, PassiveSuggestionsModels, PendingAttachment,
+    PendingQueryState, QueuedQuery, QueuedQueryId, QueuedQueryModel, QueuedQueryOrigin,
+    RequestFileEditsFormatKind, ShellCommandExecutor, ShellCommandExecutorEvent,
+    SlashCommandRequest, StartAgentExecutor, StartAgentExecutorEvent, StartAgentRequest,
+    ai_brand_color, block_context_from_terminal_model, is_lrc_auto_queue_active,
+};
+#[cfg(not(feature = "local_only"))]
+use crate::ai::blocklist::{
+    ATTACH_AS_AGENT_MODE_CONTEXT_TEXT, get_ai_block_overflow_menu_element_position_id,
+    get_attached_blocks_chip_element_position_id,
 };
 use crate::ai::conversation_details_panel::ConversationDetailsPanelEvent;
 use crate::ai::conversation_utils;
@@ -281,12 +288,14 @@ use crate::ai::loading::shimmering_warp_loading_text;
 #[cfg(feature = "local_fs")]
 use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::ai::predict::next_command_model::is_next_command_enabled;
+#[cfg(not(feature = "local_only"))]
+use crate::ai::predict::prompt_suggestions::has_pending_code_or_unit_test_prompt_suggestion;
 use crate::ai::predict::prompt_suggestions::{
-    has_pending_code_or_unit_test_prompt_suggestion,
-    is_accept_prompt_suggestion_bound_to_cmd_enter,
-    is_accept_prompt_suggestion_bound_to_ctrl_enter,
+    is_accept_prompt_suggestion_bound_to_cmd_enter, is_accept_prompt_suggestion_bound_to_ctrl_enter,
 };
-use crate::ai_assistant::{ASK_AI_ASSISTANT_TEXT, AskAIType};
+#[cfg(not(feature = "local_only"))]
+use crate::ai_assistant::ASK_AI_ASSISTANT_TEXT;
+use crate::ai_assistant::AskAIType;
 use crate::antivirus::AntivirusInfo;
 use crate::appearance::{Appearance, AppearanceEvent};
 use crate::auth::auth_manager::AuthManager;
@@ -345,6 +354,7 @@ use crate::remote_server::manager::{
 use crate::resource_center::{
     Tip, TipHint, TipsCompleted, mark_feature_used_and_write_to_user_defaults,
 };
+#[cfg(not(feature = "local_only"))]
 use crate::search::slash_command_menu::static_commands::commands;
 use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::{ObjectUid, SyncId};
@@ -462,6 +472,7 @@ use crate::terminal::session_settings::{
     SessionSettings, SessionSettingsChangedEvent, ToolbarChipSelection,
 };
 use crate::terminal::settings::{TerminalSettings, TerminalSettingsChangedEvent};
+#[cfg(not(feature = "local_only"))]
 use crate::terminal::shared_session::manager::Manager;
 use crate::terminal::shared_session::role_change_modal::{
     RoleChangeCloseSource, RoleChangeOpenSource,
@@ -475,10 +486,12 @@ use crate::terminal::view::init_environment::mode_selector::{
     EnvironmentSetupMode, EnvironmentSetupModeSelector, EnvironmentSetupModeSelectorEvent,
 };
 use crate::terminal::view::init_environment::{InitEnvironmentBlock, InitEnvironmentBlockEvent};
+#[cfg(not(feature = "local_only"))]
+use crate::terminal::view::inline_banner::render_agent_mode_setup_banner;
 use crate::terminal::view::inline_banner::{
     AgentModeSetupSpeedbumpBannerAction, AgentModeSetupSpeedbumpBannerState,
     AliasExpansionBannerState, NotificationsDiscoveryBannerState, NotificationsErrorBannerState,
-    PromptSuggestionBannerState, VimModeBannerState, render_agent_mode_setup_banner,
+    PromptSuggestionBannerState, VimModeBannerState,
 };
 use crate::terminal::view::passive_suggestions::PromptSuggestionResolution;
 pub use crate::terminal::view::rich_content::{
@@ -496,6 +509,7 @@ use crate::terminal::view::ssh_tmux_deprecation_banner::{
     SshTmuxDeprecationBanner, SshTmuxDeprecationBannerEvent,
 };
 use crate::terminal::view::telemetry::PromptSuggestionFallbackReason;
+#[cfg(not(feature = "local_only"))]
 use crate::terminal::view::zero_state_block::TerminalViewZeroStateBlock;
 use crate::terminal::warpify::SubshellSource;
 use crate::terminal::warpify::render::render_subshell_separator;
@@ -1451,6 +1465,32 @@ pub enum ContextMenuAction {
     },
 }
 
+impl ContextMenuAction {
+    pub(super) fn is_available_in_product(&self) -> bool {
+        #[cfg(not(feature = "local_only"))]
+        return true;
+
+        #[cfg(feature = "local_only")]
+        matches!(
+            self,
+            Self::InsertSelectedText
+                | Self::CopySelectedText
+                | Self::CopyUrl { .. }
+                | Self::CopyBlocks
+                | Self::CopyBlockCommands
+                | Self::CopyBlockOutputs
+                | Self::CopyBlockFilteredOutputs
+                | Self::FindWithinBlock
+                | Self::ToggleBookmark
+                | Self::ScrollToBottomOfBlock
+                | Self::ScrollToTopOfBlock
+                | Self::CopyPrompt { .. }
+                | Self::CopyRprompt
+                | Self::EditPrompt
+        )
+    }
+}
+
 #[derive(Clone)]
 pub enum InputContextMenuAction {
     CutSelectedText,
@@ -1462,6 +1502,24 @@ pub enum InputContextMenuAction {
     AskWarpAI,
     SaveAsWorkflow,
     ToggleInputHintText,
+}
+
+impl InputContextMenuAction {
+    pub(super) fn is_available_in_product(&self) -> bool {
+        #[cfg(not(feature = "local_only"))]
+        return true;
+
+        #[cfg(feature = "local_only")]
+        matches!(
+            self,
+            Self::CutSelectedText
+                | Self::CopySelectedText
+                | Self::SelectAll
+                | Self::Paste
+                | Self::ShowCommandSearch
+                | Self::ToggleInputHintText
+        )
+    }
 }
 
 /// Where a user's question for AI originated. Handled by blocklist AI if the feature flag is
@@ -3180,6 +3238,7 @@ impl TerminalView {
             )
         });
 
+        #[cfg(not(feature = "local_only"))]
         ctx.subscribe_to_model(&agent_view_controller, |me, _, event, ctx| {
             match event {
                 AgentViewControllerEvent::EnteredAgentView {
@@ -8441,114 +8500,146 @@ impl TerminalView {
         if model.is_read_only() {
             return false;
         }
-        // Warp's own headless TUI (`warp_tui`) is itself an agent surface, so
-        // suppress the outer agent input bar while it runs in this pane. Uses
-        // the same command-based detection as the CLI agent footer (see
-        // `is_running_warp_tui`).
-        if self.is_running_warp_tui(model, app) {
-            return false;
-        }
-        if self.conversation_ended_tombstone_view_id.is_some() {
-            return false;
-        }
-        if self.blocks_cloud_followups_for_ambient_agent_session_from_model(model, app) {
-            return false;
-        }
-        if self.has_active_cli_agent_input_session(app) {
-            return true;
-        }
-        if model.is_alt_screen_active()
-            && !model.block_list().active_block().is_agent_in_control()
-            && !model.block_list().active_block().is_agent_tagged_in()
+
+        #[cfg(feature = "local_only")]
         {
-            return false;
+            if model.is_alt_screen_active()
+                || self.active_ssh_remote_server_choice_block().is_some()
+            {
+                return false;
+            }
+            if FeatureFlag::SshRemoteServer.is_enabled()
+                && let Some(pending_sid) = model.pending_session_id()
+                && self
+                    .sessions
+                    .as_ref(app)
+                    .remote_server_setup_state(pending_sid)
+                    .is_some_and(|state| state.is_in_progress())
+            {
+                return false;
+            }
+            return !model
+                .block_list()
+                .active_block()
+                .is_active_and_long_running()
+                || !model.block_list().is_bootstrapped();
         }
 
-        if model.shared_session_status().is_view_pending() && !self.is_ambient_agent_session(app) {
-            return false;
-        }
-
-        // In cloud agent conversations, once the shared session is ready but before the first
-        // agent exchange arrives, we hide the interactive input view. A non-interactive footer is
-        // rendered instead (see `TerminalView::render`).
-        if !FeatureFlag::CloudModeSetupV2.is_enabled()
-            && !FeatureFlag::HandoffCloudCloud.is_enabled()
-            && ambient_agent::is_cloud_agent_pre_first_exchange(
-                self.ambient_agent_view_model.as_ref(),
-                &self.agent_view_controller,
-                model,
-                app,
-            )
+        #[cfg(not(feature = "local_only"))]
         {
-            return false;
-        }
+            // Warp's own headless TUI (`warp_tui`) is itself an agent surface, so
+            // suppress the outer agent input bar while it runs in this pane. Uses
+            // the same command-based detection as the CLI agent footer (see
+            // `is_running_warp_tui`).
+            if self.is_running_warp_tui(model, app) {
+                return false;
+            }
+            if self.conversation_ended_tombstone_view_id.is_some() {
+                return false;
+            }
+            if self.blocks_cloud_followups_for_ambient_agent_session_from_model(model, app) {
+                return false;
+            }
+            if self.has_active_cli_agent_input_session(app) {
+                return true;
+            }
+            if model.is_alt_screen_active()
+                && !model.block_list().active_block().is_agent_in_control()
+                && !model.block_list().active_block().is_agent_tagged_in()
+            {
+                return false;
+            }
 
-        if self.has_active_init_project(app) && self.is_last_block_init_step(app) {
-            return false;
-        }
+            if model.shared_session_status().is_view_pending()
+                && !self.is_ambient_agent_session(app)
+            {
+                return false;
+            }
 
-        if FeatureFlag::CreateEnvironmentSlashCommand.is_enabled()
-            && self.active_init_environment_block(app).is_some()
-        {
-            return false;
-        }
+            // In cloud agent conversations, once the shared session is ready but before the first
+            // agent exchange arrives, we hide the interactive input view. A non-interactive footer is
+            // rendered instead (see `TerminalView::render`).
+            if !FeatureFlag::CloudModeSetupV2.is_enabled()
+                && !FeatureFlag::HandoffCloudCloud.is_enabled()
+                && ambient_agent::is_cloud_agent_pre_first_exchange(
+                    self.ambient_agent_view_model.as_ref(),
+                    &self.agent_view_controller,
+                    model,
+                    app,
+                )
+            {
+                return false;
+            }
 
-        if self.active_env_var_collection_block(app).is_some() {
-            return false;
-        }
+            if self.has_active_init_project(app) && self.is_last_block_init_step(app) {
+                return false;
+            }
 
-        // Hide the input box while the SSH remote-server choice block is shown.
-        // User must choose to install or skip before any shell input is possible.
-        if self.active_ssh_remote_server_choice_block().is_some() {
-            return false;
-        }
+            if FeatureFlag::CreateEnvironmentSlashCommand.is_enabled()
+                && self.active_init_environment_block(app).is_some()
+            {
+                return false;
+            }
 
-        // Hide the input box during the entire remote-server setup flow.
-        // The loading footer renders instead.
-        if FeatureFlag::SshRemoteServer.is_enabled()
-            && let Some(pending_sid) = model.pending_session_id()
-            && self
-                .sessions
-                .as_ref(app)
-                .remote_server_setup_state(pending_sid)
-                .is_some_and(|state| state.is_in_progress())
-        {
-            return false;
-        }
+            if self.active_env_var_collection_block(app).is_some() {
+                return false;
+            }
 
-        let active_ai_block = self.active_ai_block(app);
-        if active_ai_block.is_some_and(|ai_block| {
-            let ai_block = ai_block.as_ref(app);
-            ai_block.is_blocked_on_user_confirmation(app)
-                || ai_block.has_expanded_running_commands(app)
-        }) {
-            return false;
-        }
+            // Hide the input box while the SSH remote-server choice block is shown.
+            // User must choose to install or skip before any shell input is possible.
+            if self.active_ssh_remote_server_choice_block().is_some() {
+                return false;
+            }
 
-        let active_command_block = model.block_list().active_block();
-        let is_active_and_long_running = active_command_block.is_active_and_long_running();
-        let is_oz_env_startup_command = active_command_block.is_oz_environment_startup_command();
-        let is_running_in_band_command =
-            model.block_list().is_writing_or_executing_in_band_command();
+            // Hide the input box during the entire remote-server setup flow.
+            // The loading footer renders instead.
+            if FeatureFlag::SshRemoteServer.is_enabled()
+                && let Some(pending_sid) = model.pending_session_id()
+                && self
+                    .sessions
+                    .as_ref(app)
+                    .remote_server_setup_state(pending_sid)
+                    .is_some_and(|state| state.is_in_progress())
+            {
+                return false;
+            }
 
-        let has_active_long_running_agent_interaction =
-            active_command_block.is_agent_monitoring() || active_command_block.is_agent_tagged_in();
+            let active_ai_block = self.active_ai_block(app);
+            if active_ai_block.is_some_and(|ai_block| {
+                let ai_block = ai_block.as_ref(app);
+                ai_block.is_blocked_on_user_confirmation(app)
+                    || ai_block.has_expanded_running_commands(app)
+            }) {
+                return false;
+            }
 
-        if (active_ai_block.is_none() || has_active_long_running_agent_interaction)
-            && is_active_and_long_running
-            && (!FeatureFlag::CloudModeSetupV2.is_enabled() || !is_oz_env_startup_command)
-            && !is_running_in_band_command
-            && model.block_list().is_bootstrapped()
-        {
-            // Show the input if:
-            // * The agent is control of the active, long running block, so long as the agent is not blocked.
-            // * OR the user has 'tagged in' the agent.
-            return (active_command_block.is_agent_in_control()
-                && !active_command_block.is_agent_blocked())
+            let active_command_block = model.block_list().active_block();
+            let is_active_and_long_running = active_command_block.is_active_and_long_running();
+            let is_oz_env_startup_command =
+                active_command_block.is_oz_environment_startup_command();
+            let is_running_in_band_command =
+                model.block_list().is_writing_or_executing_in_band_command();
+
+            let has_active_long_running_agent_interaction = active_command_block
+                .is_agent_monitoring()
                 || active_command_block.is_agent_tagged_in();
-        }
 
-        true
+            if (active_ai_block.is_none() || has_active_long_running_agent_interaction)
+                && is_active_and_long_running
+                && (!FeatureFlag::CloudModeSetupV2.is_enabled() || !is_oz_env_startup_command)
+                && !is_running_in_band_command
+                && model.block_list().is_bootstrapped()
+            {
+                // Show the input if:
+                // * The agent is control of the active, long running block, so long as the agent is not blocked.
+                // * OR the user has 'tagged in' the agent.
+                return (active_command_block.is_agent_in_control()
+                    && !active_command_block.is_agent_blocked())
+                    || active_command_block.is_agent_tagged_in();
+            }
+
+            true
+        }
     }
 
     fn should_render_legacy_ambient_agent_loading_footer(
@@ -13732,6 +13823,7 @@ impl TerminalView {
             })
         }
 
+        #[cfg(not(feature = "local_only"))]
         let is_subshell_or_ssh = session.is_subshell_or_ssh();
 
         // Make sure we decorate any text that is already in the input.  We
@@ -13785,6 +13877,7 @@ impl TerminalView {
         self.any_session_contains_remote_blocks |= self.active_block_is_considered_remote(ctx);
         self.update_focused_terminal_info(ctx);
 
+        #[cfg(not(feature = "local_only"))]
         if let Some(working_directory) = self.active_session_path_if_local(ctx) {
             CodebaseIndexManager::handle(ctx).update(ctx, |manager, _ctx| {
                 manager.handle_session_bootstrapped(&working_directory);
@@ -13798,14 +13891,20 @@ impl TerminalView {
 
         self.ignore_next_set_title_event = true;
 
+        #[cfg(not(feature = "local_only"))]
         let auth_state = AuthStateProvider::as_ref(ctx).get();
+        #[cfg(not(feature = "local_only"))]
         let is_onboarded = auth_state.is_onboarded().unwrap_or(true);
+        #[cfg(not(feature = "local_only"))]
         let is_anonymous_or_logged_out = auth_state.is_anonymous_or_logged_out();
+        #[cfg(not(feature = "local_only"))]
         let should_show_onboarding = FeatureFlag::AgentOnboarding.is_enabled()
             && !is_onboarded
             && !is_anonymous_or_logged_out;
+        #[cfg(not(feature = "local_only"))]
         let is_launch_modal_open = OneTimeModalModel::as_ref(ctx).is_oz_launch_modal_open();
 
+        #[cfg(not(feature = "local_only"))]
         let has_plugin_instructions_block = self.rich_content_views.iter().any(|rc| {
             matches!(
                 rc.metadata(),
@@ -13813,6 +13912,7 @@ impl TerminalView {
             )
         });
 
+        #[cfg(not(feature = "local_only"))]
         if FeatureFlag::AgentView.is_enabled()
             && TerminalSettings::as_ref(ctx).should_show_zero_state_block(ctx)
             && !self.model.lock().block_list().is_restored_session()
@@ -16823,7 +16923,9 @@ impl TerminalView {
                                     .into_item(),
                             ];
 
-                            if renders_in_warp_notebook_viewer(&path) {
+                            if !cfg!(feature = "local_only")
+                                && renders_in_warp_notebook_viewer(&path)
+                            {
                                 items.push(
                                     MenuItemFields::new("Open in Warp")
                                         .with_on_select_action(TerminalAction::OpenFileInWarp(path))
@@ -16871,7 +16973,7 @@ impl TerminalView {
                 None,
                 true,
             ) => {
-                let mut fields = vec![
+                let fields = vec![
                     MenuItemFields::new("Copy")
                         .with_on_select_action(TerminalAction::ContextMenu(
                             ContextMenuAction::CopySelectedText,
@@ -16887,6 +16989,9 @@ impl TerminalView {
                         ))
                         .into_item(),
                 ];
+                #[cfg(not(feature = "local_only"))]
+                let mut fields = fields;
+                #[cfg(not(feature = "local_only"))]
                 if AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
                     fields.extend([
                         MenuItem::Separator,
@@ -16928,9 +17033,11 @@ impl TerminalView {
                 };
 
                 let is_single_selection = self.selected_blocks.is_singleton();
+                #[cfg(not(feature = "local_only"))]
                 let is_active_block_selected = self
                     .selected_blocks
                     .is_selected(model.block_list().active_block_index());
+                #[cfg(not(feature = "local_only"))]
                 let is_active_block_running = model
                     .block_list()
                     .active_block()
@@ -16959,9 +17066,11 @@ impl TerminalView {
                 };
 
                 // currently, we don't support share for multi selections
+                #[cfg(not(feature = "local_only"))]
                 let is_share_disabled =
                     !is_single_selection || (is_active_block_selected && is_active_block_running);
 
+                #[cfg(not(feature = "local_only"))]
                 let is_ask_ai_disabled = !is_single_selection;
 
                 let is_copy_commands_disabled =
@@ -16969,6 +17078,7 @@ impl TerminalView {
                 let is_copy_both_disabled =
                     is_copy_commands_disabled && tail_block.output_to_string().trim().is_empty();
 
+                #[cfg(not(feature = "local_only"))]
                 let share_block_label = if FeatureFlag::CreatingSharedSessions.is_enabled()
                     && ContextFlag::CreateSharedSession.is_enabled()
                 {
@@ -16998,6 +17108,7 @@ impl TerminalView {
                         ))
                         .with_disabled(is_copy_commands_disabled)
                         .into_item(),
+                    #[cfg(not(feature = "local_only"))]
                     MenuItemFields::new(share_block_label)
                         .with_on_select_action(TerminalAction::ContextMenu(
                             ContextMenuAction::OpenShareBlockModal {
@@ -17012,6 +17123,7 @@ impl TerminalView {
                         .into_item(),
                 ];
 
+                #[cfg(not(feature = "local_only"))]
                 if FeatureFlag::CreatingSharedSessions.is_enabled()
                     && ContextFlag::CreateSharedSession.is_enabled()
                 {
@@ -17031,6 +17143,7 @@ impl TerminalView {
                     ));
                 }
 
+                #[cfg(not(feature = "local_only"))]
                 if WarpDriveSettings::is_warp_drive_enabled(ctx) {
                     items.push(MenuItem::Separator);
                     items.push(
@@ -17046,6 +17159,7 @@ impl TerminalView {
                     );
                 }
 
+                #[cfg(not(feature = "local_only"))]
                 if AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
                     if FeatureFlag::AgentMode.is_enabled() {
                         // We can only attach selected blocks if the input box is visible.
@@ -17181,6 +17295,7 @@ impl TerminalView {
                 ]);
 
                 // Add debugging link for command blocks run by the agent
+                #[cfg(not(feature = "local_only"))]
                 if is_single_selection
                     && let Some(metadata) = tail_block.agent_interaction_metadata()
                 {
@@ -17231,8 +17346,12 @@ impl TerminalView {
                 true,
             ) => {
                 // If selection is empty, only show non-block related options
+                #[cfg(feature = "local_only")]
+                let items = Vec::new();
+                #[cfg(not(feature = "local_only"))]
                 let mut items = Vec::new();
 
+                #[cfg(not(feature = "local_only"))]
                 if FeatureFlag::CreatingSharedSessions.is_enabled()
                     && ContextFlag::CreateSharedSession.is_enabled()
                 {
@@ -17252,6 +17371,7 @@ impl TerminalView {
 
         // Add AI block copying actions for AI block right-click, but only when there's no text selection
         // When there's text selection (RichContentTextRightClick), the generic "Copy" menu item for copying selected text is already handled above
+        #[cfg(not(feature = "local_only"))]
         if let BlockListMenuSource::RichContentBlockRightClick {
             rich_content_view_id,
             ..
@@ -17570,14 +17690,17 @@ impl TerminalView {
             }))
             .into_item();
 
+        #[cfg(not(feature = "local_only"))]
         let has_cli_agent_session = CLIAgentSessionsModel::as_ref(ctx)
             .session(self.view_id)
             .is_some();
+        #[cfg(not(feature = "local_only"))]
         let is_agent_view_active = self
             .agent_view_controller
             .as_ref(ctx)
             .agent_view_state()
             .is_active();
+        #[cfg(not(feature = "local_only"))]
         let edit_menu_item = if has_cli_agent_session {
             FeatureFlag::AgentToolbarEditor.is_enabled().then(|| {
                 MenuItemFields::new("Edit CLI agent toolbelt")
@@ -17604,6 +17727,12 @@ impl TerminalView {
                     .into_item(),
             )
         };
+        #[cfg(feature = "local_only")]
+        let edit_menu_item = Some(
+            MenuItemFields::new("Edit prompt")
+                .with_on_select_action(TerminalAction::ContextMenu(ContextMenuAction::EditPrompt))
+                .into_item(),
+        );
 
         if *SessionSettings::as_ref(ctx).honor_ps1 {
             let mut items = vec![copy_prompt];
@@ -17710,6 +17839,7 @@ impl TerminalView {
                 .into_item(),
         );
 
+        #[cfg(not(feature = "local_only"))]
         if FeatureFlag::CreatingSharedSessions.is_enabled()
             && ContextFlag::CreateSharedSession.is_enabled()
         {
@@ -17733,6 +17863,7 @@ impl TerminalView {
                 .into_item(),
         ]);
 
+        #[cfg(not(feature = "local_only"))]
         if AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
             items.push(
                 MenuItemFields::new("AI command search")
@@ -17759,6 +17890,7 @@ impl TerminalView {
         }
 
         // Section 3: Teams related
+        #[cfg(not(feature = "local_only"))]
         if !all_current_input_text.is_empty() && WarpDriveSettings::is_warp_drive_enabled(ctx) {
             items.extend([
                 MenuItem::Separator,
@@ -17933,6 +18065,7 @@ impl TerminalView {
                     .with_key_shortcut_label(Some("⌘-C"))
                     .into_item(),
             );
+            #[cfg(not(feature = "local_only"))]
             if AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
                 menu_items.extend([
                     MenuItem::Separator,
@@ -17950,6 +18083,7 @@ impl TerminalView {
             }
         }
 
+        #[cfg(not(feature = "local_only"))]
         if FeatureFlag::CreatingSharedSessions.is_enabled()
             && ContextFlag::CreateSharedSession.is_enabled()
         {
@@ -24203,6 +24337,8 @@ impl TerminalView {
         model: &TerminalModel,
     ) -> HashMap<usize, Box<dyn Element>> {
         let mut inline_banners = HashMap::new();
+        #[cfg(feature = "local_only")]
+        let _ = model;
 
         // If the notifications discovery banner is open, render it.
         if let NotificationsDiscoveryBanner::Open {
@@ -24265,6 +24401,7 @@ impl TerminalView {
             );
         }
 
+        #[cfg(not(feature = "local_only"))]
         if (FeatureFlag::CreatingSharedSessions.is_enabled()
             && ContextFlag::CreateSharedSession.is_enabled())
             || FeatureFlag::ViewingSharedSessions.is_enabled()
@@ -24318,6 +24455,7 @@ impl TerminalView {
             }
         }
 
+        #[cfg(not(feature = "local_only"))]
         if let Some(open_in_warp_banner) = &self.inline_banners_state.open_in_warp_banner {
             inline_banners.insert(
                 open_in_warp_banner.id,
@@ -24332,6 +24470,7 @@ impl TerminalView {
             );
         }
 
+        #[cfg(not(feature = "local_only"))]
         if let Some(banner_state) = &self.inline_banners_state.codebase_index_speedbump_banner {
             inline_banners.insert(
                 banner_state.id,
@@ -24339,6 +24478,7 @@ impl TerminalView {
             );
         }
 
+        #[cfg(not(feature = "local_only"))]
         if let Some(banner_state) = &self.inline_banners_state.agent_setup_speedbump_banner {
             inline_banners.insert(
                 banner_state.id,
@@ -24346,10 +24486,12 @@ impl TerminalView {
             );
         }
 
+        #[cfg(not(feature = "local_only"))]
         if let Some(banner_state) = &self.inline_banners_state.anonymous_user_ai_sign_up_banner {
             inline_banners.insert(banner_state.id, banner_state.render(appearance));
         }
 
+        #[cfg(not(feature = "local_only"))]
         if let Some(banner_state) = &self.inline_banners_state.aws_bedrock_login_banner {
             inline_banners.insert(
                 banner_state.id,
@@ -24357,6 +24499,7 @@ impl TerminalView {
             );
         }
 
+        #[cfg(not(feature = "local_only"))]
         if let Some(banner_state) = &self.inline_banners_state.aws_cli_not_installed_banner {
             inline_banners.insert(
                 banner_state.id,
@@ -28099,12 +28242,14 @@ impl View for TerminalView {
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         // Grab this here, before we take the terminal model lock.
+        #[cfg(not(feature = "local_only"))]
         let menu_positioning = self.input.as_ref(app).menu_positioning(app);
 
         let appearance = Appearance::as_ref(app);
         let semantic_selection = SemanticSelection::as_ref(app);
         let model = self.model.lock();
-        let input_mode = if FeatureFlag::AgentView.is_enabled()
+        let input_mode = if !cfg!(feature = "local_only")
+            && FeatureFlag::AgentView.is_enabled()
             && self.agent_view_controller.as_ref(app).is_fullscreen()
         {
             // When in agent view, layout is always pin to bottom.
@@ -28117,6 +28262,7 @@ impl View for TerminalView {
         // Compute callout positioning early while we have the model lock.
         // For the final Agent Modality callout, always position relative to the input box,
         // even when the zero state is visible.
+        #[cfg(not(feature = "local_only"))]
         let should_position_callout_above_zero_state = self
             .onboarding_callout_view
             .as_ref()
@@ -28151,18 +28297,24 @@ impl View for TerminalView {
                 self.render_waterfall_gap_element(&model, &viewport, active_gap, appearance, app)
             }
             (input_mode, _, _) => {
-                if self.input.as_ref(app).is_cloud_mode_input_v2_composing(app) {
+                if !cfg!(feature = "local_only")
+                    && self.input.as_ref(app).is_cloud_mode_input_v2_composing(app)
+                {
                     column.add_child(Expanded::new(1., self.render_input()).finish());
 
                     Stack::new()
                         .with_constrain_absolute_children()
                         .with_child(column.finish())
                 } else {
-                    let is_view_pending_clause = model.shared_session_status().is_view_pending()
+                    let is_view_pending_clause = !cfg!(feature = "local_only")
+                        && model.shared_session_status().is_view_pending()
                         && !self.is_ambient_agent_session(app);
-                    let is_loading_transcript = model.is_loading_conversation_transcript();
+                    let is_loading_transcript =
+                        !cfg!(feature = "local_only") && model.is_loading_conversation_transcript();
                     let should_show_loading = is_view_pending_clause || is_loading_transcript;
-                    let output_area = if self.orchestration_child_live_unavailable {
+                    let output_area = if !cfg!(feature = "local_only")
+                        && self.orchestration_child_live_unavailable
+                    {
                         self.render_orchestration_child_live_unavailable(app)
                     } else if should_show_loading {
                         self.render_viewer_loading(app)
@@ -28186,7 +28338,8 @@ impl View for TerminalView {
                     // Warp's own TUI (`warp_tui`) — it's already an agent surface,
                     // so the outer footer would just stack on top of it. Other
                     // full-screen TUIs (vim, htop, …) still get the footer.
-                    if model.is_alt_screen_active()
+                    if !cfg!(feature = "local_only")
+                        && model.is_alt_screen_active()
                         && !self.is_running_warp_tui(&model, app)
                         && self.should_render_use_agent_footer(&model, app)
                     {
@@ -28196,7 +28349,9 @@ impl View for TerminalView {
                     let input_box_visible = self.is_input_box_visible(&model, app);
                     if input_box_visible {
                         column.add_child(self.render_input());
-                    } else if self.should_render_legacy_ambient_agent_loading_footer(&model, app) {
+                    } else if !cfg!(feature = "local_only")
+                        && self.should_render_legacy_ambient_agent_loading_footer(&model, app)
+                    {
                         column.add_child(ambient_agent::render_loading_footer(appearance));
                     } else if self.show_remote_server_loading_footer(&model, app) {
                         column.add_child(
@@ -28222,16 +28377,19 @@ impl View for TerminalView {
 
         // Show progress steps while waiting for an ambient agent to start. CloudModeSetupV2 uses
         // the agent status bar for setup/follow-up progress.
-        if self.ambient_agent_view_model.as_ref().is_some_and(|model| {
-            let model = model.as_ref(app);
-            model.agent_progress().is_some() && !FeatureFlag::CloudModeSetupV2.is_enabled()
-        }) {
+        if !cfg!(feature = "local_only")
+            && self.ambient_agent_view_model.as_ref().is_some_and(|model| {
+                let model = model.as_ref(app);
+                model.agent_progress().is_some() && !FeatureFlag::CloudModeSetupV2.is_enabled()
+            })
+        {
             stack.add_child(self.render_ambient_agent_progress(appearance, app));
         }
 
         // For shared session viewers, we want to show a "Request edit access"
         // button near the input if the input (or the button) are being hovered.
         // This is disabled when the viewer is offline.
+        #[cfg(not(feature = "local_only"))]
         if let Some(Viewer {
             input_request_edit_access_button_handle,
             pending_role_request,
@@ -28279,6 +28437,7 @@ impl View for TerminalView {
             );
         }
 
+        #[cfg(not(feature = "local_only"))]
         self.maybe_render_onboarding_callout(
             menu_positioning,
             should_position_callout_above_zero_state,
@@ -28380,6 +28539,7 @@ impl View for TerminalView {
                     }
                 },
             ),
+            #[cfg(not(feature = "local_only"))]
             Some(ContextMenuType::AIBlockAttachedContext { ai_block_view_id }) => stack
                 .add_positioned_overlay_child(
                     ChildView::new(&self.context_menu).finish(),
@@ -28391,6 +28551,7 @@ impl View for TerminalView {
                         ChildAnchor::BottomLeft,
                     ),
                 ),
+            #[cfg(not(feature = "local_only"))]
             Some(ContextMenuType::AIBlockOverflowMenu { ai_block_view_id }) => stack
                 .add_positioned_overlay_child(
                     ChildView::new(&self.context_menu).finish(),
@@ -28402,6 +28563,7 @@ impl View for TerminalView {
                         ChildAnchor::TopRight,
                     ),
                 ),
+            #[cfg(not(feature = "local_only"))]
             Some(ContextMenuType::AgentViewEntryConversation {
                 agent_view_entry_block_id,
                 position,
@@ -28415,6 +28577,12 @@ impl View for TerminalView {
                     ChildAnchor::TopLeft,
                 ),
             ),
+            #[cfg(feature = "local_only")]
+            Some(
+                ContextMenuType::AIBlockAttachedContext { .. }
+                | ContextMenuType::AIBlockOverflowMenu { .. }
+                | ContextMenuType::AgentViewEntryConversation { .. },
+            ) => {}
             None => {}
         }
 
@@ -28435,6 +28603,7 @@ impl View for TerminalView {
             );
         }
 
+        #[cfg(not(feature = "local_only"))]
         if let Some(reconnecting_banner) = self
             .shared_session
             .as_ref()
@@ -28553,6 +28722,7 @@ impl View for TerminalView {
             );
         }
 
+        #[cfg(not(feature = "local_only"))]
         if let Some(sharer) = self.shared_session_sharer()
             && sharer.is_inactivity_warning_modal_open()
         {
@@ -28560,6 +28730,7 @@ impl View for TerminalView {
         }
 
         // Render first-time cloud agent setup view when in Setup status
+        #[cfg(not(feature = "local_only"))]
         if self
             .ambient_agent_view_model
             .as_ref()
@@ -28599,7 +28770,8 @@ impl View for TerminalView {
         //
         // Use the `_from_model` variant since `render` already holds
         // `self.model.lock()` and the task-id lookup would otherwise re-lock.
-        let should_show_panel = !cfg!(target_family = "wasm")
+        let should_show_panel = !cfg!(feature = "local_only")
+            && !cfg!(target_family = "wasm")
             && self.is_conversation_details_panel_open
             && self.can_show_conversation_details_ui_from_model(&model, app);
 
@@ -28685,6 +28857,7 @@ impl View for TerminalView {
                 context.set.insert("LongRunningCommand");
             }
 
+            #[cfg(not(feature = "local_only"))]
             if active_block.is_agent_monitoring() {
                 context
                     .set
@@ -28703,6 +28876,7 @@ impl View for TerminalView {
             context.set.insert(init::KEYBOARD_PROTOCOL_ENABLED_KEY);
         }
 
+        #[cfg(not(feature = "local_only"))]
         if let Some(session) = CLIAgentSessionsModel::as_ref(app).session(self.view_id) {
             context.set.insert(init::CLI_AGENT_SESSION_ACTIVE_KEY);
             if session.agent.supports_cli_agent_footer()
@@ -28725,6 +28899,7 @@ impl View for TerminalView {
             }
         }
 
+        #[cfg(not(feature = "local_only"))]
         if FeatureFlag::AgentView.is_enabled() {
             context.set.insert(flags::AGENT_VIEW_ENABLED);
             let agent_view_state = self.agent_view_controller.as_ref(app).agent_view_state();
@@ -28735,6 +28910,7 @@ impl View for TerminalView {
             }
         }
 
+        #[cfg(not(feature = "local_only"))]
         if self.is_ambient_agent_session(app) && !self.is_nested_cloud_mode(app) {
             context.set.insert(init::ROOT_CLOUD_MODE_PANE_KEY);
         }
@@ -28747,10 +28923,12 @@ impl View for TerminalView {
 
         // Also set the warpify context when the footer (flag-gated replacement
         // for the in-block banner) is active, so the ctrl-i keybinding works.
+        #[cfg(not(feature = "local_only"))]
         if self.use_agent_footer.as_ref(app).is_warpify_active(app) {
             context.set.insert("SubshellBanner");
         }
 
+        #[cfg(not(feature = "local_only"))]
         if self
             .inline_banners_state
             .prompt_suggestions_banner
@@ -28760,19 +28938,22 @@ impl View for TerminalView {
             context.set.insert(flags::HAS_PENDING_PROMPT_SUGGESTION);
         }
 
+        #[cfg(not(feature = "local_only"))]
         if AISettings::as_ref(app).is_any_ai_enabled(app) {
             context.set.insert(flags::IS_ANY_AI_ENABLED);
         }
 
+        #[cfg(not(feature = "local_only"))]
         if self.current_repo_path.is_some() {
             context.set.insert("InsideRepository");
         }
 
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(all(not(target_arch = "wasm32"), not(feature = "local_only")))]
         if self.can_show_conversation_details_ui_from_model(&model_lock, app) {
             context.set.insert(init::CAN_SHOW_CONVERSATION_DETAILS_KEY);
         }
 
+        #[cfg(not(feature = "local_only"))]
         let active_conversation = if FeatureFlag::AgentView.is_enabled() {
             self.agent_view_controller
                 .as_ref(app)
@@ -28784,6 +28965,7 @@ impl View for TerminalView {
         };
         // Set CanResumeConversation flag if the latest exchange (across all tasks,
         // including subtasks) was manually cancelled or finished with an error.
+        #[cfg(not(feature = "local_only"))]
         if FeatureFlag::AIResumeButton.is_enabled() {
             let latest_exchange = active_conversation.and_then(|c| c.latest_exchange());
             let was_manually_cancelled = latest_exchange
@@ -28794,6 +28976,7 @@ impl View for TerminalView {
                 context.set.insert(init::CAN_RESUME_CONVERSATION_KEY);
             }
         }
+        #[cfg(not(feature = "local_only"))]
         if active_conversation
             .as_ref()
             .and_then(|conversation| {
@@ -28806,6 +28989,7 @@ impl View for TerminalView {
                 .insert(init::CAN_FORK_FROM_LAST_KNOWN_GOOD_STATE_KEY);
         }
 
+        #[cfg(not(feature = "local_only"))]
         context
             .set
             .insert(model_lock.shared_session_status().as_keymap_context());

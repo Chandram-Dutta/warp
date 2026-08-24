@@ -127,3 +127,29 @@ fn header_toolbar_chip_selection_custom_empty_reports_all_absent() {
         assert!(!config.contains_item(&item));
     }
 }
+
+#[test]
+#[cfg(feature = "local_only")]
+fn local_only_header_toolbar_prunes_persisted_agent_and_ide_items() {
+    let selection = HeaderToolbarChipSelection::Custom {
+        left: vec![
+            HeaderToolbarItemKind::AgentManagement,
+            HeaderToolbarItemKind::ToolsPanel,
+            HeaderToolbarItemKind::TabsPanel,
+        ],
+        right: vec![
+            HeaderToolbarItemKind::CodeReview,
+            HeaderToolbarItemKind::NotificationsMailbox,
+        ],
+    };
+
+    assert_eq!(
+        selection.left_items(),
+        vec![HeaderToolbarItemKind::TabsPanel]
+    );
+    assert!(selection.right_items().is_empty());
+    assert_eq!(
+        HeaderToolbarItemKind::all_items(),
+        vec![HeaderToolbarItemKind::TabsPanel]
+    );
+}

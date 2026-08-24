@@ -584,7 +584,8 @@ impl TerminalAction {
                 {
                     true
                 }
-            }
+            } && !matches!(self, ContextMenu(action) if !action.is_available_in_product())
+                && !matches!(self, InputContextMenuItem(action) if !action.is_available_in_product())
         }
     }
 }

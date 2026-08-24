@@ -90,6 +90,37 @@ def main() -> None:
     restored_conversations = (
         REPO_ROOT / "app" / "src" / "ai" / "restored_conversations.rs"
     ).read_text()
+    classic_input = (
+        REPO_ROOT / "app" / "src" / "terminal" / "input" / "classic.rs"
+    ).read_text()
+    terminal_view = (REPO_ROOT / "app" / "src" / "terminal" / "view.rs").read_text()
+    terminal_actions = (
+        REPO_ROOT / "app" / "src" / "terminal" / "view" / "action.rs"
+    ).read_text()
+    header_toolbar_items = (
+        REPO_ROOT / "app" / "src" / "workspace" / "header_toolbar_item.rs"
+    ).read_text()
+    tab_settings = (
+        REPO_ROOT / "app" / "src" / "workspace" / "tab_settings.rs"
+    ).read_text()
+    vertical_tabs = (
+        REPO_ROOT / "app" / "src" / "workspace" / "view" / "vertical_tabs.rs"
+    ).read_text()
+    features_page = (
+        REPO_ROOT / "app" / "src" / "settings_view" / "features_page.rs"
+    ).read_text()
+    appearance_page = (
+        REPO_ROOT / "app" / "src" / "settings_view" / "appearance_page.rs"
+    ).read_text()
+    keybindings_page = (
+        REPO_ROOT / "app" / "src" / "settings_view" / "keybindings.rs"
+    ).read_text()
+    command_palette_actions = (
+        REPO_ROOT / "app" / "src" / "search" / "action" / "data_source.rs"
+    ).read_text()
+    workspace_state = (
+        REPO_ROOT / "app" / "src" / "workspace" / "util.rs"
+    ).read_text()
     agent_mode = set(manifest["features"]["agent_mode"])
     agent_runtime = set(manifest["features"]["warp_agent_runtime"])
     local_only = set(manifest["features"]["local_only"])
@@ -164,6 +195,59 @@ def main() -> None:
     assert 'lipo "$executable" -verify_arch arm64' in local_only_workflow
     assert "codesign --verify --deep --strict --verbose=4" in local_only_workflow
     assert "script/macos/smoke_test_app" in local_only_workflow
+    assert "fn input_enter_local_only" in terminal_input
+    assert (
+        '#[cfg(feature = "local_only")]\n'
+        "        self.input_enter_local_only(ctx);"
+        in terminal_input
+    )
+    assert "fn local_only_enter_executes_shell_command_even_when_agent_flags_and_state_are_enabled" in (
+        REPO_ROOT / "app" / "src" / "terminal" / "input_tests.rs"
+    ).read_text()
+    local_classic_render = classic_input.index('#[cfg(feature = "local_only")]')
+    agent_classic_render = classic_input.index('#[cfg(not(feature = "local_only"))]', local_classic_render)
+    assert local_classic_render < agent_classic_render
+    assert "is_inline_history_menu" in classic_input[local_classic_render:agent_classic_render]
+    assert "is_slash_commands" not in classic_input[local_classic_render:agent_classic_render]
+    assert '#[cfg(not(feature = "local_only"))]\nmod zero_state_block;' in terminal_view
+    assert (
+        '#[cfg(not(feature = "local_only"))]\n'
+        "        ctx.subscribe_to_model(&agent_view_controller"
+        in terminal_view
+    )
+    assert (
+        '#[cfg(not(feature = "local_only"))]\n'
+        "        if FeatureFlag::AgentView.is_enabled()"
+        in terminal_view
+    )
+    assert "fn is_available_in_product(&self) -> bool" in terminal_actions
+    assert "ContextMenu(action) if !action.is_available_in_product()" in terminal_actions
+    assert "InputContextMenuItem(action) if !action.is_available_in_product()" in terminal_actions
+    assert "pub fn is_available_in_product(&self) -> bool" in header_toolbar_items
+    assert ".filter(HeaderToolbarItemKind::is_available_in_product)" in tab_settings
+    assert "return SummaryPaneKind::Terminal;" in vertical_tabs
+    assert (
+        '#[cfg(not(feature = "local_only"))]\n'
+        "            Box::new(InputTypeWidget::default()),"
+        in appearance_page
+    )
+    assert (
+        '#[cfg(not(feature = "local_only"))]\n'
+        "        if FeatureFlag::AgentView.is_enabled()"
+        in features_page
+    )
+    assert ".filter(binding_is_available_in_product)" in keybindings_page
+    assert ".filter(binding_is_available_in_product)" in command_palette_actions
+    assert (
+        '#[cfg(feature = "local_only")]\n'
+        "        return self.is_any_modal_open(app) || self.is_theme_chooser_open;"
+        in workspace_state
+    )
+    assert (
+        '#[cfg(feature = "local_only")]\n'
+        "        return false;"
+        in workspace_state
+    )
 
     local_only_packages = dependency_packages("local_only")
     unexpected = EXCLUDED_PACKAGES & local_only_packages

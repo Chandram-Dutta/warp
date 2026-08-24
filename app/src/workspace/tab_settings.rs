@@ -264,18 +264,26 @@ pub enum HeaderToolbarChipSelection {
 impl HeaderToolbarChipSelection {
     pub fn left_items(&self) -> Vec<super::header_toolbar_item::HeaderToolbarItemKind> {
         use super::header_toolbar_item::HeaderToolbarItemKind;
-        match self {
+        let items = match self {
             Self::Default => HeaderToolbarItemKind::default_left(),
             Self::Custom { left, .. } => left.clone(),
-        }
+        };
+        items
+            .into_iter()
+            .filter(HeaderToolbarItemKind::is_available_in_product)
+            .collect()
     }
 
     pub fn right_items(&self) -> Vec<super::header_toolbar_item::HeaderToolbarItemKind> {
         use super::header_toolbar_item::HeaderToolbarItemKind;
-        match self {
+        let items = match self {
             Self::Default => HeaderToolbarItemKind::default_right(),
             Self::Custom { right, .. } => right.clone(),
-        }
+        };
+        items
+            .into_iter()
+            .filter(HeaderToolbarItemKind::is_available_in_product)
+            .collect()
     }
 
     pub fn contains_item(&self, item: &super::header_toolbar_item::HeaderToolbarItemKind) -> bool {

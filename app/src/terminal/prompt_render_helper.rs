@@ -111,9 +111,18 @@ pub fn should_render_prompt_using_editor_decorator_elements(
     model: &TerminalModel,
     app: &AppContext,
 ) -> bool {
-    should_render_prompt_on_same_line(is_universal_developer_input, model, app)
-        && (!ai_input_model.as_ref(app).is_ai_input_enabled()
-            || FeatureFlag::AgentView.is_enabled())
+    #[cfg(feature = "local_only")]
+    {
+        let _ = (is_universal_developer_input, ai_input_model);
+        should_render_prompt_on_same_line(false, model, app)
+    }
+
+    #[cfg(not(feature = "local_only"))]
+    {
+        should_render_prompt_on_same_line(is_universal_developer_input, model, app)
+            && (!ai_input_model.as_ref(app).is_ai_input_enabled()
+                || FeatureFlag::AgentView.is_enabled())
+    }
 }
 
 pub(in crate::terminal) struct PromptAndPadding {

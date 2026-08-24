@@ -19,13 +19,13 @@ use crate::{
 };
 
 #[cfg(not(feature = "local_only"))]
-fn binding_is_available_in_product(binding: &CommandBinding) -> bool {
+pub(crate) fn binding_is_available_in_product(binding: &CommandBinding) -> bool {
     let _ = binding;
     true
 }
 
 #[cfg(feature = "local_only")]
-fn binding_is_available_in_product(binding: &CommandBinding) -> bool {
+pub(crate) fn binding_is_available_in_product(binding: &CommandBinding) -> bool {
     let Some(action) = &binding.action else {
         return true;
     };

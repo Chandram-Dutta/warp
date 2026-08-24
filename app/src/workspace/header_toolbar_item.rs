@@ -34,6 +34,14 @@ pub enum HeaderToolbarItemKind {
 }
 
 impl HeaderToolbarItemKind {
+    pub fn is_available_in_product(&self) -> bool {
+        #[cfg(not(feature = "local_only"))]
+        return true;
+
+        #[cfg(feature = "local_only")]
+        matches!(self, Self::TabsPanel)
+    }
+
     pub fn display_label(&self) -> &'static str {
         match self {
             Self::TabsPanel => "Tabs Panel",
@@ -58,6 +66,9 @@ impl HeaderToolbarItemKind {
     /// (feature flags, compile-time features, AI enabled, auth state).
     /// Does not check user show/hide preferences — use `is_available` for that.
     pub fn is_supported(&self, app: &AppContext) -> bool {
+        if !self.is_available_in_product() {
+            return false;
+        }
         match self {
             Self::TabsPanel => {
                 FeatureFlag::VerticalTabs.is_enabled()
@@ -98,21 +109,30 @@ impl HeaderToolbarItemKind {
     }
 
     pub fn default_left() -> Vec<Self> {
-        vec![Self::TabsPanel, Self::ToolsPanel, Self::AgentManagement]
+        [Self::TabsPanel, Self::ToolsPanel, Self::AgentManagement]
+            .into_iter()
+            .filter(Self::is_available_in_product)
+            .collect()
     }
 
     pub fn default_right() -> Vec<Self> {
-        vec![Self::CodeReview, Self::NotificationsMailbox]
+        [Self::CodeReview, Self::NotificationsMailbox]
+            .into_iter()
+            .filter(Self::is_available_in_product)
+            .collect()
     }
 
     /// All toolbar item variants (availability filtering is done at the call site).
     pub fn all_items() -> Vec<Self> {
-        vec![
+        [
             Self::TabsPanel,
             Self::ToolsPanel,
             Self::AgentManagement,
             Self::CodeReview,
             Self::NotificationsMailbox,
         ]
+        .into_iter()
+        .filter(Self::is_available_in_product)
+        .collect()
     }
 }

@@ -16,6 +16,8 @@ use warpui::elements::{
     Shrinkable, Text, Wrap,
 };
 use warpui::fonts::{FamilyId, FontInfo, Weight};
+#[cfg(not(feature = "local_only"))]
+use warpui::id;
 use warpui::keymap::{ContextPredicate, FixedBinding};
 use warpui::platform::{Cursor, FilePickerConfiguration, GraphicsBackend, SystemTheme};
 use warpui::rendering::ThinStrokes;
@@ -29,7 +31,7 @@ use warpui::ui_components::switch::SwitchStateHandle;
 use warpui::units::IntoPixels;
 use warpui::{
     Action, AppContext, Entity, ModelHandle, SingletonEntity, TypedActionView, UpdateModel, View,
-    ViewContext, ViewHandle, WindowId, id,
+    ViewContext, ViewHandle, WindowId,
 };
 
 use super::directory_color_add_picker::{DirectoryColorAddPicker, DirectoryColorAddPickerEvent};
@@ -39,10 +41,9 @@ use super::settings_page::{
     ToggleState, build_reset_button, render_body_item, render_body_item_label,
     render_dropdown_item,
 };
-use super::{
-    SettingActionPairContexts, SettingActionPairDescriptions, SettingsAction, SettingsSection,
-    ToggleSettingActionPair, flags,
-};
+#[cfg(not(feature = "local_only"))]
+use super::{SettingActionPairContexts, SettingActionPairDescriptions};
+use super::{SettingsAction, SettingsSection, ToggleSettingActionPair, flags};
 use crate::appearance::{Appearance, AppearanceEvent};
 use crate::channel::{Channel, ChannelState};
 use crate::context_chips::ChipAvailability;
@@ -1542,6 +1543,7 @@ impl AppearanceSettingsPageView {
         // The PromptWidget and InputModeWidget will handle their own visibility
 
         let category_widgets: Vec<Box<dyn SettingsWidget<View = Self>>> = vec![
+            #[cfg(not(feature = "local_only"))]
             Box::new(InputTypeWidget::default()),
             Box::new(PromptWidget::default()),
             Box::new(InputModeWidget::default()),

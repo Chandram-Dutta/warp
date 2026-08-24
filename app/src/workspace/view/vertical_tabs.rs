@@ -60,11 +60,13 @@ use crate::tab::{
     reveals_tab_shortcut_hints, tab_position_id,
 };
 use crate::terminal::cli_agent::CLIAgentRuntimeExt as _;
+#[cfg(not(feature = "local_only"))]
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::session_settings::SessionSettings;
 use crate::terminal::view::TerminalViewState;
 use crate::terminal::{CLIAgent, TerminalView};
 use crate::themes::theme::Fill as ThemeFill;
+#[cfg(not(feature = "local_only"))]
 use crate::ui_components::agent_icon::terminal_view_agent_icon_variant;
 use crate::ui_components::buttons::combo_inner_button;
 use crate::ui_components::icon_with_status::{IconWithStatusVariant, render_icon_with_status};
@@ -1063,21 +1065,30 @@ fn summary_conversation_status_for_terminal(
     terminal_view: &TerminalView,
     app: &AppContext,
 ) -> Option<ConversationStatus> {
-    let cli_agent_session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id());
-    if let Some(session) = cli_agent_session
-        .filter(|s| s.supports_rich_status())
-        .filter(|s| !matches!(s.agent, CLIAgent::Unknown))
+    #[cfg(feature = "local_only")]
     {
-        return Some(session.status.to_conversation_status());
+        let _ = (terminal_view, app);
+        None
     }
 
-    let is_ambient = terminal_view.is_ambient_agent_session(app);
-    let has_conversation = terminal_view
-        .selected_conversation_display_title(app)
-        .is_some();
-    (has_conversation || is_ambient)
-        .then(|| terminal_view.selected_conversation_status_for_display(app))
-        .flatten()
+    #[cfg(not(feature = "local_only"))]
+    {
+        let cli_agent_session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id());
+        if let Some(session) = cli_agent_session
+            .filter(|s| s.supports_rich_status())
+            .filter(|s| !matches!(s.agent, CLIAgent::Unknown))
+        {
+            return Some(session.status.to_conversation_status());
+        }
+
+        let is_ambient = terminal_view.is_ambient_agent_session(app);
+        let has_conversation = terminal_view
+            .selected_conversation_display_title(app)
+            .is_some();
+        (has_conversation || is_ambient)
+            .then(|| terminal_view.selected_conversation_status_for_display(app))
+            .flatten()
+    }
 }
 
 fn coalesce_summary_branch_entries(
@@ -1451,39 +1462,49 @@ fn render_detail_kind_badge_icon(
     let disabled_text = detail_sidecar_text_colors(theme).disabled;
     match &props.typed {
         TypedPane::Terminal(terminal_pane) => {
-            let terminal_view = terminal_pane.terminal_view(app);
-            let terminal_view = terminal_view.as_ref(app);
-            let cli_agent_session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id());
-            if let Some(icon) = cli_agent_session.and_then(|session| session.agent.icon()) {
-                let color = cli_agent_session
-                    .and_then(|session| session.agent.brand_color())
-                    .map(WarpThemeFill::Solid)
-                    .unwrap_or_else(|| theme.accent());
-                return icon.to_warpui_icon(color).finish();
+            #[cfg(feature = "local_only")]
+            {
+                let _ = terminal_pane;
+                return WarpIcon::Terminal.to_warpui_icon(disabled_text).finish();
             }
 
-            let icon = if terminal_view.is_ambient_agent_session(app) {
-                WarpIcon::CloudFilled
-            } else if terminal_view
-                .selected_conversation_display_title(app)
-                .is_some()
+            #[cfg(not(feature = "local_only"))]
             {
-                // Local agent conversation: use the Warp agent logo glyph to
-                // match the icon-with-status rendering for the tab row.
-                WarpIcon::Agent
-            } else {
-                WarpIcon::Terminal
-            };
-            let color = match icon {
-                WarpIcon::CloudFilled => theme.main_text_color(theme.background()),
-                // Theme-adaptive fill: no black chip behind this glyph in the
-                // sidecar context, so use the main text color to stay visible
-                // on both dark and light themes.
-                WarpIcon::Agent => theme.main_text_color(theme.background()),
-                WarpIcon::Terminal => disabled_text,
-                _ => sub_text,
-            };
-            icon.to_warpui_icon(color).finish()
+                let terminal_view = terminal_pane.terminal_view(app);
+                let terminal_view = terminal_view.as_ref(app);
+                let cli_agent_session =
+                    CLIAgentSessionsModel::as_ref(app).session(terminal_view.id());
+                if let Some(icon) = cli_agent_session.and_then(|session| session.agent.icon()) {
+                    let color = cli_agent_session
+                        .and_then(|session| session.agent.brand_color())
+                        .map(WarpThemeFill::Solid)
+                        .unwrap_or_else(|| theme.accent());
+                    return icon.to_warpui_icon(color).finish();
+                }
+
+                let icon = if terminal_view.is_ambient_agent_session(app) {
+                    WarpIcon::CloudFilled
+                } else if terminal_view
+                    .selected_conversation_display_title(app)
+                    .is_some()
+                {
+                    // Local agent conversation: use the Warp agent logo glyph to
+                    // match the icon-with-status rendering for the tab row.
+                    WarpIcon::Agent
+                } else {
+                    WarpIcon::Terminal
+                };
+                let color = match icon {
+                    WarpIcon::CloudFilled => theme.main_text_color(theme.background()),
+                    // Theme-adaptive fill: no black chip behind this glyph in the
+                    // sidecar context, so use the main text color to stay visible
+                    // on both dark and light themes.
+                    WarpIcon::Agent => theme.main_text_color(theme.background()),
+                    WarpIcon::Terminal => disabled_text,
+                    _ => sub_text,
+                };
+                icon.to_warpui_icon(color).finish()
+            }
         }
         TypedPane::Code(_) => icon_from_file_path(&props.title, appearance)
             .unwrap_or_else(|| WarpIcon::Code2.to_warpui_icon(sub_text).finish()),
@@ -3319,15 +3340,27 @@ fn resolve_icon_with_status_variant(
 
     match typed {
         TypedPane::Terminal(terminal_pane) => {
-            let terminal_view = terminal_pane.terminal_view(app);
-            let terminal_view = terminal_view.as_ref(app);
-            match terminal_view_agent_icon_variant(terminal_view, app) {
-                Some(variant) => variant,
-                _ => {
-                    // Plain terminal: use foreground color per design spec
-                    IconWithStatusVariant::Neutral {
-                        icon: WarpIcon::Terminal,
-                        icon_color: main_text,
+            #[cfg(feature = "local_only")]
+            {
+                let _ = (terminal_pane, app);
+                return IconWithStatusVariant::Neutral {
+                    icon: WarpIcon::Terminal,
+                    icon_color: main_text,
+                };
+            }
+
+            #[cfg(not(feature = "local_only"))]
+            {
+                let terminal_view = terminal_pane.terminal_view(app);
+                let terminal_view = terminal_view.as_ref(app);
+                match terminal_view_agent_icon_variant(terminal_view, app) {
+                    Some(variant) => variant,
+                    _ => {
+                        // Plain terminal: use foreground color per design spec
+                        IconWithStatusVariant::Neutral {
+                            icon: WarpIcon::Terminal,
+                            icon_color: main_text,
+                        }
                     }
                 }
             }
@@ -3629,18 +3662,27 @@ impl TypedPane<'_> {
     fn summary_pane_kind(&self, title: &str, app: &AppContext) -> SummaryPaneKind {
         match self {
             TypedPane::Terminal(terminal_pane) => {
-                let terminal_view = terminal_pane.terminal_view(app);
-                let terminal_view = terminal_view.as_ref(app);
-                // Route through the shared helper so summary mode agrees with
-                // `resolve_icon_with_status_variant` on what the tab represents.
-                match terminal_view_agent_icon_variant(terminal_view, app) {
-                    Some(IconWithStatusVariant::OzAgent { is_ambient, .. }) => {
-                        SummaryPaneKind::OzAgent { is_ambient }
+                #[cfg(feature = "local_only")]
+                {
+                    let _ = (terminal_pane, app);
+                    return SummaryPaneKind::Terminal;
+                }
+
+                #[cfg(not(feature = "local_only"))]
+                {
+                    let terminal_view = terminal_pane.terminal_view(app);
+                    let terminal_view = terminal_view.as_ref(app);
+                    // Route through the shared helper so summary mode agrees with
+                    // `resolve_icon_with_status_variant` on what the tab represents.
+                    match terminal_view_agent_icon_variant(terminal_view, app) {
+                        Some(IconWithStatusVariant::OzAgent { is_ambient, .. }) => {
+                            SummaryPaneKind::OzAgent { is_ambient }
+                        }
+                        Some(IconWithStatusVariant::CLIAgent {
+                            agent, is_ambient, ..
+                        }) => SummaryPaneKind::CLIAgent { agent, is_ambient },
+                        Some(_) | None => SummaryPaneKind::Terminal,
                     }
-                    Some(IconWithStatusVariant::CLIAgent {
-                        agent, is_ambient, ..
-                    }) => SummaryPaneKind::CLIAgent { agent, is_ambient },
-                    Some(_) | None => SummaryPaneKind::Terminal,
                 }
             }
             TypedPane::Code(_) => SummaryPaneKind::Code {
@@ -4264,32 +4306,42 @@ fn preferred_agent_tab_titles(
 }
 
 fn terminal_agent_text(terminal_view: &TerminalView, app: &AppContext) -> TerminalAgentText {
-    let cli_agent_session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id());
-    let is_plugin_backed = cli_agent_session.is_some_and(|session| session.listener.is_some());
-    let is_ambient_agent = terminal_view.is_ambient_agent_session(app);
-
-    let mut agent_text = TerminalAgentText {
-        is_oz_agent: is_ambient_agent,
-        cli_agent: cli_agent_session.map(|session| session.agent),
-        ..Default::default()
-    };
-
-    if cli_agent_session.is_some() && !is_plugin_backed {
-        return agent_text;
+    #[cfg(feature = "local_only")]
+    {
+        let _ = (terminal_view, app);
+        return TerminalAgentText::default();
     }
 
-    agent_text.conversation_display_title = terminal_view.selected_conversation_display_title(app);
-    agent_text.conversation_latest_user_prompt =
-        terminal_view.selected_conversation_latest_user_prompt_for_tab_name(app);
-    agent_text.is_oz_agent =
-        agent_text.conversation_display_title.is_some() || agent_text.is_oz_agent;
+    #[cfg(not(feature = "local_only"))]
+    {
+        let cli_agent_session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id());
+        let is_plugin_backed = cli_agent_session.is_some_and(|session| session.listener.is_some());
+        let is_ambient_agent = terminal_view.is_ambient_agent_session(app);
 
-    if let Some(session) = cli_agent_session {
-        agent_text.cli_agent_title = session.session_context.title_like_text();
-        agent_text.cli_agent_latest_user_prompt = session.session_context.latest_user_prompt();
+        let mut agent_text = TerminalAgentText {
+            is_oz_agent: is_ambient_agent,
+            cli_agent: cli_agent_session.map(|session| session.agent),
+            ..Default::default()
+        };
+
+        if cli_agent_session.is_some() && !is_plugin_backed {
+            return agent_text;
+        }
+
+        agent_text.conversation_display_title =
+            terminal_view.selected_conversation_display_title(app);
+        agent_text.conversation_latest_user_prompt =
+            terminal_view.selected_conversation_latest_user_prompt_for_tab_name(app);
+        agent_text.is_oz_agent =
+            agent_text.conversation_display_title.is_some() || agent_text.is_oz_agent;
+
+        if let Some(session) = cli_agent_session {
+            agent_text.cli_agent_title = session.session_context.title_like_text();
+            agent_text.cli_agent_latest_user_prompt = session.session_context.latest_user_prompt();
+        }
+
+        agent_text
     }
-
-    agent_text
 }
 
 fn terminal_pull_request_badge_label(pull_request_url: &str) -> String {
@@ -4393,8 +4445,14 @@ fn resolved_terminal_working_directory(
     let working_directory = terminal_view
         .display_working_directory(app)
         .filter(|wd| !wd.trim().is_empty());
-    cloud_agent_working_directory_and_env(terminal_view, working_directory.as_deref(), app)
-        .or(working_directory)
+    #[cfg(feature = "local_only")]
+    return working_directory;
+
+    #[cfg(not(feature = "local_only"))]
+    {
+        cloud_agent_working_directory_and_env(terminal_view, working_directory.as_deref(), app)
+            .or(working_directory)
+    }
 }
 
 /// For cloud agent panes, builds a composite string from the environment name,
@@ -6825,11 +6883,15 @@ fn render_terminal_detail_section(
     let text_colors = detail_sidecar_text_colors(theme);
     let working_directory = resolved_terminal_working_directory(terminal_view, app);
     let git_branch = terminal_view.current_git_branch(app);
+    #[cfg(not(feature = "local_only"))]
     let cli_agent_session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id());
     let agent_text = terminal_agent_text(terminal_view, app);
     let (conversation_display_title, cli_agent_title) =
         preferred_agent_tab_titles(&agent_text, agent_tab_text_preference(app));
     let kind_label = terminal_kind_badge_label(agent_text.is_oz_agent, agent_text.cli_agent);
+    #[cfg(feature = "local_only")]
+    let status: Option<ConversationStatus> = None;
+    #[cfg(not(feature = "local_only"))]
     let status = if let Some(session) = cli_agent_session.filter(|s| s.supports_rich_status()) {
         Some(session.status.to_conversation_status())
     } else if agent_text.is_oz_agent {
