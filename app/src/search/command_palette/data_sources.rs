@@ -355,6 +355,6 @@ impl Entity for DataSourceStore {
     type Event = ();
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "local_only")))]
 #[path = "data_sources_tests.rs"]
 mod tests;

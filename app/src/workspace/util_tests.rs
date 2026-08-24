@@ -5,7 +5,7 @@ use super::WorkspaceState;
 #[test]
 #[cfg(feature = "local_only")]
 fn local_only_ignores_stale_agent_and_cloud_workspace_state() {
-    App::test((), |app| async move {
+    App::test((), |mut app| async move {
         let state = WorkspaceState {
             is_resource_center_open: true,
             is_ai_assistant_panel_open: true,
@@ -28,15 +28,17 @@ fn local_only_ignores_stale_agent_and_cloud_workspace_state() {
             ..Default::default()
         };
 
-        assert!(!state.is_right_panel_open());
-        assert!(!state.is_any_non_palette_modal_open(&app));
-        assert!(!state.is_any_non_terminal_view_open(&app));
-
         let terminal_state = WorkspaceState {
             is_header_toolbar_editor_open: true,
             ..Default::default()
         };
-        assert!(terminal_state.is_any_non_palette_modal_open(&app));
-        assert!(terminal_state.is_any_non_terminal_view_open(&app));
+
+        app.update(|ctx| {
+            assert!(!state.is_right_panel_open());
+            assert!(!state.is_any_non_palette_modal_open(ctx));
+            assert!(!state.is_any_non_terminal_view_open(ctx));
+            assert!(terminal_state.is_any_non_palette_modal_open(ctx));
+            assert!(terminal_state.is_any_non_terminal_view_open(ctx));
+        });
     });
 }
