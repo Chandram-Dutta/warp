@@ -9664,10 +9664,8 @@ fn local_only_enter_executes_shell_command_even_when_agent_flags_and_state_are_e
         initialize_app(&mut app);
 
         let session_info = SessionInfo::new_for_test();
-        let session_id = session_info.session_id;
         let terminal =
             add_window_with_bootstrapped_terminal(&mut app, None, Some(session_info)).await;
-        simulate_directory_for_completion(session_id, &terminal, &mut app, "~");
         let input = terminal.read(&app, |terminal, _| terminal.input().clone());
         assert!(!input.read(&app, |input, ctx| {
             input.should_show_universal_developer_input(ctx)
