@@ -226,18 +226,25 @@ impl DataSourceStore {
                 .actions_data_source
                 .as_ref(app)
                 .query_result(*binding_id),
+            #[cfg(not(feature = "local_only"))]
             ItemSummary::Workflow { id } => self
                 .warp_drive_data_source
                 .as_ref(app)
                 .query_result(id, app),
+            #[cfg(not(feature = "local_only"))]
             ItemSummary::EnvVarCollection { id } => self
                 .warp_drive_data_source
                 .as_ref(app)
                 .query_result(id, app),
+            #[cfg(not(feature = "local_only"))]
             ItemSummary::Notebook { id } => self
                 .warp_drive_data_source
                 .as_ref(app)
                 .query_result(id, app),
+            #[cfg(feature = "local_only")]
+            ItemSummary::Workflow { .. }
+            | ItemSummary::EnvVarCollection { .. }
+            | ItemSummary::Notebook { .. } => None,
             ItemSummary::Session { pane_view_locator } => self
                 .sessions_data_source
                 .as_ref(app)
@@ -257,6 +264,7 @@ impl DataSourceStore {
                 .new_session_data_source
                 .as_ref()
                 .and_then(|source| source.as_ref(app).query_result(id)),
+            #[cfg(not(feature = "local_only"))]
             ItemSummary::File {
                 path,
                 project_directory,
@@ -276,6 +284,7 @@ impl DataSourceStore {
                 };
                 Some(QueryResult::from(search_item))
             }
+            #[cfg(not(feature = "local_only"))]
             ItemSummary::Directory {
                 path,
                 project_directory,
@@ -294,13 +303,18 @@ impl DataSourceStore {
                 };
                 Some(QueryResult::from(search_item))
             }
+            #[cfg(feature = "local_only")]
+            ItemSummary::File { .. } | ItemSummary::Directory { .. } => None,
             ItemSummary::Project { path: _ } => {
                 // For project summaries, we would need a project data source to reconstruct the item,
                 // but this is typically handled by the welcome palette, not the command palette.
                 // For now, return None as projects aren't expected in the regular command palette.
                 None
             }
+            #[cfg(not(feature = "local_only"))]
             ItemSummary::Conversation { id } => conversations::DataSource::query_result(id, app),
+            #[cfg(feature = "local_only")]
+            ItemSummary::Conversation { .. } => None,
 
             ItemSummary::NewConversation => {
                 // The new conversation item should not show up in the recent command list,
