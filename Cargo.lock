@@ -15691,7 +15691,6 @@ dependencies = [
  "futures",
  "log",
  "notify-debouncer-full",
- "remote_server",
  "repo_metadata",
  "tempfile",
  "thiserror 2.0.17",

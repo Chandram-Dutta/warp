@@ -107,12 +107,6 @@ impl InlineDiffView {
 
     /// Register a file with `FileModel` for save support.
     ///
-    /// The `session_type` determines whether the file is local or remote.
-    /// For `Local`, the file is registered by path on the local filesystem.
-    /// For `Remote`, the file is registered against the remote backend so
-    /// that `save()` / `delete()` dispatch over the wire via
-    /// `RemoteServerClient`.
-    ///
     /// This must be called after construction for non-WASM environments.
     #[cfg(not(target_family = "wasm"))]
     pub fn register_file(&mut self, session_type: &DiffSessionType, ctx: &mut ViewContext<Self>) {
@@ -140,13 +134,7 @@ impl InlineDiffView {
                     file_model.register_file_path(&local_path, false, ctx)
                 })
             }
-            DiffSessionType::Remote(host_id) => {
-                let host_id = host_id.clone();
-                let remote_path = file_path.clone();
-                file_model.update(ctx, |file_model, _ctx| {
-                    file_model.register_remote_file(host_id, remote_path)
-                })
-            }
+            DiffSessionType::Remote(_) => return,
         };
 
         self.finish_file_registration(file_id, ctx);
