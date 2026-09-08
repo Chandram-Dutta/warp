@@ -33,6 +33,10 @@ pub const WARP_CONFIG_DIR: &str = ".warp";
 pub const WARP_LOGS_DIR: &str = "logs";
 
 fn base_warp_config_dir_name() -> String {
+    if cfg!(feature = "local_only") {
+        return ".warp-local-only".to_owned();
+    }
+
     match ChannelState::channel() {
         // Preview shares the same directory as Stable for backward
         // compatibility — existing users already have config in `.warp`.
@@ -90,6 +94,10 @@ pub fn warp_home_mcp_config_file_path() -> Option<PathBuf> {
 /// changed once established, or existing user data will be orphaned.
 #[cfg(target_os = "macos")]
 fn macos_config_dir_name() -> String {
+    if cfg!(feature = "local_only") {
+        return ".warp-local-only".to_owned();
+    }
+
     macos_config_dir_name_for(
         ChannelState::channel(),
         ChannelState::data_profile().as_deref(),
@@ -136,7 +144,10 @@ pub fn data_dir() -> PathBuf {
 #[cfg(any(not(target_os = "macos"), test))]
 fn gui_app_id_for_channel(channel: Channel, current_app_id: AppId) -> AppId {
     match channel {
-        Channel::Oss => AppId::new("dev", "warp", "WarpOss"),
+        Channel::Oss if current_app_id.application_name() == "WarpTui" => {
+            AppId::new("dev", "warp", "WarpOss")
+        }
+        Channel::Oss => current_app_id,
         Channel::Stable
         | Channel::Preview
         | Channel::Dev

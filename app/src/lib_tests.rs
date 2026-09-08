@@ -79,6 +79,18 @@ fn local_only_startup_ignores_warp_credentials() {
 }
 
 #[test]
+#[cfg(feature = "local_only")]
+fn local_only_startup_skips_loopback_product_services() {
+    let app = LaunchMode::App {
+        args: Default::default(),
+        api_key: None,
+    };
+
+    assert!(!app.should_start_local_http_server());
+    assert!(!app.needs_profiling());
+}
+
+#[test]
 fn tui_uses_distinct_secure_storage_service_name() {
     let launch_mode = LaunchMode::Tui {
         entrypoint: TuiEntryPoint::Interactive {

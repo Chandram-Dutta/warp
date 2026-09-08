@@ -8,7 +8,12 @@ fn test_data_dir_path() {
     // ChannelState, by default, is configured for Channel::Oss.
     cfg_if::cfg_if! {
         if #[cfg(target_os = "macos")] {
-            assert_eq!(data_dir(), home_dir.join(".warp-oss"));
+            let directory = if cfg!(feature = "local_only") {
+                ".warp-local-only"
+            } else {
+                ".warp-oss"
+            };
+            assert_eq!(data_dir(), home_dir.join(directory));
         } else if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
             assert_eq!(data_dir(), home_dir.join(".local/share/warp-oss"));
         } else if #[cfg(windows)] {
@@ -25,7 +30,12 @@ fn test_config_local_dir_path() {
     // ChannelState, by default, is configured for Channel::Oss.
     cfg_if::cfg_if! {
         if #[cfg(target_os = "macos")] {
-            assert_eq!(config_local_dir(), home_dir.join(".warp-oss"));
+            let directory = if cfg!(feature = "local_only") {
+                ".warp-local-only"
+            } else {
+                ".warp-oss"
+            };
+            assert_eq!(config_local_dir(), home_dir.join(directory));
         } else if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
             assert_eq!(config_local_dir(), home_dir.join(".config/warp-oss"));
         } else if #[cfg(windows)] {
@@ -64,6 +74,19 @@ fn test_gui_app_id_maps_oss_tui_to_oss_gui() {
     assert_eq!(gui_app_id.to_string(), "dev.warp.WarpOss");
 }
 
+#[cfg(feature = "local_only")]
+#[test]
+fn local_only_uses_distinct_config_and_application_namespaces() {
+    assert_eq!(base_warp_config_dir_name(), ".warp-local-only");
+
+    let app_id = AppId::new("dev", "warp", "WarpLocalOnly");
+    let gui_app_id = gui_app_id_for_channel(Channel::Oss, app_id);
+    assert_eq!(gui_app_id.to_string(), "dev.warp.WarpLocalOnly");
+
+    #[cfg(target_os = "macos")]
+    assert_eq!(macos_config_dir_name(), ".warp-local-only");
+}
+
 #[test]
 fn test_gui_config_and_mcp_paths_resolve_explicit_sources() {
     let home_dir = home_dir().expect("Should be able to compute home directory");
@@ -71,7 +94,12 @@ fn test_gui_config_and_mcp_paths_resolve_explicit_sources() {
 
     cfg_if::cfg_if! {
         if #[cfg(target_os = "macos")] {
-            assert_eq!(gui_config_dir, home_dir.join(".warp-oss"));
+            let directory = if cfg!(feature = "local_only") {
+                ".warp-local-only"
+            } else {
+                ".warp-oss"
+            };
+            assert_eq!(gui_config_dir, home_dir.join(directory));
         } else if #[cfg(any(target_os = "linux", target_os = "freebsd"))] {
             assert_eq!(gui_config_dir, home_dir.join(".config/warp-oss"));
         } else if #[cfg(windows)] {
@@ -89,9 +117,14 @@ fn test_gui_config_and_mcp_paths_resolve_explicit_sources() {
 #[test]
 fn test_warp_home_config_dir_path() {
     let home_dir = home_dir().expect("Should be able to compute home directory");
+    let base_dir_name = if cfg!(feature = "local_only") {
+        ".warp-local-only"
+    } else {
+        ".warp-oss"
+    };
     let expected_dir_name = match ChannelState::data_profile() {
-        Some(data_profile) => format!(".warp-oss-{data_profile}"),
-        None => ".warp-oss".to_string(),
+        Some(data_profile) => format!("{base_dir_name}-{data_profile}"),
+        None => base_dir_name.to_string(),
     };
 
     assert_eq!(

@@ -314,7 +314,7 @@ winit = { workspace = true }
 wgpu.workspace = true
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-app-installation-detection.workspace = true
+app-installation-detection = { workspace = true, optional = true }
 async-io.workspace = true
 axum.workspace = true
 build_cache.workspace = true
@@ -327,18 +327,18 @@ env_logger.workspace = true
 git2 = { version = "0.20.4", default-features = false, features = [
     "vendored-libgit2",
 ] }
-http_server.workspace = true
+http_server = { workspace = true, optional = true }
 hyper.workspace = true
 libsqlite3-sys = { version = "0.33.0", features = ["bundled"] }
 mio = { version = "1.1.1", features = ["os-poll", "os-ext"] }
-opentelemetry.workspace = true
-opentelemetry-http.workspace = true
-opentelemetry-otlp.workspace = true
-opentelemetry_sdk.workspace = true
+opentelemetry = { workspace = true, optional = true }
+opentelemetry-http = { workspace = true, optional = true }
+opentelemetry-otlp = { workspace = true, optional = true }
+opentelemetry_sdk = { workspace = true, optional = true }
 tokio.workspace = true
 tokio-util.workspace = true
-tracing-opentelemetry.workspace = true
-tracing-subscriber.workspace = true
+tracing-opentelemetry = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, optional = true }
 warp_errors = { workspace = true, features = ["tokio-errors", "websocket-errors"] }
 
 # AWS SDK (loading credentials for BYO LLM)
@@ -484,6 +484,7 @@ supergrok = []
 gemini_enterprise = []
 agent_mode = ["warp_agent_runtime"]
 warp_agent_runtime = [
+    "cloud_agent_tracing",
     "dep:aws-config",
     "dep:aws-credential-types",
     "dep:aws-sdk-sts",
@@ -522,11 +523,21 @@ crash_reporting = [
 ]
 creating_shared_sessions = []
 cross_repo_context = []
+cloud_agent_tracing = [
+    "dep:opentelemetry",
+    "dep:opentelemetry-http",
+    "dep:opentelemetry-otlp",
+    "dep:opentelemetry_sdk",
+    "dep:tracing-opentelemetry",
+    "dep:tracing-subscriber",
+]
+local_http_server = ["dep:app-installation-detection", "dep:http_server"]
 codebase_index_persistence = ["full_source_code_embedding"]
 well_known_mcp_ids = []
 factory_mcp = []
 default = [
     "agent_mode",
+    "local_http_server",
     "osc_hyperlinks",
     "viewing_shared_sessions",
     "render_continuous_block_selections_with_single_border",

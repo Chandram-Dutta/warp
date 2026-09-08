@@ -155,16 +155,20 @@ impl Client {
         Self::from_client_builder(builder).expect("should not fail to create client")
     }
 
+    #[cfg(not(target_family = "wasm"))]
+    pub fn new_without_system_tls_or_proxy() -> Self {
+        let builder = reqwest::Client::builder().tls_certs_only([]).no_proxy();
+        Self::from_client_builder(builder)
+            .expect("should not fail to create client without system TLS or proxy configuration")
+    }
+
     #[cfg(feature = "test-util")]
     pub fn new_for_test() -> Self {
-        let client_builder = reqwest::ClientBuilder::new()
-            // Don't load any SSL/TLS certificates, as doing so can be slow and we should
-            // never be making real requests in tests.
-            .tls_certs_only([])
-            // Disable proxy usage in tests, as loading system proxy configuration can be
-            // slow.
-            .no_proxy();
-        Self::from_client_builder(client_builder).expect("should not fail to create client")
+        #[cfg(not(target_family = "wasm"))]
+        return Self::new_without_system_tls_or_proxy();
+
+        #[cfg(target_family = "wasm")]
+        Self::new()
     }
 
     pub fn from_client_builder(client_builder: reqwest::ClientBuilder) -> reqwest::Result<Self> {

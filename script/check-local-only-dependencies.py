@@ -12,6 +12,13 @@ EXCLUDED_PACKAGES = {
     "aws-sdk-sts",
     "warp_multi_agent_client",
 }
+LOCAL_ONLY_PRODUCT_SERVICE_PACKAGES = {
+    "app-installation-detection",
+    "http_server",
+    "opentelemetry-http",
+    "opentelemetry-otlp",
+    "opentelemetry_sdk",
+}
 PERSISTENCE_RUNTIME_PACKAGES = {"warp_multi_agent_api"}
 
 
@@ -208,7 +215,9 @@ def main() -> None:
     assert "NO_DEFAULT_FEATURES=true" in macos_bundle
     assert 'RELEASE_CHANNEL != "local-only"' in macos_bundle
     assert 'if [ "$CHANNEL" = "local-only" ]' in bundled_resources
-    assert "script/bundle --channel local-only --arch aarch64 --debug --adhoc-sign" in local_only_workflow
+    assert "cargo build --locked --release -p warp --bin warp-local-only" in local_only_workflow
+    assert "script/bundle --channel local-only --arch aarch64 --adhoc-sign" in local_only_workflow
+    assert "target/aarch64-apple-darwin/release-lto/bundle/osx/WarpLocalOnly.app" in local_only_workflow
     assert 'lipo "$executable" -verify_arch arm64' in local_only_workflow
     assert "codesign --verify --deep --strict --verbose=4" in local_only_workflow
     assert "script/macos/smoke_test_app" in local_only_workflow
@@ -296,7 +305,7 @@ def main() -> None:
     assert '"root_view:open_linear_issue_work_in_existing_window"' in root_view
 
     local_only_packages = dependency_packages("local_only")
-    unexpected = EXCLUDED_PACKAGES & local_only_packages
+    unexpected = (EXCLUDED_PACKAGES | LOCAL_ONLY_PRODUCT_SERVICE_PACKAGES) & local_only_packages
     assert not unexpected, f"local-only dependency graph contains: {sorted(unexpected)}"
 
     agent_packages = dependency_packages("agent_mode")

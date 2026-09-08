@@ -84,7 +84,22 @@ mod tab;
 mod test_util;
 mod throttle;
 mod tips;
+#[cfg(feature = "cloud_agent_tracing")]
 mod tracing;
+#[cfg(not(feature = "cloud_agent_tracing"))]
+mod tracing {
+    pub struct Initialization;
+
+    pub fn init() -> anyhow::Result<Initialization> {
+        Ok(Initialization)
+    }
+
+    impl Initialization {
+        pub fn log_initialization_warning(&mut self) {}
+
+        pub fn shutdown(&mut self) {}
+    }
+}
 #[cfg(feature = "tui")]
 mod tui;
 #[cfg(feature = "tui")]
@@ -599,7 +614,7 @@ impl LaunchMode {
     /// processes (daemon, CLI, proxy, TUI) would otherwise contend for the fixed port.
     #[cfg_attr(target_family = "wasm", allow(dead_code))]
     fn should_start_local_http_server(&self) -> bool {
-        !self.is_headless()
+        cfg!(feature = "local_http_server") && !self.is_headless()
     }
 
     /// Returns `true` if this process can build and sync codebase indices.
@@ -654,6 +669,10 @@ impl LaunchMode {
 
     /// Whether profiling and tracing should be initialized.
     pub(crate) fn needs_profiling(&self) -> bool {
+        if cfg!(feature = "local_only") {
+            return false;
+        }
+
         match self {
             LaunchMode::App { .. }
             | LaunchMode::CommandLine { .. }
@@ -1594,7 +1613,7 @@ pub(crate) fn initialize_app(
     #[cfg(not(target_family = "wasm"))]
     server_api.set_ambient_agent_task_id(ambient_agent_task_id);
     let ai_client = server_api_provider.as_ref(ctx).get_ai_client();
-    #[cfg(all(not(target_family = "wasm"), not(feature = "local_only")))]
+    #[cfg(all(not(target_family = "wasm"), feature = "cloud_agent_tracing"))]
     // Refresh starts only after the authenticated server client exists; tracing initialization
     // remains responsible for deciding whether this process opted in to cloud-agent export.
     tracing::start_auth_refresh(
@@ -1963,9 +1982,10 @@ pub(crate) fn initialize_app(
 
     let user_is_logged_in = auth_state.is_logged_in();
 
-    if user_is_logged_in {
-        // Set the first frame callback to record the app's startup time.
-        // This is only sent for logged-in users so that new users don't skew performance metrics.
+    if user_is_logged_in || cfg!(feature = "local_only") {
+        // Set the first frame callback to record the app's startup time. Telemetry is only sent for
+        // logged-in users so that new users don't skew performance metrics; local-only builds log
+        // the non-sensitive interval data locally because they never have a logged-in user.
         let is_screen_reader_enabled = ctx.is_screen_reader_enabled();
         let from_relaunch = launch_mode.args().finish_update;
         ctx.on_first_frame_drawn(move |ctx| {
@@ -1973,13 +1993,12 @@ pub(crate) fn initialize_app(
                 timer.mark_interval_end("FIRST_FRAME_DRAWN");
                 timer.compute_stats()
             });
-            let event = TelemetryEvent::AppStartup(AppStartupInfo {
-                is_session_restoration_on: user_defaults_on_startup.should_restore_session,
-                is_screen_reader_enabled,
-                from_relaunch,
-                is_crash_reporting_enabled,
-                timing_data,
-            });
+
+            #[cfg(feature = "local_only")]
+            {
+                let timing_data = serde_json::to_string(&timing_data).unwrap_or_default();
+                log::info!("Local-only startup timings: {timing_data}");
+            }
 
             GPUState::handle(ctx).update(ctx, |gpu_state, ctx| {
                 gpu_state
@@ -1994,7 +2013,16 @@ pub(crate) fn initialize_app(
                     })
             }
 
-            send_telemetry_from_app_ctx!(event, ctx);
+            if user_is_logged_in {
+                let event = TelemetryEvent::AppStartup(AppStartupInfo {
+                    is_session_restoration_on: user_defaults_on_startup.should_restore_session,
+                    is_screen_reader_enabled,
+                    from_relaunch,
+                    is_crash_reporting_enabled,
+                    timing_data,
+                });
+                send_telemetry_from_app_ctx!(event, ctx);
+            }
         });
 
         #[cfg(enable_crash_recovery)]
@@ -2659,7 +2687,7 @@ pub(crate) fn initialize_app(
         aliases.connect(ctx);
     });
 
-    #[cfg(not(target_family = "wasm"))]
+    #[cfg(all(not(target_family = "wasm"), feature = "local_http_server"))]
     if launch_mode.should_start_local_http_server() {
         ctx.add_singleton_model(move |ctx| {
             let routers = vec![

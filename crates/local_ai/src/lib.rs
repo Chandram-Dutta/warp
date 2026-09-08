@@ -1,5 +1,5 @@
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use async_compat::CompatExt as _;
@@ -8,7 +8,7 @@ use reqwest::StatusCode;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use url::Url;
+use url::{Host, Url};
 
 const MAX_COMMAND_CONTEXTS: usize = 5;
 const MAX_COMMAND_CHARS: usize = 2_000;
@@ -283,9 +283,31 @@ pub trait ProviderTransport: Send + Sync {
     ) -> Result<ProviderHttpResponse, LocalAIError>;
 }
 
-#[derive(Default)]
 pub struct DirectHttpTransport {
-    client: reqwest::Client,
+    client: OnceLock<reqwest::Client>,
+}
+
+impl Default for DirectHttpTransport {
+    fn default() -> Self {
+        Self {
+            client: OnceLock::new(),
+        }
+    }
+}
+
+impl DirectHttpTransport {
+    fn client(&self) -> &reqwest::Client {
+        self.client.get_or_init(|| {
+            #[cfg(not(target_family = "wasm"))]
+            let builder = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none());
+            #[cfg(target_family = "wasm")]
+            let builder = reqwest::Client::builder();
+
+            builder
+                .build()
+                .expect("should not fail to create local AI client")
+        })
+    }
 }
 
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
@@ -296,7 +318,7 @@ impl ProviderTransport for DirectHttpTransport {
         request: ProviderHttpRequest,
     ) -> Result<ProviderHttpResponse, LocalAIError> {
         let mut builder = self
-            .client
+            .client()
             .post(request.url)
             .timeout(REQUEST_TIMEOUT)
             .json(&request.payload);
@@ -425,7 +447,15 @@ impl NextCommandProvider for DirectNextCommandProvider {
 
 fn provider_url(endpoint: &str, suffix: &str) -> Result<Url, LocalAIError> {
     let mut url = Url::parse(endpoint.trim()).map_err(|_| LocalAIError::InvalidEndpoint)?;
-    if !matches!(url.scheme(), "http" | "https")
+    let secure_transport = url.scheme() == "https"
+        || (url.scheme() == "http"
+            && match url.host() {
+                Some(Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
+                Some(Host::Ipv4(address)) => address.is_loopback(),
+                Some(Host::Ipv6(address)) => address.is_loopback(),
+                None => false,
+            });
+    if !secure_transport
         || url.host_str().is_none()
         || !url.username().is_empty()
         || url.password().is_some()

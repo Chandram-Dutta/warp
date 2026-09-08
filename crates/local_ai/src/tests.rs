@@ -227,3 +227,13 @@ fn endpoint_credentials_are_rejected() {
     let result = provider_url("https://example.com/v1?api_key=secret", "chat/completions");
     assert!(matches!(result, Err(LocalAIError::InvalidEndpoint)));
 }
+
+#[test]
+fn insecure_remote_endpoints_are_rejected() {
+    let result = provider_url("http://example.com/v1", "chat/completions");
+    assert!(matches!(result, Err(LocalAIError::InvalidEndpoint)));
+
+    assert!(provider_url("http://localhost:11434", "api/chat").is_ok());
+    assert!(provider_url("http://127.0.0.1:11434", "api/chat").is_ok());
+    assert!(provider_url("http://[::1]:11434", "api/chat").is_ok());
+}

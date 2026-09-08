@@ -63,6 +63,8 @@ impl TelemetryApi {
         cfg_if::cfg_if! {
             if #[cfg(test)] {
                 let client = http_client::Client::new_for_test();
+            } else if #[cfg(all(feature = "local_only", not(target_family = "wasm")))] {
+                let client = http_client::Client::new_without_system_tls_or_proxy();
             } else if #[cfg(target_family = "wasm")] {
                 let client = http_client::Client::default();
             } else {

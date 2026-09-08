@@ -10,7 +10,7 @@ fn main() -> Result<()> {
     ChannelState::set(ChannelState::new(
         Channel::Oss,
         ChannelConfig {
-            app_id: AppId::new("dev", "warp", "WarpOss"),
+            app_id: AppId::new("dev", "warp", "WarpLocalOnly"),
             logfile_name: "warp-local-only.log".into(),
             server_config: WarpServerConfig::local_only(),
             oz_config: OzConfig::local_only(),

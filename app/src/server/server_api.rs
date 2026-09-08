@@ -449,6 +449,9 @@ impl ServerApi {
         iap_state: Option<Arc<IapState>>,
         ctx: &mut ModelContext<ServerApiProvider>,
     ) -> Self {
+        #[cfg(all(feature = "local_only", not(target_family = "wasm")))]
+        let mut client = http_client::Client::new_without_system_tls_or_proxy();
+        #[cfg(not(all(feature = "local_only", not(target_family = "wasm"))))]
         let mut client = http_client::Client::new();
         let iap_token_provider = iap_state.map(|state| {
             client.set_iap_token_provider(state.clone());
