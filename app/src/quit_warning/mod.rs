@@ -4,17 +4,11 @@ use itertools::Itertools;
 use settings::ToggleableSetting as _;
 use warp_errors::report_if_error;
 use warpui::modals::{AlertDialogWithCallbacks, AppModalCallback, ModalButton};
-use warpui::{
-    AppContext, EntityId, SingletonEntity, ViewContext, ViewHandle, WeakViewHandle, WindowId,
-};
+use warpui::{AppContext, EntityId, SingletonEntity, ViewContext, WeakViewHandle, WindowId};
 
-use crate::code::editor_management::{CodeEditorStatus, CodeEditorSummary};
-use crate::code::view::CodeView;
-use crate::code_review::code_review_view::CodeReviewView;
-use crate::pane_group::{CodePane, PaneGroup, PaneId, TerminalPane};
+use crate::pane_group::{PaneGroup, PaneId, TerminalPane};
 use crate::server::telemetry::CloseTarget;
 use crate::session_management::{RunningSessionSummary, SessionNavigationData};
-use crate::settings::CodeSettings;
 use crate::terminal::general_settings::GeneralSettings;
 use crate::workspace::Workspace;
 use crate::{TelemetryEvent, send_telemetry_from_app_ctx};
@@ -31,11 +25,6 @@ enum QuitScope<'a> {
     Tabs(Vec<WeakViewHandle<PaneGroup>>),
     Window(WindowId),
     App,
-    #[allow(dead_code)]
-    EditorTab {
-        file_name: Option<String>,
-        editor_status: Vec<CodeEditorStatus>,
-    }, // TODO: Include the "log out" confirmation modal too.
 }
 
 /// Summary of unsaved data and running processes to show the user before they quit.
@@ -51,11 +40,6 @@ pub struct UnsavedStateSummary<'a> {
 
     /// All terminal sessions in this scope.
     terminal_sessions: Vec<SessionNavigationData>,
-
-    /// The number of live shared sessions.
-    pub shared_sessions: usize,
-    /// Whether or not there are unsaved code changes.
-    unsaved_code_changes: bool,
 }
 
 /// Builder for a warning dialog that displays unsaved state.
@@ -65,8 +49,6 @@ pub struct QuitWarningDialog<'a> {
     on_confirm: Option<AppModalCallback>,
     on_cancel: Option<AppModalCallback>,
     on_show_processes: Option<AppModalCallback>,
-    on_save_changes: Option<AppModalCallback>,
-    on_discard_changes: Option<AppModalCallback>,
 }
 
 impl QuitScope<'_> {
@@ -102,170 +84,6 @@ impl QuitScope<'_> {
                 .filter(|session| session.window_id() == *window_id)
                 .collect_vec(),
             Self::App => SessionNavigationData::all_sessions(ctx).collect_vec(),
-            Self::EditorTab { .. } => Vec::new(),
-        }
-    }
-
-    /// All code editors in this scope.
-    fn code_editors(&self, ctx: &AppContext) -> Vec<CodeEditorStatus> {
-        match self {
-            Self::Pane {
-                pane_group,
-                pane_id,
-                ..
-            } => pane_group
-                .downcast_pane_by_id::<CodePane>(*pane_id)
-                .map(|code_pane| code_pane.editor_status(ctx))
-                .into_iter()
-                .collect(),
-            Self::Tabs(tabs) => tabs
-                .iter()
-                .filter_map(|tab| tab.upgrade(ctx))
-                .flat_map(|pane_group| CodeEditorStatus::editors_in_tab(&pane_group, ctx))
-                .collect_vec(),
-            Self::Window(window_id) => {
-                CodeEditorStatus::editors_in_window(*window_id, ctx).collect_vec()
-            }
-            Self::App => CodeEditorStatus::all_editors(ctx).collect_vec(),
-            Self::EditorTab { editor_status, .. } => editor_status.clone(),
-        }
-    }
-
-    /// All code review views in this scope (from the panel, not panes).
-    fn code_review_views(&self, ctx: &AppContext) -> Vec<CodeEditorStatus> {
-        match self {
-            Self::Pane { .. } => {
-                vec![] // There cannot be a code review view in a pane.
-            }
-            Self::Tabs(tabs) => {
-                let window_ids: Vec<_> = tabs
-                    .iter()
-                    .filter_map(|tab| tab.upgrade(ctx))
-                    .map(|pane_group| pane_group.window_id(ctx))
-                    .unique()
-                    .collect();
-                window_ids
-                    .into_iter()
-                    .flat_map(|window_id| {
-                        CodeEditorStatus::code_review_views_in_window(window_id, ctx)
-                    })
-                    .collect_vec()
-            }
-            Self::Window(window_id) => {
-                CodeEditorStatus::code_review_views_in_window(*window_id, ctx).collect_vec()
-            }
-            Self::App => ctx
-                .window_ids()
-                .flat_map(|window_id| CodeEditorStatus::code_review_views_in_window(window_id, ctx))
-                .collect_vec(),
-            Self::EditorTab { .. } => vec![],
-        }
-    }
-
-    /// All code editor views (code panes) in this scope, as handles for saving.
-    fn code_view_handles(&self, ctx: &AppContext) -> Vec<ViewHandle<CodeView>> {
-        match self {
-            Self::Pane {
-                pane_group,
-                pane_id,
-                ..
-            } => pane_group
-                .code_pane_by_id(*pane_id)
-                .map(|code_pane| code_pane.file_view(ctx))
-                .into_iter()
-                .collect(),
-            Self::Tabs(tabs) => tabs
-                .iter()
-                .filter_map(|tab| tab.upgrade(ctx))
-                .flat_map(|pane_group| {
-                    pane_group
-                        .as_ref(ctx)
-                        .code_panes(ctx)
-                        .map(|(_, editor)| editor)
-                        .collect_vec()
-                })
-                .collect(),
-            Self::Window(window_id) => ctx
-                .views_of_type::<CodeView>(*window_id)
-                .into_iter()
-                .flatten()
-                .collect(),
-            Self::App => ctx
-                .window_ids()
-                .flat_map(|window_id| {
-                    ctx.views_of_type::<CodeView>(window_id)
-                        .into_iter()
-                        .flatten()
-                })
-                .collect(),
-            Self::EditorTab { .. } => Vec::new(),
-        }
-    }
-
-    /// All code review views in this scope, as handles for saving.
-    fn code_review_view_handles(&self, ctx: &AppContext) -> Vec<ViewHandle<CodeReviewView>> {
-        match self {
-            Self::Pane { .. } | Self::EditorTab { .. } => Vec::new(),
-            Self::Tabs(tabs) => {
-                let window_ids: Vec<_> = tabs
-                    .iter()
-                    .filter_map(|tab| tab.upgrade(ctx))
-                    .map(|pane_group| pane_group.window_id(ctx))
-                    .unique()
-                    .collect();
-                window_ids
-                    .into_iter()
-                    .flat_map(|window_id| {
-                        ctx.views_of_type::<CodeReviewView>(window_id)
-                            .into_iter()
-                            .flatten()
-                    })
-                    .collect()
-            }
-            Self::Window(window_id) => ctx
-                .views_of_type::<CodeReviewView>(*window_id)
-                .into_iter()
-                .flatten()
-                .collect(),
-            Self::App => ctx
-                .window_ids()
-                .flat_map(|window_id| {
-                    ctx.views_of_type::<CodeReviewView>(window_id)
-                        .into_iter()
-                        .flatten()
-                })
-                .collect(),
-        }
-    }
-
-    /// Count of shared sessions in this scope.
-    fn shared_sessions(&self, ctx: &AppContext) -> usize {
-        match self {
-            Self::Pane {
-                pane_group,
-                pane_id,
-                ..
-            } => pane_group
-                .terminal_view_from_pane_id(*pane_id, ctx)
-                .filter(|view| view.as_ref(ctx).is_sharing_session())
-                .into_iter()
-                .count(),
-            Self::Tabs(tabs) => tabs
-                .iter()
-                .filter_map(|tab| tab.upgrade(ctx))
-                .map(|tab| tab.as_ref(ctx).number_of_shared_sessions(ctx))
-                .sum(),
-            Self::Window(window_id) => ctx
-                .views_of_type::<PaneGroup>(*window_id)
-                .map(|views| {
-                    views
-                        .into_iter()
-                        .map(|view| view.as_ref(ctx).number_of_shared_sessions(ctx))
-                        .sum()
-                })
-                .unwrap_or_default(),
-            Self::App => crate::session_management::num_shared_sessions(ctx),
-            Self::EditorTab { .. } => 0,
         }
     }
 
@@ -275,7 +93,6 @@ impl QuitScope<'_> {
             Self::Tabs(_) => CloseTarget::Tab,
             Self::Window(_) => CloseTarget::Window,
             Self::App => CloseTarget::App,
-            Self::EditorTab { .. } => CloseTarget::EditorTab,
         }
     }
 }
@@ -291,21 +108,6 @@ impl UnsavedStateSummary<'static> {
 
     pub fn for_tabs(tabs: Vec<WeakViewHandle<PaneGroup>>, ctx: &mut AppContext) -> Self {
         Self::for_scope(QuitScope::Tabs(tabs), ctx)
-    }
-
-    #[allow(dead_code)]
-    pub fn for_editor_tab(
-        file_name: Option<String>,
-        editor_status: Vec<CodeEditorStatus>,
-        ctx: &mut AppContext,
-    ) -> Self {
-        Self::for_scope(
-            QuitScope::EditorTab {
-                file_name,
-                editor_status,
-            },
-            ctx,
-        )
     }
 }
 
@@ -330,59 +132,18 @@ impl<'a> UnsavedStateSummary<'a> {
         let sessions = scope.sessions(ctx);
         let sessions_summary = RunningSessionSummary::new(&sessions);
 
-        let code_editors = scope.code_editors(ctx);
-        let code_editor_summary = CodeEditorSummary::new(&code_editors);
-
-        let code_review_views = scope.code_review_views(ctx);
-        let code_review_summary = CodeEditorSummary::new(&code_review_views);
-
-        let num_shared_sessions = scope.shared_sessions(ctx);
-
         UnsavedStateSummary {
             scope,
             total_long_running_commands: sessions_summary.long_running_cmds.len(),
             windows_with_long_running_commands: sessions_summary.windows_running().len(),
             tabs_with_long_running_commands: sessions_summary.tabs_running().len(),
             terminal_sessions: sessions,
-            shared_sessions: num_shared_sessions,
-            unsaved_code_changes: !code_editor_summary.unsaved_changes.is_empty()
-                || !code_review_summary.unsaved_changes.is_empty(),
         }
     }
 
     pub fn should_display_warning(&self, ctx: &AppContext) -> bool {
         *GeneralSettings::as_ref(ctx).show_warning_before_quitting
-            && (self.total_long_running_commands > 0
-                || self.shared_sessions > 0
-                || self.unsaved_code_changes)
-    }
-
-    /// Auto-save-aware variant of [`Self::should_display_warning`].
-    ///
-    /// When the auto-save setting is off, this behaves exactly like
-    /// `should_display_warning` (no side effects). When auto-save is on, it
-    /// flushes all saveable unsaved code editors in scope (silently, so no
-    /// "File saved." toast) and returns whether a warning is still warranted for
-    /// things auto-save can't handle: running processes, shared sessions, or
-    /// unsaved changes with no backing file (e.g. untitled buffers).
-    pub fn save_unsaved_code_and_should_warn(&self, ctx: &mut AppContext) -> bool {
-        if !*CodeSettings::as_ref(ctx).auto_save {
-            return self.should_display_warning(ctx);
-        }
-
-        let mut unsaveable_changes_remain = false;
-        for code_view in self.scope.code_view_handles(ctx) {
-            unsaveable_changes_remain |=
-                code_view.update(ctx, |view, ctx| view.auto_save_all_unsaved_tabs(ctx));
-        }
-        for review_view in self.scope.code_review_view_handles(ctx) {
-            review_view.update(ctx, |view, ctx| view.auto_save_all_unsaved_files(ctx));
-        }
-
-        *GeneralSettings::as_ref(ctx).show_warning_before_quitting
-            && (self.total_long_running_commands > 0
-                || self.shared_sessions > 0
-                || unsaveable_changes_remain)
+            && self.total_long_running_commands > 0
     }
 
     pub fn running_sessions(&self) -> RunningSessionSummary<'_> {
@@ -402,7 +163,7 @@ impl<'a> UnsavedStateSummary<'a> {
             QuitScope::Tabs(ref tabs) if tabs.len() == 1 => " in this tab.",
             QuitScope::Window(_) => " in this window.",
             QuitScope::Pane { .. } => " in this pane.",
-            QuitScope::App | QuitScope::Tabs(_) | QuitScope::EditorTab { .. } => ".",
+            QuitScope::App | QuitScope::Tabs(_) => ".",
         };
 
         if self.total_long_running_commands > 0 {
@@ -428,22 +189,6 @@ impl<'a> UnsavedStateSummary<'a> {
             info_text_lines.push(process_info_text);
         }
 
-        if self.shared_sessions > 0 {
-            info_text_lines.push(format!(
-                "You are sharing {} {}{scope_suffix}",
-                self.shared_sessions,
-                pluralize(self.shared_sessions, "session", "sessions")
-            ));
-        }
-
-        if self.unsaved_code_changes {
-            if let QuitScope::EditorTab { ref file_name, .. } = self.scope {
-                info_text_lines.push(format!("Do you want to save the changes you made to {}? Your changes will be discarded if you don't save them.", file_name.clone().unwrap_or("this file".to_string())));
-            } else {
-                info_text_lines.push(format!("You have unsaved file changes{scope_suffix}"));
-            }
-        }
-
         info_text_lines.join("\n")
     }
 }
@@ -455,8 +200,6 @@ impl<'a> QuitWarningDialog<'a> {
             on_confirm: None,
             on_cancel: None,
             on_show_processes: None,
-            on_save_changes: None,
-            on_discard_changes: None,
         }
     }
 
@@ -478,28 +221,12 @@ impl<'a> QuitWarningDialog<'a> {
         self
     }
 
-    #[allow(dead_code)]
-    /// Set the callback to invoke if the user wants to save changes before exiting an editor tab.
-    pub fn on_save_changes<F: FnOnce(&mut AppContext) + 'static>(mut self, f: F) -> Self {
-        self.on_save_changes = Some(Box::new(f));
-        self
-    }
-
-    #[allow(dead_code)]
-    /// Set the callback to invoke if the user wants to discard changes before exiting an editor tab.
-    pub fn on_discard_changes<F: FnOnce(&mut AppContext) + 'static>(mut self, f: F) -> Self {
-        self.on_discard_changes = Some(Box::new(f));
-        self
-    }
-
     pub fn build(self) -> AlertDialogWithCallbacks<AppModalCallback> {
         let QuitWarningDialog {
             state,
             on_confirm,
             on_cancel,
             on_show_processes,
-            on_save_changes,
-            on_discard_changes,
         } = self;
 
         let mut buttons = Vec::new();
@@ -508,17 +235,8 @@ impl<'a> QuitWarningDialog<'a> {
             let confirm_title = match state.scope {
                 QuitScope::Window(_) | QuitScope::Tabs(_) | QuitScope::Pane { .. } => "Yes, close",
                 QuitScope::App => "Yes, quit",
-                _ => "",
             };
             buttons.push(ModalButton::for_app(confirm_title.to_string(), callback));
-        }
-
-        if let Some(callback) = on_save_changes {
-            buttons.push(ModalButton::for_app("Save".to_string(), callback));
-        }
-
-        if let Some(callback) = on_discard_changes {
-            buttons.push(ModalButton::for_app("Don't Save".to_string(), callback));
         }
 
         if let Some(callback) = on_show_processes
@@ -542,7 +260,6 @@ impl<'a> QuitWarningDialog<'a> {
             QuitScope::Tabs(_) => "Close tabs?",
             QuitScope::Window(_) => "Close window?",
             QuitScope::App => "Quit Warp?",
-            QuitScope::EditorTab { .. } => "Save changes?",
         };
 
         AlertDialogWithCallbacks::for_app(
@@ -559,7 +276,6 @@ impl<'a> QuitWarningDialog<'a> {
         send_telemetry_from_app_ctx!(
             TelemetryEvent::QuitModalShown {
                 running_processes: self.state.total_long_running_commands as u32,
-                shared_sessions: self.state.shared_sessions as u32,
                 modal_for: self.state.scope.close_target()
             },
             ctx

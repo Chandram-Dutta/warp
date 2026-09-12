@@ -11,7 +11,7 @@ use rand::Rng;
 use session_sharing_protocol::common::Viewer;
 use session_sharing_protocol::common::{
     InputReplicaId, ParticipantId, ParticipantInfo, ParticipantList, ParticipantPresenceUpdate,
-    PresenceUpdate, Role, RoleRequestId, Selection,
+    PresenceUpdate, Role, Selection,
 };
 use warpui::assets::asset_cache::{AssetCache, AssetState};
 use warpui::r#async::SpawnedFutureHandle;
@@ -19,30 +19,6 @@ use warpui::image_cache::ImageType;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
 use crate::auth::UserUid;
-use crate::editor::{CursorColors, PeerSelectionData};
-use crate::terminal::model::block::BlockId;
-use crate::terminal::model::blocks::BlockList;
-use crate::terminal::model::terminal_model::BlockIndex;
-use crate::util::color::coloru_with_opacity;
-
-/// Selections have 25% opacity.
-pub fn text_selection_color(participant_color: ColorU) -> ColorU {
-    coloru_with_opacity(participant_color, 25)
-}
-
-pub const MUTED_PARTICIPANT_COLOR: ColorU = ColorU {
-    r: 176,
-    g: 176,
-    b: 176,
-    a: 255,
-};
-
-pub const MUTED_AVATAR_BORDER_COLOR: ColorU = ColorU {
-    r: 138,
-    g: 138,
-    b: 138,
-    a: 255,
-};
 
 /// A set of pre-assigned colors that we use for shared session participants.
 /// These come from https://www.figma.com/file/chk9pwt35jTJhf9KnHmZyE/Components?type=design&node-id=1650-1410&mode=design&t=RTHbE9G6NLhFRqLQ-0.
@@ -112,58 +88,6 @@ impl Participant {
     pub fn input_replica_id(&self) -> &InputReplicaId {
         &self.info.profile_data.input_replica_id
     }
-
-    /// Returns the selected block index that the avatar should be rendered at.
-    /// This is the block at the top of the last continuous selection.
-    /// Returns None if the participant doesn't have a block selected.
-    pub fn get_selected_block_index_for_avatar(
-        &self,
-        block_list: &BlockList,
-    ) -> Option<BlockIndex> {
-        let session_sharing_protocol::common::Selection::Blocks { block_ids } =
-            &self.info.selection
-        else {
-            return None;
-        };
-        let mut block_index_for_avatar = None;
-        // Sort selected block indices in decreasing order.
-        let block_indices = block_ids
-            .iter()
-            .filter_map(|block_id| block_list.block_index_for_id(&(block_id.to_string().into())))
-            .sorted_unstable()
-            .rev();
-        for idx in block_indices {
-            let Some(block_index) = block_index_for_avatar else {
-                block_index_for_avatar = Some(idx);
-                continue;
-            };
-            // If this is part of the same continuous selection, update the index since we want the avatar at the top of the last continuous selection.
-            if idx
-                == std::convert::Into::<usize>::into(block_index)
-                    .saturating_sub(1)
-                    .into()
-            {
-                block_index_for_avatar = Some(idx);
-            } else {
-                // Once we reach a smaller index that's not part of the same continuous selection, return
-                return block_index_for_avatar;
-            }
-        }
-        block_index_for_avatar
-    }
-}
-
-/// Helper struct containing presence information about a participant who selected a particular block.
-pub struct ParticipantAtSelectedBlock<'a> {
-    /// The participant who selected the block.
-    pub participant: &'a Participant,
-    /// This block is the top of a continuous block selection by this participant.
-    /// True for single selected block as well.
-    pub is_top_of_continuous_selection: bool,
-    /// This block is the bottom of a continuous block selection by this participant.
-    /// True for single selected block as well.
-    pub is_bottom_of_continuous_selection: bool,
-    pub should_show_avatar: bool,
 }
 
 /// A viewer who was once part of the session
@@ -222,11 +146,6 @@ pub struct PresenceManager {
     /// Whether we ourselves are attempting to reconnect to the server.
     /// If this is true, all avatars should have a muted color.
     is_reconnecting: bool,
-
-    // Map from block ID to the shared session participant IDs that have it selected.
-    block_id_to_participants_selected: HashMap<BlockId, Vec<ParticipantId>>,
-
-    role_requests: HashMap<ParticipantId, RoleRequestId>,
 }
 
 /// Returns the first available preset color, or a random color if all are taken.
@@ -246,23 +165,6 @@ pub fn get_available_color(chosen_colors: &HashSet<ColorU>) -> ColorU {
 }
 
 impl PresenceManager {
-    pub fn new_for_sharer(id: ParticipantId, firebase_uid: UserUid) -> Self {
-        Self {
-            id: id.clone(),
-            firebase_uid,
-            role: None,
-            sharer_id: id,
-            sharer: None,
-            present_viewers: HashMap::new(),
-            absent_viewers: HashMap::new(),
-            chosen_colors: HashSet::new(),
-            load_participants_imgs_future_handle: None,
-            block_id_to_participants_selected: HashMap::new(),
-            is_reconnecting: false,
-            role_requests: HashMap::new(),
-        }
-    }
-
     pub fn new_for_viewer(
         id: ParticipantId,
         firebase_uid: UserUid,
@@ -291,9 +193,7 @@ impl PresenceManager {
             absent_viewers: HashMap::new(),
             chosen_colors,
             load_participants_imgs_future_handle: None,
-            block_id_to_participants_selected: HashMap::new(),
             is_reconnecting: false,
-            role_requests: HashMap::new(),
         };
         manager.update_participants(participants, ctx);
         manager
@@ -322,12 +222,6 @@ impl PresenceManager {
     /// Returns the viewer's role, if the viewer is known to us.
     pub fn viewer_role(&self, viewer_id: &ParticipantId) -> Option<Role> {
         self.present_viewers.get(viewer_id).and_then(|v| v.role)
-    }
-
-    /// Returns a viewer's role request id given their participant id,
-    /// `None` if the viewer does not have a pending request.
-    pub fn get_role_request(&self, participant_id: &ParticipantId) -> Option<&RoleRequestId> {
-        self.role_requests.get(participant_id)
     }
 
     /// Returns the present viewers of this shared session, not including ourselves.
@@ -361,70 +255,6 @@ impl PresenceManager {
             return Some(sharer);
         }
         None
-    }
-
-    /// Returns the participants who have the block at the block index selected.
-    pub fn get_participants_selected_block_index(
-        &self,
-        block_index: BlockIndex,
-        block_list: &BlockList,
-    ) -> Vec<&Participant> {
-        let Some(block) = block_list.block_at(block_index) else {
-            return vec![];
-        };
-        let Some(participant_ids) = self.block_id_to_participants_selected.get(block.id()) else {
-            return vec![];
-        };
-        participant_ids
-            .iter()
-            .filter_map(|id| self.get_participant(id))
-            .collect_vec()
-    }
-
-    /// Returns the participants who have the block at the block index selected,
-    /// with some additional info helpful for rendering.
-    pub fn get_participants_at_selected_block(
-        &self,
-        block_index: BlockIndex,
-        block_list: &BlockList,
-    ) -> Vec<ParticipantAtSelectedBlock<'_>> {
-        let participants_selected_this_block =
-            self.get_participants_selected_block_index(block_index, block_list);
-        if participants_selected_this_block.is_empty() {
-            return vec![];
-        }
-
-        let participant_ids_selected_prev_block = if block_index == 0.into() {
-            HashSet::new()
-        } else {
-            HashSet::<_>::from_iter(
-                self.get_participants_selected_block_index(block_index - 1.into(), block_list)
-                    .into_iter()
-                    .map(|p| p.info.id.clone()),
-            )
-        };
-        let participant_ids_selected_next_block = HashSet::<_>::from_iter(
-            self.get_participants_selected_block_index(block_index + 1.into(), block_list)
-                .into_iter()
-                .map(|p| p.info.id.clone()),
-        );
-
-        participants_selected_this_block
-            .into_iter()
-            .map(|participant| {
-                let should_show_avatar = participant
-                    .get_selected_block_index_for_avatar(block_list)
-                    .is_some_and(|idx| idx == block_index);
-                ParticipantAtSelectedBlock {
-                    participant,
-                    is_top_of_continuous_selection: !participant_ids_selected_prev_block
-                        .contains(&participant.info.id),
-                    is_bottom_of_continuous_selection: !participant_ids_selected_next_block
-                        .contains(&participant.info.id),
-                    should_show_avatar,
-                }
-            })
-            .collect_vec()
     }
 
     pub fn update_participants(
@@ -551,7 +381,6 @@ impl PresenceManager {
 
         // Selection info is needed for rendering remote cursors in input
         participant.info.selection = selection;
-        self.refresh_block_id_to_participants_selected();
     }
 
     pub fn update_participant_role(
@@ -573,65 +402,6 @@ impl PresenceManager {
         }
     }
 
-    pub fn make_all_participants_readers(&mut self, _ctx: &mut ModelContext<Self>) {
-        for viewer in self.present_viewers.values_mut() {
-            viewer.role = Some(Role::Reader);
-        }
-    }
-
-    /// Called when the sharer is notified of a role request from a viewer.
-    pub fn on_role_requested(
-        &mut self,
-        participant_id: ParticipantId,
-        role_request_id: RoleRequestId,
-        role: Role,
-        _ctx: &mut ModelContext<Self>,
-    ) {
-        // TODO: handle pending role requests on reconnection
-        // Ensure only the sharer can update its role requests
-        if self.sharer_id != self.id {
-            return;
-        }
-
-        // Ensure viewer doesn't already have requested role
-        if let Some(old_role) = self.viewer_role(&participant_id)
-            && role == old_role
-        {
-            return;
-        }
-
-        self.role_requests
-            .insert(participant_id.clone(), role_request_id.clone());
-    }
-
-    /// Called when the sharer is notified of a cancelled role request
-    pub fn on_role_request_cancelled(
-        &mut self,
-        participant_id: ParticipantId,
-        _ctx: &mut ModelContext<Self>,
-    ) {
-        // Ensure only the sharer can remove its role requests
-        if self.sharer_id != self.id {
-            return;
-        }
-
-        self.role_requests.remove(&participant_id);
-    }
-
-    /// Called as the sharer responds to a role request
-    pub fn on_role_request_responded_to(
-        &mut self,
-        participant_id: ParticipantId,
-        _ctx: &mut ModelContext<Self>,
-    ) {
-        // Ensure only the sharer can remove its role requests
-        if self.sharer_id != self.id {
-            return;
-        }
-
-        self.role_requests.remove(&participant_id);
-    }
-
     pub fn set_is_reconnecting(
         &mut self,
         is_self_reconnecting: bool,
@@ -644,31 +414,6 @@ impl PresenceManager {
         self.is_reconnecting
     }
 
-    /// Refreshes the block ID to participants selected cache to be consistent with the current participant data stored.
-    fn refresh_block_id_to_participants_selected(&mut self) {
-        self.block_id_to_participants_selected.clear();
-        let participants = if self.sharer.is_some() {
-            Either::Left(
-                iter::once(self.sharer.as_ref().expect("sharer should exist"))
-                    .chain(self.present_viewers.values()),
-            )
-        } else {
-            Either::Right(self.present_viewers.values())
-        };
-        for participant in participants {
-            if let session_sharing_protocol::common::Selection::Blocks { block_ids } =
-                &participant.info.selection
-            {
-                for block_id in block_ids {
-                    self.block_id_to_participants_selected
-                        .entry(block_id.to_string().into())
-                        .or_default()
-                        .push(participant.info.id.clone());
-                }
-            }
-        }
-    }
-
     fn on_participant_images_loaded(
         &mut self,
         latest_participants: Vec<Participant>,
@@ -676,17 +421,6 @@ impl PresenceManager {
     ) {
         // Once all participant futures have completed, update the participant list and emit an event.
         for participant in latest_participants {
-            if let session_sharing_protocol::common::Selection::Blocks { block_ids } =
-                &participant.info.selection
-            {
-                for block_id in block_ids {
-                    self.block_id_to_participants_selected
-                        .entry(block_id.to_string().into())
-                        .or_default()
-                        .push(participant.info.id.clone());
-                }
-            }
-
             if participant.info.id == self.sharer_id {
                 self.sharer = Some(participant);
             } else {
@@ -694,33 +428,7 @@ impl PresenceManager {
                     .insert(participant.info.id.clone(), participant);
             }
         }
-        self.refresh_block_id_to_participants_selected();
         ctx.emit(Event::ParticipantListUpdated);
-    }
-
-    pub fn input_data_for_participant(
-        &self,
-        participant: &Participant,
-    ) -> (InputReplicaId, PeerSelectionData) {
-        let input_replica_id = participant.input_replica_id().clone();
-        let participant_color = if self.is_reconnecting() {
-            MUTED_PARTICIPANT_COLOR
-        } else {
-            participant.color
-        };
-        let colors = CursorColors {
-            cursor: participant_color.into(),
-            selection: text_selection_color(participant_color).into(),
-        };
-
-        let cursor_data = PeerSelectionData {
-            colors,
-            display_name: participant.info.profile_data.display_name.clone(),
-            image_url: participant.info.profile_data.photo_url.clone(),
-            should_draw_cursors: matches!(participant.info.selection, Selection::None),
-        };
-
-        (input_replica_id, cursor_data)
     }
 
     pub fn absent_viewers(&self) -> impl Iterator<Item = &AbsentViewer> + '_ {

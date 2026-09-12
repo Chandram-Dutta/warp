@@ -10,9 +10,6 @@ use crate::themes::theme::Fill;
 use crate::util::color::coloru_with_opacity;
 use crate::view_components::action_button::{ActionButtonTheme, NakedTheme};
 
-pub mod plan_and_todo_list;
-pub mod prompt_alert;
-
 const BLURRED_OPACITY: u8 = 50;
 
 /// Shared theme for icon-only prompt buttons (used by UDI and compact model selector)

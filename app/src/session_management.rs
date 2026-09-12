@@ -216,22 +216,6 @@ impl Entity for SessionSource {
     type Event = ();
 }
 
-pub fn num_shared_sessions(ctx: &AppContext) -> usize {
-    let mut num_shared_sessions = 0;
-    let window_ids: Vec<WindowId> = ctx.window_ids().collect();
-    for window_id in window_ids {
-        let Some(pane_group_views) = ctx.views_of_type::<PaneGroup>(window_id) else {
-            continue;
-        };
-        for pane_group_view in pane_group_views {
-            pane_group_view.read(ctx, |pane_group, ctx| {
-                num_shared_sessions += pane_group.number_of_shared_sessions(ctx);
-            })
-        }
-    }
-    num_shared_sessions
-}
-
 /// Metadata for a single tab, used by the Ctrl+Tab MRU switcher.
 #[derive(Clone)]
 pub struct TabNavigationData {

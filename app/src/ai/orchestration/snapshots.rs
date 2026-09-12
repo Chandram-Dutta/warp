@@ -15,7 +15,6 @@ use super::providers::{
     get_base_model_choices, resolve_default_host_slug, resolve_recent_host_slug,
 };
 use crate::LLMPreferences;
-use crate::ai::auth_secret_types::auth_secret_types_for_harness;
 use crate::ai::cloud_environments::CloudAmbientAgentEnvironment;
 use crate::ai::connected_self_hosted_workers::ConnectedSelfHostedWorkersModel;
 use crate::ai::harness_availability::{AuthSecretFetchState, HarnessAvailabilityModel};
@@ -31,13 +30,6 @@ const DEFAULT_MODEL_LABEL: &str = "Default model";
 pub(crate) const AUTH_SECRET_INHERIT_LABEL: &str = "Skip (advanced)";
 const CUSTOM_HOST_LABEL: &str = "Custom host…";
 const AUTH_SECRETS_LOAD_FAILED_MESSAGE: &str = "Unable to load secrets";
-
-/// Row id for the Cloud location option.
-#[cfg_attr(not(feature = "tui"), allow(dead_code))]
-pub const LOCATION_CLOUD_ID: &str = "cloud";
-/// Row id for the Local location option.
-#[cfg_attr(not(feature = "tui"), allow(dead_code))]
-pub const LOCATION_LOCAL_ID: &str = "local";
 
 /// One selectable row in an option snapshot. Carries no GUI types.
 #[derive(Debug, Clone, PartialEq)]
@@ -70,13 +62,6 @@ pub enum OptionBadge {
     Default,
     Recent,
     Connected,
-    /// Constructed by `warp_tui` (the TUI ask-question card). The variant
-    /// lives here so both frontends share a single `OptionBadge` type.
-    /// The lint is suppressed because the construction site is in the
-    /// downstream `warp_tui` crate, which is invisible to clippy when
-    /// linting `warp` in isolation.
-    #[allow(dead_code)]
-    Recommended,
 }
 
 /// Load state of the catalog backing a snapshot.
@@ -93,9 +78,6 @@ pub enum OptionSourceStatus {
 pub enum OptionFooter {
     /// Free-form text entry (e.g. custom host slug).
     CustomText { label: String },
-    /// "New API key…" affordance. The GUI renders it for harnesses that
-    /// support managed secrets; the TUI intentionally omits resource creation.
-    CreateNewAuthSecret,
 }
 
 /// A complete option list for one configuration field.
@@ -117,25 +99,6 @@ impl OptionSnapshot {
             footer: None,
         }
     }
-}
-
-// ── Location ────────────────────────────────────────────────────────
-
-/// Builds the Cloud/Local location options with the current mode selected.
-// Only the TUI renders a location page (via `tui_export`); the GUI has
-// its own Cloud/Local mode toggle.
-#[cfg_attr(not(feature = "tui"), allow(dead_code))]
-pub fn location_snapshot(state: &OrchestrationConfigState, _ctx: &AppContext) -> OptionSnapshot {
-    let rows = vec![
-        OptionRow::new(LOCATION_CLOUD_ID, "Cloud"),
-        OptionRow::new(LOCATION_LOCAL_ID, "Local"),
-    ];
-    let selected = if state.execution_mode.is_remote() {
-        LOCATION_CLOUD_ID
-    } else {
-        LOCATION_LOCAL_ID
-    };
-    OptionSnapshot::ready(rows, Some(selected.to_string()))
 }
 
 // ── Harness ─────────────────────────────────────────────────────────
@@ -416,8 +379,6 @@ enum AuthSecretNamesInput {
 
 /// Builds the API-key options: "Skip (advanced)" (inherit) plus loaded
 /// managed-secret names. Secret values are never included — names only.
-/// Status mirrors `AuthSecretFetchState`; the `CreateNewAuthSecret`
-/// footer is emitted for harnesses with managed-secret types.
 pub fn api_key_snapshot(state: &OrchestrationConfigState, ctx: &AppContext) -> OptionSnapshot {
     let Some(harness) = Harness::parse_orchestration_harness(&state.harness_type) else {
         return OptionSnapshot::ready(Vec::new(), None);
@@ -434,15 +395,13 @@ pub fn api_key_snapshot(state: &OrchestrationConfigState, ctx: &AppContext) -> O
         }
         AuthSecretFetchState::Failed(_) => AuthSecretNamesInput::Failed,
     };
-    let supports_create_new = !auth_secret_types_for_harness(harness).is_empty();
-    build_api_key_snapshot(names, &state.auth_secret_selection, supports_create_new)
+    build_api_key_snapshot(names, &state.auth_secret_selection)
 }
 
 /// Pure core of [`api_key_snapshot`].
 fn build_api_key_snapshot(
     names: AuthSecretNamesInput,
     selection: &AuthSecretSelection,
-    supports_create_new: bool,
 ) -> OptionSnapshot {
     let mut rows = vec![OptionRow::new(String::new(), AUTH_SECRET_INHERIT_LABEL)];
     let status = match names {
@@ -469,7 +428,7 @@ fn build_api_key_snapshot(
         rows,
         selected_id,
         status,
-        footer: supports_create_new.then_some(OptionFooter::CreateNewAuthSecret),
+        footer: None,
     }
 }
 

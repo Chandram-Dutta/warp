@@ -16,7 +16,7 @@ use warpui::{
 use crate::appearance::Appearance;
 use crate::editor::{self, EditorView, SingleLineEditorOptions, TextOptions};
 use crate::settings_view::features_page::render_group;
-use crate::settings_view::settings_page::{LocalOnlyIconState, ToggleState, render_body_item};
+use crate::settings_view::settings_page::{ToggleState, render_body_item};
 use crate::undo_close::UndoCloseSettings;
 use crate::undo_close::settings::UndoCloseEnabled;
 
@@ -34,8 +34,6 @@ pub struct UndoCloseView {
     grace_period_editor: ViewHandle<EditorView>,
     /// Whether or not the grace period value is valid.
     is_grace_period_valid: bool,
-    /// State for the local only icon tooltip.
-    local_only_icon_states: RefCell<HashMap<String, MouseStateHandle>>,
 }
 
 impl UndoCloseView {
@@ -77,7 +75,7 @@ impl UndoCloseView {
         });
         Self {
             switch_state: Default::default(),
-            local_only_icon_states: Default::default(),
+
             grace_period_editor,
             is_grace_period_valid: true,
         }
@@ -176,12 +174,6 @@ impl View for UndoCloseView {
             .with_child(render_body_item::<Action>(
                 "Enable reopening of closed sessions".into(),
                 None,
-                LocalOnlyIconState::for_setting(
-                    UndoCloseEnabled::storage_key(),
-                    UndoCloseEnabled::sync_to_cloud(),
-                    &mut self.local_only_icon_states.borrow_mut(),
-                    app,
-                ),
                 ToggleState::Enabled,
                 appearance,
                 ui_builder

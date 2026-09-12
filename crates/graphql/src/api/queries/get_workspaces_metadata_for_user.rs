@@ -3,7 +3,6 @@ use crate::billing::{PricingInfo, PurchaseAddOnCreditsPolicy};
 use crate::experiment::Experiment;
 use crate::request_context::RequestContext;
 use crate::schema;
-use crate::user::DiscoverableTeamData;
 use crate::workspace::Workspace;
 
 /*
@@ -182,12 +181,6 @@ query GetWorkspacesMetadataForUser($requestContext: RequestContext!) {
           isEligibleForDiscovery
         }
         experiments
-        discoverableTeams {
-          teamUid
-          numMembers
-          name
-          teamAcceptingInvites
-        }
       }
     }
   }
@@ -249,7 +242,6 @@ pub struct User {
     pub billing_metadata: Option<UserPurchasePolicyBillingMetadata>,
     pub workspaces: Vec<Workspace>,
     pub experiments: Option<Vec<Experiment>>,
-    pub discoverable_teams: Vec<DiscoverableTeamData>,
 }
 
 /// Slim selection of the user-level `billingMetadata`: only the add-on

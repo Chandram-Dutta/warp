@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use chrono::Local;
 use warp_editor::render::model::LineCount;
+use warp_util::local_or_remote_path::LocalOrRemotePath;
 use warpui::App;
 
-use crate::code::buffer_location::LocalOrRemotePath;
 use crate::code::editor::line::EditorLineLocation;
 use crate::code_review::comments::{
     AttachedReviewComment, AttachedReviewCommentTarget, CommentOrigin, LineDiffContent,

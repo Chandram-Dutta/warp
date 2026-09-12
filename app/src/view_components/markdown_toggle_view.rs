@@ -9,7 +9,7 @@ use warpui::{
 };
 
 use crate::appearance::Appearance;
-use crate::notebooks::file::MarkdownDisplayMode;
+use crate::notebooks::editor::MarkdownDisplayMode;
 
 #[derive(Debug, Clone)]
 pub enum MarkdownToggleEvent {

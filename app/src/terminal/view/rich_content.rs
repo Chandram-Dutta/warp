@@ -6,7 +6,6 @@ use crate::ai::agent::AIAgentExchangeId;
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::blocklist::AIBlock;
 use crate::ai::blocklist::agent_view::AgentViewEntryOrigin;
-use crate::ai::blocklist::block::PendingUserQueryBlock;
 use crate::ai::blocklist::telemetry_banner::TelemetryBanner;
 use crate::env_vars::env_var_collection_block::EnvVarCollectionBlock;
 use crate::terminal::TerminalView;
@@ -14,11 +13,7 @@ use crate::terminal::block_list_viewport::ScrollPositionUpdate;
 use crate::terminal::model::blocks::{RemovableBlocklistItem, RichContentItem};
 use crate::terminal::model::rich_content::RichContentType;
 use crate::terminal::model::terminal_model::BlockIndex;
-use crate::terminal::view::ambient_agent::AmbientAgentEntryBlock;
 use crate::terminal::view::init_environment::InitEnvironmentBlock;
-use crate::terminal::view::ssh_remote_server_choice_view::SshRemoteServerChoiceView;
-use crate::terminal::view::ssh_remote_server_failed_banner::SshRemoteServerFailedBanner;
-use crate::terminal::view::ssh_tmux_deprecation_banner::SshTmuxDeprecationBanner;
 use crate::terminal::warpify::success_block::WarpifySuccessBlock;
 
 /// Specifies where to insert rich content in the blocklist.
@@ -111,14 +106,6 @@ impl RichContent {
         self.agent_view_conversation_id
     }
 
-    /// Updates the associated agent view conversation id with this rich content item.
-    pub fn update_agent_view_conversation_id(
-        &mut self,
-        new_agent_view_conversation_id: AIConversationId,
-    ) {
-        self.agent_view_conversation_id = Some(new_agent_view_conversation_id);
-    }
-
     /// Sets the associated agent view conversation id for this rich content item.
     pub fn set_agent_view_conversation_id(
         &mut self,
@@ -141,10 +128,6 @@ impl RichContent {
         self.metadata.as_ref()
     }
 
-    pub fn metadata_mut(&mut self) -> Option<&mut RichContentMetadata> {
-        self.metadata.as_mut()
-    }
-
     pub fn is_ai_block(&self) -> bool {
         matches!(self.metadata, Some(RichContentMetadata::AIBlock(_)))
     }
@@ -162,24 +145,6 @@ impl RichContent {
 
     pub fn is_agent_view_entry(&self) -> bool {
         matches!(self.metadata, Some(RichContentMetadata::AgentViewEntry(_)))
-    }
-
-    pub fn is_inline_agent_view_header(&self) -> bool {
-        matches!(
-            self.metadata,
-            Some(RichContentMetadata::InlineAgentViewHeader)
-        )
-    }
-
-    pub fn is_agent_view_zero_state(&self) -> bool {
-        matches!(self.metadata, Some(RichContentMetadata::AgentViewZeroState))
-    }
-
-    pub fn is_pending_user_query(&self) -> bool {
-        matches!(
-            self.metadata,
-            Some(RichContentMetadata::PendingUserQuery { .. })
-        )
     }
 
     pub fn is_init_step(&self) -> bool {
@@ -240,15 +205,6 @@ pub enum RichContentMetadata {
     EnvVarCollectionBlock {
         env_var_collection_block_handle: ViewHandle<EnvVarCollectionBlock>,
     },
-    SshRemoteServerChoiceBlock {
-        handle: ViewHandle<SshRemoteServerChoiceView>,
-    },
-    SshRemoteServerFailedBanner {
-        handle: ViewHandle<SshRemoteServerFailedBanner>,
-    },
-    SshTmuxDeprecationBanner {
-        handle: ViewHandle<SshTmuxDeprecationBanner>,
-    },
     WarpifySuccessBlock {
         bootstrap_success_block_handle: ViewHandle<WarpifySuccessBlock>,
     },
@@ -256,16 +212,7 @@ pub enum RichContentMetadata {
         telemetry_banner_handle: ViewHandle<TelemetryBanner>,
     },
     AgentViewEntry(AgentViewEntryMetadata),
-    AmbientAgentBlock {
-        block_handle: ViewHandle<AmbientAgentEntryBlock>,
-    },
-    InlineAgentViewHeader,
-    AgentViewZeroState,
-    TerminalViewZeroState,
-    PluginInstructionsBlock,
-    PendingUserQuery {
-        pending_user_query_block_handle: ViewHandle<PendingUserQueryBlock>,
-    },
+
     HarnessSessionHeader,
 }
 
@@ -287,29 +234,13 @@ impl TerminalView {
         position: RichContentInsertionPosition,
         ctx: &mut ViewContext<Self>,
     ) {
-        // Agent view entry blocks, inline agent view headers, and terminal zero state blocks
-        // should not be associated with any conversation, as they always belong in the top-level
-        // terminal view and should be hidden while agent view is active.
-        let is_agent_view_scoped_terminal_content = matches!(
-            metadata,
-            Some(
-                RichContentMetadata::AgentViewEntry(_)
-                    | RichContentMetadata::InlineAgentViewHeader
-                    | RichContentMetadata::TerminalViewZeroState
-            )
-        );
-        let is_use_agent_footer = handle.id() == self.use_agent_footer.id();
+        // Agent view entry blocks should not be associated with any
+        // conversation, as they belong in the terminal view and should be hidden in agent view.
+        let is_agent_view_scoped_terminal_content =
+            matches!(metadata, Some(RichContentMetadata::AgentViewEntry(_)));
 
         let (agent_view_conversation_id, should_hide) = if is_agent_view_scoped_terminal_content {
             (None, self.agent_view_controller.as_ref(ctx).is_active())
-        } else if is_use_agent_footer {
-            (
-                self.agent_view_controller
-                    .as_ref(ctx)
-                    .agent_view_state()
-                    .fullscreen_conversation_id(),
-                false,
-            )
         } else {
             (
                 self.agent_view_controller
@@ -371,8 +302,6 @@ impl TerminalView {
             rich_content = rich_content.with_metadata(metadata);
         }
         self.rich_content_views.push(rich_content);
-
-        self.update_input_prompt_suggestions_banner_state(ctx);
 
         // Scroll to bottom
         self.update_scroll_position_locking(ScrollPositionUpdate::AfterRichBlockInserted, ctx);

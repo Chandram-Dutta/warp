@@ -12,9 +12,9 @@ use super::schema::{
     code_review_panes, commands, current_user_information, env_var_collection_panes, folders,
     generic_string_objects, ignored_suggestions, mcp_environment_variables,
     mcp_server_installations, mcp_server_panes, notebook_panes, notebooks, object_actions,
-    object_metadata, object_permissions, pane_branches, pane_leaves, pane_nodes, panels,
-    project_rules, projects, server_experiments, settings_panes, tab_groups, tabs, team_members,
-    team_settings, teams, terminal_panes, user_profiles, windows, workflow_panes, workflows,
+    object_metadata, object_permissions, pane_branches, pane_leaves, pane_nodes, project_rules,
+    projects, server_experiments, settings_panes, tab_groups, tabs, team_members, team_settings,
+    teams, terminal_panes, user_profiles, windows, workflow_panes, workflows,
     workspace_language_server, workspace_metadata, workspace_teams, workspaces,
 };
 
@@ -1250,20 +1250,3 @@ pub struct NewMCPServerInstallation {
 #[cfg(test)]
 #[path = "model_tests.rs"]
 mod tests;
-
-#[derive(Insertable)]
-#[diesel(table_name = panels)]
-pub struct NewPanel {
-    pub tab_id: i32,
-    pub left_panel: Option<String>,
-    pub right_panel: Option<String>,
-}
-
-#[derive(Identifiable, Queryable, Selectable)]
-#[diesel(table_name = panels)]
-pub struct Panel {
-    pub id: i32,
-    pub tab_id: i32,
-    pub left_panel: Option<String>,
-    pub right_panel: Option<String>,
-}

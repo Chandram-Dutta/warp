@@ -248,7 +248,7 @@ impl LaunchConfigSaveModal {
             let file_path = launch_configs_dir().join(file_name);
             // Resolve target and emit event - workspace will handle all cases
             let settings = EditorSettings::as_ref(ctx);
-            let target = resolve_file_target(&file_path, settings, None);
+            let target = resolve_file_target(&file_path, settings);
             ctx.emit(LaunchConfigModalEvent::OpenFileWithTarget {
                 path: file_path,
                 target,

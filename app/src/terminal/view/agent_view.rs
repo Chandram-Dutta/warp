@@ -286,7 +286,6 @@ impl TerminalView {
             let should_auto_submit = match origin.should_autotrigger_request() {
                 AutoTriggerBehavior::Always => true,
                 AutoTriggerBehavior::InAgentView => was_in_agent_view_already,
-                AutoTriggerBehavior::Never => false,
             };
             if should_auto_submit {
                 // Clear the "enter again to send" ephemeral message if it's currently showing

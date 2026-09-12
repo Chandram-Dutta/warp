@@ -1,4 +1,3 @@
-use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -6,7 +5,7 @@ use ai::workspace::WorkspaceMetadata;
 use chrono::{Local, Utc};
 use cloud_object_persistence::to_cloud_object_permissions;
 use diesel::connection::SimpleConnection;
-use diesel::{QueryDsl, RunQueryDsl};
+use diesel::{Connection, ExpressionMethods, QueryDsl, RunQueryDsl};
 use pathfinder_geometry::rect::RectF;
 use pathfinder_geometry::vector::Vector2F;
 use warp_core::features::FeatureFlag;
@@ -20,12 +19,10 @@ use super::{
 };
 use crate::ai::agent::conversation::AIConversationId;
 use crate::app_state::{
-    AppState, CodePaneSnapShot, CodePaneTabSnapshot, LeafContents, LeafSnapshot, PaneNodeSnapshot,
-    TabGroupSnapshot, TabSnapshot, TerminalPaneSnapshot, WindowSnapshot,
+    AppState, BranchSnapshot, LeafContents, LeafSnapshot, PaneFlex, PaneNodeSnapshot,
+    SplitDirection, TabGroupSnapshot, TabSnapshot, TerminalPaneSnapshot, WindowSnapshot,
 };
-use crate::auth::UserUid;
 use crate::cloud_object::{CloudObjectPermissions, Owner};
-use crate::code::editor_management::CodeSource;
 use crate::notebooks::{CloudNotebook, CloudNotebookModel};
 use crate::persistence::model::ObjectPermissions;
 use crate::persistence::{
@@ -40,7 +37,6 @@ use crate::terminal::model::block::SerializedBlock;
 use crate::terminal::model::session::SessionId;
 use crate::themes::theme::AnsiColorIdentifier;
 use crate::workspace::tab_group::TabGroupId;
-use crate::workspaces::user_profiles::UserProfileWithUID;
 
 #[test]
 fn app_scope_database_path_matches_app_database_path() {
@@ -48,27 +44,6 @@ fn app_scope_database_path_matches_app_database_path() {
         database_file_path_for_scope(&PersistenceScope::App),
         app_database_file_path()
     );
-}
-
-#[test]
-fn tui_scope_database_path_is_tui_subdirectory_of_app_database_dir() {
-    let tui_path = database_file_path_for_scope(&PersistenceScope::Tui);
-    let app_path = database_file_path_for_scope(&PersistenceScope::App);
-
-    assert_ne!(tui_path, app_path);
-    assert_eq!(
-        tui_path,
-        warp_core::paths::tui_state_dir().join("warp.sqlite")
-    );
-
-    // The TUI database lives in a `tui` subdirectory of the same base
-    // directory that holds the GUI database, so the two front-ends never
-    // share (or migrate) each other's database.
-    let tui_dir = tui_path
-        .parent()
-        .expect("TUI database path should have a parent");
-    assert_eq!(tui_dir.file_name(), Some(OsStr::new("tui")));
-    assert_eq!(tui_dir.parent(), app_path.parent());
 }
 
 #[test]
@@ -81,58 +56,6 @@ fn database_path_for_current_scope_defaults_to_app_scope() {
         database_file_path_for_current_scope(),
         app_database_file_path()
     );
-}
-
-#[test]
-fn remote_server_daemon_scope_database_path_uses_identity_data_dir() {
-    let path = database_file_path_for_scope(&PersistenceScope::RemoteServerDaemon {
-        identity_key: "user@example.com/ssh host".to_string(),
-    });
-    let expected_data_dir =
-        remote_server::setup::remote_server_daemon_data_dir("user@example.com/ssh host");
-
-    assert!(path.is_absolute());
-    assert_eq!(
-        path,
-        PathBuf::from(shellexpand::tilde(&expected_data_dir).into_owned()).join("warp.sqlite")
-    );
-}
-
-#[test]
-fn remote_server_daemon_scope_database_path_handles_empty_identity_key() {
-    let path = database_file_path_for_scope(&PersistenceScope::RemoteServerDaemon {
-        identity_key: String::new(),
-    });
-    let expected_data_dir = remote_server::setup::remote_server_daemon_data_dir("");
-
-    assert_eq!(
-        path,
-        PathBuf::from(shellexpand::tilde(&expected_data_dir).into_owned()).join("warp.sqlite")
-    );
-}
-
-#[cfg(unix)]
-#[test]
-fn remote_server_daemon_database_permissions_are_owner_only() {
-    use std::fs::Permissions;
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
-
-    let tempdir = tempfile::tempdir().expect("tempdir should be created");
-    let daemon_dir = tempdir.path().join("daemon");
-    let database_path = daemon_dir.join("warp.sqlite");
-
-    std::fs::create_dir_all(&daemon_dir).expect("daemon dir should be created");
-    std::fs::set_permissions(&daemon_dir, Permissions::from_mode(0o755))
-        .expect("daemon dir permissions should be set");
-    std::fs::write(&database_path, b"").expect("database file should be created");
-    std::fs::set_permissions(&database_path, Permissions::from_mode(0o644))
-        .expect("database file permissions should be set");
-
-    super::ensure_owner_only_dir(&daemon_dir).expect("daemon dir should be owner-only");
-    super::ensure_owner_only_file(&database_path).expect("database file should be owner-only");
-
-    assert_eq!(daemon_dir.metadata().unwrap().mode() & 0o777, 0o700);
-    assert_eq!(database_path.metadata().unwrap().mode() & 0o777, 0o600);
 }
 
 fn test_codebase_metadata(path: &str) -> WorkspaceMetadata {
@@ -279,79 +202,6 @@ fn terminal_local_scope_skips_agent_rows_and_preserves_terminal_state() {
         .expect("local-only Agent loader should be inert")
         .is_none()
     );
-}
-
-/// Mirrors `init_db(&PersistenceScope::Tui)` in an isolated tempdir: the TUI
-/// database lives in a `tui/` subdirectory, runs the same migrations, and
-/// round-trips a write+read using the TUI's `PersistedDataScope`.
-#[test]
-fn tui_database_in_tui_subdirectory_round_trips_data() {
-    let tempdir = tempfile::tempdir().expect("tempdir should be created");
-    let database_path = tempdir.path().join("tui").join("warp.sqlite");
-    std::fs::create_dir_all(
-        database_path
-            .parent()
-            .expect("database path should have a parent"),
-    )
-    .expect("tui subdirectory should be created");
-    let mut conn = setup_database(&database_path).expect("database should initialize");
-
-    let metadata = test_codebase_metadata("/tmp/tui-repo");
-    save_codebase_index_metadata(&mut conn, metadata.clone())
-        .expect("codebase index metadata should save");
-    let writer = start_writer(conn, database_path.clone()).expect("writer should start");
-    writer
-        .sender
-        .send(ModelEvent::Terminal(TerminalModelEvent::InsertCommand {
-            metadata: StartedCommandMetadata {
-                command: "ls".to_owned(),
-                start_ts: Some(Local::now()),
-                pwd: Some("/tmp/tui-repo".to_owned()),
-                shell: Some("zsh".to_owned()),
-                username: Some("test-user".to_owned()),
-                hostname: Some("test-host".to_owned()),
-                session_id: Some(SessionId::from(1)),
-                git_branch: None,
-                cloud_workflow_id: None,
-                workflow_command: None,
-                is_agent_executed: false,
-            },
-        }))
-        .expect("insert command event should send");
-    writer
-        .sender
-        .send(ModelEvent::UpsertUserProfiles {
-            profiles: vec![UserProfileWithUID {
-                firebase_uid: UserUid::new("creator-uid"),
-                display_name: Some("MCP Creator".to_owned()),
-                email: "creator@example.com".to_owned(),
-                photo_url: String::new(),
-            }],
-        })
-        .expect("user profile event should send");
-    writer
-        .sender
-        .send(ModelEvent::Terminal(TerminalModelEvent::Terminate))
-        .expect("terminate event should send");
-    writer.handle.join().expect("writer should terminate");
-
-    let mut conn = setup_database(&database_path).expect("database should reopen");
-
-    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::TuiFrontend)
-        .expect("persisted data should load");
-    // The TUI data scope skips GUI session restoration...
-    assert!(restored.terminal.app_state.is_none());
-    // ...but restores command history and shared data like creator profiles and
-    // codebase index metadata.
-    assert_eq!(restored.terminal.command_history.len(), 1);
-    assert_eq!(restored.terminal.command_history[0].command, "ls");
-    assert_eq!(restored.cloud.user_profiles.len(), 1);
-    assert_eq!(
-        restored.cloud.user_profiles[0].display_name.as_deref(),
-        Some("MCP Creator")
-    );
-    assert_eq!(restored.ide.codebase_indices.len(), 1);
-    assert_eq!(restored.ide.codebase_indices[0].path, metadata.path);
 }
 
 #[test]
@@ -524,8 +374,6 @@ fn test_terminal_window_snapshot(vertical_tabs_panel_open: bool) -> WindowSnapsh
             }),
             default_directory_color: None,
             selected_color: SelectedTabColor::default(),
-            left_panel: None,
-            right_panel: None,
             group_id: None,
             pinned: false,
         }],
@@ -535,16 +383,202 @@ fn test_terminal_window_snapshot(vertical_tabs_panel_open: bool) -> WindowSnapsh
         fullscreen_state: Default::default(),
         quake_mode: false,
         universal_search_width: None,
-        warp_ai_width: None,
         voltron_width: None,
-        warp_drive_index_width: None,
-        left_panel_open: false,
         vertical_tabs_panel_open,
-        left_panel_width: None,
-        right_panel_width: None,
         agent_management_filters: None,
         tab_groups: vec![],
     }
+}
+
+#[test]
+fn legacy_database_backup_includes_wal_and_is_never_replaced() {
+    let tempdir = tempfile::Builder::new()
+        .prefix("local terminal's data ")
+        .tempdir()
+        .unwrap();
+    let database_path = tempdir.path().join("warp.sqlite");
+    let mut conn = setup_database(&database_path).unwrap();
+    conn.batch_execute("PRAGMA wal_checkpoint(TRUNCATE); PRAGMA wal_autocheckpoint=0;")
+        .unwrap();
+    let mut window = test_terminal_window_snapshot(false);
+    window.tabs[0].custom_title = Some("original unsaved session".into());
+    let original = AppState {
+        windows: vec![window],
+        active_window_index: Some(0),
+        block_lists: Default::default(),
+        running_mcp_servers: Default::default(),
+    };
+    save_app_state(&mut conn, &original).unwrap();
+    assert!(
+        std::fs::metadata(database_path.with_extension("sqlite-wal"))
+            .unwrap()
+            .len()
+            > 0
+    );
+    super::preserve_legacy_database(&mut conn, &database_path).unwrap();
+
+    let mut updated = original.clone();
+    updated.windows[0].tabs[0].custom_title = Some("current local session".into());
+    save_app_state(&mut conn, &updated).unwrap();
+    super::preserve_legacy_database(&mut conn, &database_path).unwrap();
+
+    let mut backup = super::SqliteConnection::establish(
+        tempdir
+            .path()
+            .join("warp-before-local-only.sqlite")
+            .to_str()
+            .unwrap(),
+    )
+    .unwrap();
+    let restored_backup = read_sqlite_data(&mut backup, None, PersistedDataScope::Full).unwrap();
+    assert_eq!(
+        restored_backup.terminal.app_state.unwrap().windows[0].tabs[0].custom_title,
+        Some("original unsaved session".into()),
+    );
+    let restored_source = read_sqlite_data(&mut conn, None, PersistedDataScope::Full).unwrap();
+    assert_eq!(
+        restored_source.terminal.app_state.unwrap().windows[0].tabs[0].custom_title,
+        Some("current local session".into()),
+    );
+}
+
+#[test]
+fn obsolete_pane_restoration_preserves_terminal_siblings_and_database_rows() {
+    assert_obsolete_pane_restoration("get_started");
+}
+
+#[test]
+fn obsolete_code_pane_restoration_preserves_terminal_siblings_and_database_rows() {
+    assert_obsolete_pane_restoration("code");
+}
+
+fn assert_obsolete_pane_restoration(obsolete_kind: &str) {
+    let tempdir = tempfile::tempdir().unwrap();
+    let mut conn = setup_database(&tempdir.path().join("warp.sqlite")).unwrap();
+    let mut window = test_terminal_window_snapshot(false);
+    let first = window.tabs[0].root.clone();
+    let mut second = first.clone();
+    let PaneNodeSnapshot::Leaf(leaf) = &mut second else {
+        panic!("expected terminal leaf");
+    };
+    leaf.custom_vertical_tabs_title = Some("second terminal".into());
+    let LeafContents::Terminal(terminal) = &mut leaf.contents else {
+        panic!("expected terminal contents");
+    };
+    terminal.uuid = vec![2];
+    terminal.cwd = Some("/tmp/second".into());
+    let mut obsolete = first.clone();
+    let PaneNodeSnapshot::Leaf(leaf) = &mut obsolete else {
+        panic!("expected leaf");
+    };
+    leaf.custom_vertical_tabs_title = Some("obsolete".into());
+    let LeafContents::Terminal(terminal) = &mut leaf.contents else {
+        panic!("expected terminal contents");
+    };
+    terminal.uuid = vec![3];
+    let nested = PaneNodeSnapshot::Branch(BranchSnapshot {
+        direction: SplitDirection::Vertical,
+        children: vec![
+            (PaneFlex(3.), obsolete.clone()),
+            (PaneFlex(5.), second.clone()),
+        ],
+    });
+    window.tabs[0].root = PaneNodeSnapshot::Branch(BranchSnapshot {
+        direction: SplitDirection::Horizontal,
+        children: vec![(PaneFlex(2.), first.clone()), (PaneFlex(7.), nested)],
+    });
+    let mut obsolete_tab = window.tabs[0].clone();
+    obsolete_tab.root = obsolete;
+    let PaneNodeSnapshot::Leaf(leaf) = &mut obsolete_tab.root else {
+        panic!("expected leaf");
+    };
+    let LeafContents::Terminal(terminal) = &mut leaf.contents else {
+        panic!("expected terminal contents");
+    };
+    terminal.uuid = vec![4];
+    window.tabs.push(obsolete_tab);
+    save_app_state(
+        &mut conn,
+        &AppState {
+            windows: vec![window],
+            active_window_index: Some(0),
+            block_lists: Default::default(),
+            running_mcp_servers: Default::default(),
+        },
+    )
+    .unwrap();
+    conn.batch_execute(
+        "DELETE FROM terminal_panes WHERE id IN (
+            SELECT pane_node_id FROM pane_leaves WHERE custom_vertical_tabs_title = 'obsolete'
+        );",
+    )
+    .unwrap();
+    diesel::update(
+        super::schema::pane_leaves::table
+            .filter(super::schema::pane_leaves::custom_vertical_tabs_title.eq("obsolete")),
+    )
+    .set(super::schema::pane_leaves::kind.eq(obsolete_kind))
+    .execute(&mut conn)
+    .unwrap();
+
+    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full).unwrap();
+    let state = restored.terminal.app_state.unwrap();
+    assert_eq!(state.windows[0].tabs.len(), 1);
+    assert_eq!(
+        state.windows[0].tabs[0].root,
+        PaneNodeSnapshot::Branch(BranchSnapshot {
+            direction: SplitDirection::Horizontal,
+            children: vec![(PaneFlex(2.), first), (PaneFlex(7.), second)],
+        })
+    );
+    let leaves: i64 = super::schema::pane_leaves::table
+        .count()
+        .get_result(&mut conn)
+        .unwrap();
+    assert_eq!(leaves, 4, "restoring must not delete historical rows");
+}
+
+#[test]
+fn obsolete_panel_rows_do_not_affect_terminal_restoration() {
+    let tempdir = tempfile::tempdir().unwrap();
+    let mut conn = setup_database(&tempdir.path().join("warp.sqlite")).unwrap();
+    let window = test_terminal_window_snapshot(true);
+    save_app_state(
+        &mut conn,
+        &AppState {
+            windows: vec![window.clone()],
+            active_window_index: Some(0),
+            block_lists: Default::default(),
+            running_mcp_servers: Default::default(),
+        },
+    )
+    .unwrap();
+    conn.batch_execute(
+        "INSERT INTO panels (tab_id, left_panel, right_panel)
+         SELECT id, 'legacy Drive state', 'obsolete Code Review state' FROM tabs;",
+    )
+    .unwrap();
+
+    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
+        .unwrap()
+        .terminal
+        .app_state
+        .unwrap();
+    assert_eq!(restored.windows, vec![window]);
+    let stored: Vec<(Option<String>, Option<String>)> = super::schema::panels::table
+        .select((
+            super::schema::panels::left_panel,
+            super::schema::panels::right_panel,
+        ))
+        .load(&mut conn)
+        .unwrap();
+    assert_eq!(
+        stored,
+        vec![(
+            Some("legacy Drive state".into()),
+            Some("obsolete Code Review state".into())
+        )]
+    );
 }
 
 #[test]
@@ -641,8 +675,6 @@ fn test_sqlite_round_trips_custom_vertical_tabs_title() {
                 }),
                 default_directory_color: None,
                 selected_color: SelectedTabColor::default(),
-                left_panel: None,
-                right_panel: None,
                 group_id: None,
                 pinned: false,
             }],
@@ -652,13 +684,8 @@ fn test_sqlite_round_trips_custom_vertical_tabs_title() {
             fullscreen_state: Default::default(),
             quake_mode: false,
             universal_search_width: None,
-            warp_ai_width: None,
             voltron_width: None,
-            warp_drive_index_width: None,
-            left_panel_open: false,
             vertical_tabs_panel_open: false,
-            left_panel_width: None,
-            right_panel_width: None,
             agent_management_filters: None,
             tab_groups: vec![],
         }],
@@ -686,96 +713,6 @@ fn test_sqlite_round_trips_custom_vertical_tabs_title() {
         custom_vertical_tabs_title.as_deref(),
         Some("Production API")
     );
-}
-
-#[test]
-fn test_sqlite_round_trips_code_pane_with_multiple_tabs() {
-    let tempdir = tempfile::tempdir().expect("tempdir should be created");
-    let database_path = tempdir.path().join("warp.sqlite");
-    let mut conn = setup_database(&database_path).expect("database should initialize");
-
-    let app_state = AppState {
-        windows: vec![WindowSnapshot {
-            tabs: vec![TabSnapshot {
-                custom_title: None,
-                root: PaneNodeSnapshot::Leaf(LeafSnapshot {
-                    is_focused: true,
-                    custom_vertical_tabs_title: None,
-                    contents: LeafContents::Code(CodePaneSnapShot::Local {
-                        tabs: vec![
-                            CodePaneTabSnapshot {
-                                path: Some(PathBuf::from("/tmp/main.rs")),
-                            },
-                            CodePaneTabSnapshot {
-                                path: Some(PathBuf::from("/tmp/lib.rs")),
-                            },
-                            CodePaneTabSnapshot { path: None },
-                        ],
-                        active_tab_index: 1,
-                        source: Some(CodeSource::FileTree {
-                            location: crate::code::buffer_location::LocalOrRemotePath::Local(
-                                PathBuf::from("/tmp/main.rs"),
-                            ),
-                        }),
-                    }),
-                }),
-                default_directory_color: None,
-                selected_color: SelectedTabColor::default(),
-                left_panel: None,
-                right_panel: None,
-                group_id: None,
-                pinned: false,
-            }],
-            active_tab_index: 0,
-            team_uid: None,
-            bounds: None,
-            fullscreen_state: Default::default(),
-            quake_mode: false,
-            universal_search_width: None,
-            warp_ai_width: None,
-            voltron_width: None,
-            warp_drive_index_width: None,
-            left_panel_open: false,
-            vertical_tabs_panel_open: false,
-            left_panel_width: None,
-            right_panel_width: None,
-            agent_management_filters: None,
-            tab_groups: vec![],
-        }],
-        active_window_index: Some(0),
-        block_lists: Default::default(),
-        running_mcp_servers: Default::default(),
-    };
-
-    save_app_state(&mut conn, &app_state).expect("app state should save");
-
-    let restored = read_sqlite_data(&mut conn, None, PersistedDataScope::Full)
-        .expect("app state should load")
-        .terminal
-        .app_state
-        .expect("app state should be present for the full scope");
-
-    assert_eq!(restored.windows.len(), 1);
-    let restored_tab = &restored.windows[0].tabs[0];
-    let PaneNodeSnapshot::Leaf(LeafSnapshot {
-        contents:
-            LeafContents::Code(CodePaneSnapShot::Local {
-                tabs,
-                active_tab_index,
-                source,
-            }),
-        ..
-    }) = &restored_tab.root
-    else {
-        panic!("Expected code pane leaf");
-    };
-
-    assert_eq!(tabs.len(), 3);
-    assert_eq!(*active_tab_index, 1);
-    assert_eq!(tabs[0].path, Some(PathBuf::from("/tmp/main.rs")));
-    assert_eq!(tabs[1].path, Some(PathBuf::from("/tmp/lib.rs")));
-    assert_eq!(tabs[2].path, None);
-    assert!(matches!(source, Some(CodeSource::FileTree { .. })));
 }
 
 /// Verifies that a tab group and its membership round-trip through save/restore.
@@ -809,8 +746,6 @@ fn test_sqlite_round_trips_tab_groups() {
         }),
         default_directory_color: None,
         selected_color: SelectedTabColor::default(),
-        left_panel: None,
-        right_panel: None,
         group_id: Some(group_id),
         pinned: false,
     };
@@ -837,8 +772,6 @@ fn test_sqlite_round_trips_tab_groups() {
         }),
         default_directory_color: None,
         selected_color: SelectedTabColor::default(),
-        left_panel: None,
-        right_panel: None,
         group_id: None,
         pinned: false,
     };
@@ -852,13 +785,8 @@ fn test_sqlite_round_trips_tab_groups() {
             fullscreen_state: Default::default(),
             quake_mode: false,
             universal_search_width: None,
-            warp_ai_width: None,
             voltron_width: None,
-            warp_drive_index_width: None,
-            left_panel_open: false,
             vertical_tabs_panel_open: false,
-            left_panel_width: None,
-            right_panel_width: None,
             agent_management_filters: None,
             tab_groups: vec![TabGroupSnapshot {
                 id: group_id,
@@ -934,8 +862,6 @@ fn test_sqlite_round_trips_pinned_state() {
         }),
         default_directory_color: None,
         selected_color: SelectedTabColor::default(),
-        left_panel: None,
-        right_panel: None,
         group_id: None,
         pinned: true,
     };
@@ -962,8 +888,6 @@ fn test_sqlite_round_trips_pinned_state() {
         }),
         default_directory_color: None,
         selected_color: SelectedTabColor::default(),
-        left_panel: None,
-        right_panel: None,
         group_id: Some(unpinned_group_id),
         pinned: false,
     };
@@ -990,8 +914,6 @@ fn test_sqlite_round_trips_pinned_state() {
         }),
         default_directory_color: None,
         selected_color: SelectedTabColor::default(),
-        left_panel: None,
-        right_panel: None,
         group_id: Some(pinned_group_id),
         pinned: false,
     };
@@ -1005,13 +927,8 @@ fn test_sqlite_round_trips_pinned_state() {
             fullscreen_state: Default::default(),
             quake_mode: false,
             universal_search_width: None,
-            warp_ai_width: None,
             voltron_width: None,
-            warp_drive_index_width: None,
-            left_panel_open: false,
             vertical_tabs_panel_open: false,
-            left_panel_width: None,
-            right_panel_width: None,
             agent_management_filters: None,
             tab_groups: vec![
                 TabGroupSnapshot {

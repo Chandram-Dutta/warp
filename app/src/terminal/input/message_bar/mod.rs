@@ -1,5 +1,4 @@
 //! Shared types for message bar rendering across terminal and agent views.
-pub mod attached_context;
 pub mod common;
 
 use std::borrow::Cow;
@@ -347,14 +346,6 @@ impl<T> MessageProvider<T> for EmptyMessageProducer {
     fn produce_message(&self, _: T) -> Option<Message> {
         Some(Message::from_text(""))
     }
-}
-
-use crate::util::truncation::truncate_from_end;
-
-/// Returns a truncated command string for display in message bars.
-/// Limits to 27 characters (including ellipsis) if truncated.
-pub fn truncated_command_for_block(command: &str) -> String {
-    truncate_from_end(command, 27)
 }
 
 #[cfg(test)]

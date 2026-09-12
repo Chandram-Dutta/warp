@@ -19,7 +19,6 @@ use crate::ai::blocklist::agent_view::AgentViewEntryOrigin;
 use crate::ai::blocklist::context_model::{
     BlocklistAIContextModel, PendingAttachment, PendingFile,
 };
-use crate::ai::blocklist::queued_query::{QueuedQueryId, QueuedQueryModel};
 use crate::search::slash_command_menu::static_commands::commands;
 use crate::terminal::input::slash_commands::SlashCommandTrigger;
 
@@ -67,32 +66,19 @@ impl SlashCommandRequest {
     pub(super) fn send_request(
         self,
         controller: &mut BlocklistAIController,
-        queued_query_id: Option<QueuedQueryId>,
-        conversation_id_override: Option<AIConversationId>,
         ctx: &mut ModelContext<BlocklistAIController>,
     ) {
-        let is_queued_prompt = queued_query_id.is_some();
-        // A fired queued prompt carries the conversation it was queued on; use it directly
-        // instead of re-deriving from the current UI selection (which may point at a different
-        // conversation the user navigated to). Falls back to the selection for direct sends.
-        let conversation_id =
-            conversation_id_override.or_else(|| self.conversation_id(controller, ctx));
+        let conversation_id = self.conversation_id(controller, ctx);
         // For skill invocations, include user-attached context (images, blocks, and selected
         // text) so the skill's agent sees the same attachments a non-slash-command user query
         // would. Other slash commands continue to pass `false` to preserve existing behavior.
         let is_invoke_skill = matches!(self, Self::InvokeSkill { .. });
         let prompt_attachments = if is_invoke_skill {
-            match (queued_query_id, conversation_id) {
-                (Some(query_id), Some(conversation_id)) => QueuedQueryModel::as_ref(ctx)
-                    .attachments_for(conversation_id, query_id)
-                    .to_vec(),
-                (Some(_), None) => vec![],
-                (None, _) => controller
-                    .context_model
-                    .as_ref(ctx)
-                    .pending_attachments()
-                    .to_vec(),
-            }
+            controller
+                .context_model
+                .as_ref(ctx)
+                .pending_attachments()
+                .to_vec()
         } else {
             vec![]
         };
@@ -189,13 +175,10 @@ impl SlashCommandRequest {
                 is_auto_resume_after_error: false,
             }),
             RecoveryBudget::fresh(),
-            is_queued_prompt,
             ctx,
         ) {
             Ok((_, stream_id)) => {
-                // Direct skills consume live pending context; queued skills consume row-owned
-                // context and must not clear a new draft's staged attachments.
-                if is_invoke_skill && !is_queued_prompt {
+                if is_invoke_skill {
                     controller.context_model.update(ctx, |context_model, ctx| {
                         context_model.reset_context_to_default(ctx);
                     });
@@ -204,7 +187,7 @@ impl SlashCommandRequest {
                 if is_summarize {
                     ctx.emit(BlocklistAIControllerEvent::SentRequest {
                         contains_user_query: true,
-                        is_queued_prompt,
+
                         model_id,
                         stream_id,
                     });

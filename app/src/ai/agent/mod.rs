@@ -45,7 +45,6 @@ use crate::TelemetryEvent;
 use crate::ai::block_context::BlockContext;
 use crate::ai::blocklist::block::view_impl::output::are_all_text_sections_empty;
 use crate::ai::skills::SkillDescriptor;
-use crate::ai_assistant::execution_context::WarpAiExecutionContext;
 use crate::code::editor_management::CodeSource;
 use crate::code_review::comments::{
     AttachedReviewComment as CodeReviewComment, ReviewCommentBatch,
@@ -53,7 +52,44 @@ use crate::code_review::comments::{
 use crate::search::slash_command_menu::static_commands::commands;
 use crate::server::server_api::{AIApiError, DeserializationError};
 use crate::terminal::model::block::BlockId;
+use crate::terminal::model::session::Session;
 use crate::terminal::shell::ShellType;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WarpAiOsContext {
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub category: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub distribution: Option<String>,
+}
+
+/// The execution context sent as a JSON blob in Agent prompts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WarpAiExecutionContext {
+    pub os: WarpAiOsContext,
+    pub shell_name: String,
+
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub shell_version: Option<String>,
+}
+
+impl WarpAiExecutionContext {
+    pub fn new(session: &Session) -> Self {
+        Self {
+            os: WarpAiOsContext {
+                category: session.host_info().os_category.clone(),
+                distribution: session.host_info().linux_distribution.clone(),
+            },
+            shell_name: session.shell().shell_type().name().to_owned(),
+            shell_version: session.shell().version().clone(),
+        }
+    }
+
+    pub fn to_json_string(&self) -> Option<String> {
+        serde_json::to_string(self).ok()
+    }
+}
 
 /// A server supplied ID for a specific AI generated output.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
@@ -731,10 +767,7 @@ pub enum RenderableAIError {
     AgentExitedShell {
         command: String,
     },
-    /// A cloud-mode startup failure. Carries the raw server error message and
-    /// surfaces it without the generic apology prefix, matching the dedicated
-    /// GUI error card (`render_cloud_mode_error_screen`) which shows the
-    /// message directly.
+    /// A cloud-mode startup failure with the raw server error message, without an apology prefix.
     CloudStartupFailed(String),
 }
 
@@ -1463,7 +1496,6 @@ impl AIAgentActionResult {
                 | AIAgentActionResultType::SuggestNewConversation(
                     SuggestNewConversationResult::Cancelled,
                 )
-                | AIAgentActionResultType::SuggestPrompt(SuggestPromptResult::Cancelled),
         )
     }
 }
@@ -2943,17 +2975,6 @@ impl AIAgentInput {
                     Some(format!("/{}", skill.name))
                 }
             }
-            Self::ActionResult {
-                result:
-                    AIAgentActionResult {
-                        result:
-                            AIAgentActionResultType::SuggestPrompt(SuggestPromptResult::Accepted {
-                                query,
-                            }),
-                        ..
-                    },
-                ..
-            } => Some(query.clone()),
             Self::PassiveSuggestionResult {
                 suggestion: PassiveSuggestionResultType::Prompt { prompt },
                 ..
@@ -3033,18 +3054,6 @@ impl AIAgentInput {
 
     pub fn is_user_query(&self) -> bool {
         matches!(self, AIAgentInput::UserQuery { .. })
-    }
-
-    pub fn prompt_suggestion_result(&self) -> Option<&String> {
-        if let Some(AIAgentActionResult {
-            result: AIAgentActionResultType::SuggestPrompt(SuggestPromptResult::Accepted { query }),
-            ..
-        }) = self.action_result()
-        {
-            Some(query)
-        } else {
-            None
-        }
     }
 
     pub fn is_passive_request(&self) -> bool {

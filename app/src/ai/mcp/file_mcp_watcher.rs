@@ -154,7 +154,6 @@ impl FileMCPWatcher {
     #[cfg(not(feature = "local_only"))]
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
         let (file_mcp_tx, file_mcp_rx) = async_channel::unbounded::<FileMCPDetectionMessage>();
-        let settings_mode = settings::settings_mode();
 
         ctx.spawn_stream_local(
             file_mcp_rx,
@@ -168,7 +167,7 @@ impl FileMCPWatcher {
             let file_mcp_tx = file_mcp_tx.clone();
             move |me, _, event, ctx| {
                 let DetectedRepositoriesEvent::DetectedGitRepo { repository, source } = event;
-                if should_watch_repository(*source, settings_mode) {
+                if should_watch_repository(*source) {
                     let repo_path = repository.as_ref(ctx).root_dir().to_local_path_lossy();
                     if matches!(source, RepoDetectionSource::CloudEnvironmentPrep) {
                         let count =
@@ -242,19 +241,6 @@ impl FileMCPWatcher {
             watcher.update_servers_from_config_file(&config_path, root_path, provider, ctx);
         }
         watcher
-    }
-
-    #[cfg(feature = "tui")]
-    pub fn reload_global_config(&mut self, ctx: &mut ModelContext<Self>) {
-        let Some(config) = warp_managed_mcp_config_path() else {
-            return;
-        };
-        self.update_servers_from_config_file(
-            &config.config_path,
-            config.root_path,
-            MCPProvider::Warp,
-            ctx,
-        );
     }
 
     /// Register a project repo for file-based MCP watching via DirectoryWatcher.
@@ -613,24 +599,11 @@ impl FileMCPWatcher {
     }
 }
 
-fn should_watch_repository(
-    source: RepoDetectionSource,
-    settings_mode: settings::SettingsMode,
-) -> bool {
-    match settings_mode {
-        settings::SettingsMode::Gui => match source {
-            RepoDetectionSource::TerminalNavigation | RepoDetectionSource::CloudEnvironmentPrep => {
-                true
-            }
-            RepoDetectionSource::ProjectRulesIndexing
-            | RepoDetectionSource::CodeReviewInitialization => false,
-        },
-        settings::SettingsMode::Tui => match source {
-            RepoDetectionSource::TerminalNavigation => true,
-            RepoDetectionSource::ProjectRulesIndexing
-            | RepoDetectionSource::CodeReviewInitialization
-            | RepoDetectionSource::CloudEnvironmentPrep => false,
-        },
+fn should_watch_repository(source: RepoDetectionSource) -> bool {
+    match source {
+        RepoDetectionSource::TerminalNavigation | RepoDetectionSource::CloudEnvironmentPrep => true,
+        RepoDetectionSource::ProjectRulesIndexing
+        | RepoDetectionSource::CodeReviewInitialization => false,
     }
 }
 

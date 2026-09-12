@@ -7,7 +7,48 @@ use tempfile::tempdir;
 
 use super::*;
 use crate::server::server_api::ai::{FileArtifactUploadHeaderInfo, FileArtifactUploadTargetInfo};
-use crate::server::server_api::harness_support::{UploadField, UploadFieldValue};
+
+#[test]
+fn upload_target_deserializes_null_headers_and_fields_as_empty() {
+    let target: UploadTarget = serde_json::from_value(serde_json::json!({
+        "url": "https://example.com/upload",
+        "method": "PUT",
+        "headers": null,
+        "fields": null
+    }))
+    .unwrap();
+
+    assert!(target.headers.is_empty());
+    assert!(target.fields.is_empty());
+}
+
+#[test]
+fn upload_field_value_deserializes_every_server_kind() {
+    let target: UploadTarget = serde_json::from_value(serde_json::json!({
+        "url": "https://example.com/upload",
+        "method": "POST",
+        "headers": {},
+        "fields": [
+            {"name": "key", "value": {"kind": "static", "value": "object/key"}},
+            {"name": "x-amz-checksum-crc32c", "value": {"kind": "content_crc32c"}},
+            {"name": "file", "value": {"kind": "content_data"}}
+        ]
+    }))
+    .unwrap();
+
+    assert!(matches!(
+        &target.fields[0].value,
+        UploadFieldValue::Static { value } if value == "object/key"
+    ));
+    assert!(matches!(
+        target.fields[1].value,
+        UploadFieldValue::ContentCrc32C
+    ));
+    assert!(matches!(
+        target.fields[2].value,
+        UploadFieldValue::ContentData
+    ));
+}
 
 /// Drive a future to completion on a fresh Tokio runtime. Required for tests
 /// that exercise `FileUploadBody`, which hashes the file via `spawn_blocking`

@@ -1,4 +1,5 @@
-use crate::code::buffer_location::LocalOrRemotePath;
+use warp_util::local_or_remote_path::LocalOrRemotePath;
+
 use crate::code_review::comments::CommentId;
 
 /// The current state of a code review.

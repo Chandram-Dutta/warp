@@ -18,12 +18,6 @@ use warp_graphql::client::Operation;
 use warp_graphql::mutations::create_anonymous_user::{
     AnonymousUserType, CreateAnonymousUser, CreateAnonymousUserResult, CreateAnonymousUserVariables,
 };
-use warp_graphql::mutations::expire_api_key::{
-    ExpireApiKey, ExpireApiKeyResult, ExpireApiKeyVariables,
-};
-use warp_graphql::mutations::generate_api_key::{
-    GenerateApiKey, GenerateApiKeyInput, GenerateApiKeyResult, GenerateApiKeyVariables,
-};
 use warp_graphql::mutations::mint_custom_token::{MintCustomTokenResult, MintCustomTokenVariables};
 use warp_graphql::mutations::set_user_is_onboarded::{
     SetUserIsOnboarded, SetUserIsOnboardedResult, SetUserIsOnboardedVariables,
@@ -32,9 +26,6 @@ use warp_graphql::mutations::update_user_settings::{
     UpdateUserSettings, UpdateUserSettingsInput, UpdateUserSettingsResult,
     UpdateUserSettingsVariables,
 };
-use warp_graphql::queries::api_keys::{
-    ApiKeyProperties, ApiKeyPropertiesResult, ApiKeys, ApiKeysVariables,
-};
 use warp_graphql::queries::get_user::{GetUser, GetUserVariables, UserOutput as GqlUserOutput};
 use warp_graphql::queries::get_user_settings::{GetUserSettings, GetUserSettingsVariables};
 use warp_server_auth::credentials::{AuthToken, Credentials, FirebaseToken, LoginToken};
@@ -42,24 +33,9 @@ pub use warp_server_auth::user_uid;
 
 use crate::base_client::BaseClient;
 use crate::graphql_helpers::send_graphql_request;
-use crate::ids::ApiKeyUid;
 
 /// Header key used to associate unauthenticated requests with an experiment identity.
 pub const EXPERIMENT_ID_HEADER: &str = "X-Warp-Experiment-Id";
-
-/// A named agent identity from the public API.
-#[derive(Clone, Debug, serde::Deserialize)]
-pub struct AgentIdentity {
-    pub uid: String,
-    pub name: String,
-    pub available: bool,
-}
-
-/// Wrapper for the `GET /api/v1/agent/identities` response.
-#[derive(serde::Deserialize)]
-struct AgentIdentitiesResponse {
-    agents: Vec<AgentIdentity>,
-}
 
 /// User settings that are stored server-side on a per-user basis.
 #[derive(Copy, Clone, Debug, Default)]
@@ -150,21 +126,6 @@ pub trait AuthClient: Send + Sync {
         details: &oauth2::StandardDeviceAuthorizationResponse,
         timeout: Duration,
     ) -> StdResult<FirebaseToken, UserAuthenticationError>;
-
-    async fn list_api_keys(&self) -> Result<Vec<ApiKeyProperties>>;
-
-    async fn create_api_key(
-        &self,
-        name: String,
-        team_id: Option<cynic::Id>,
-        agent_uid: Option<cynic::Id>,
-        expires_at: Option<warp_graphql::scalars::Time>,
-    ) -> Result<GenerateApiKeyResult>;
-
-    async fn expire_api_key(&self, key_uid: &ApiKeyUid) -> Result<ExpireApiKeyResult>;
-
-    /// Fetches the list of named agent identities for the user's team.
-    async fn list_agent_identities(&self) -> Result<Vec<AgentIdentity>>;
 }
 
 /// Implements the [`AuthClient`] trait on top of a base client and auth session.
@@ -413,55 +374,6 @@ impl AuthClient for AuthClientImpl {
         self.auth_session
             .exchange_device_access_token(details, timeout)
             .await
-    }
-
-    async fn list_api_keys(&self) -> Result<Vec<ApiKeyProperties>> {
-        let operation = ApiKeys::build(ApiKeysVariables {
-            request_context: warp_graphql::client::get_request_context(),
-        });
-        let response = send_graphql_request(self.base_client.as_ref(), operation, None).await?;
-        match response.api_keys {
-            ApiKeyPropertiesResult::ApiKeyPropertiesOutput(output) => Ok(output.api_keys),
-            ApiKeyPropertiesResult::UserFacingError(error) => Err(anyhow!(
-                warp_graphql::client::get_user_facing_error_message(error)
-            )),
-            ApiKeyPropertiesResult::Unknown => Err(anyhow!("failed to fetch API keys")),
-        }
-    }
-
-    async fn create_api_key(
-        &self,
-        name: String,
-        team_id: Option<cynic::Id>,
-        agent_uid: Option<cynic::Id>,
-        expires_at: Option<warp_graphql::scalars::Time>,
-    ) -> Result<GenerateApiKeyResult> {
-        let operation = GenerateApiKey::build(GenerateApiKeyVariables {
-            input: GenerateApiKeyInput {
-                name,
-                team_id,
-                agent_uid,
-                expires_at,
-            },
-            request_context: warp_graphql::client::get_request_context(),
-        });
-        let response = send_graphql_request(self.base_client.as_ref(), operation, None).await?;
-        Ok(response.generate_api_key)
-    }
-
-    async fn expire_api_key(&self, key_uid: &ApiKeyUid) -> Result<ExpireApiKeyResult> {
-        let operation = ExpireApiKey::build(ExpireApiKeyVariables {
-            key_uid: key_uid.into(),
-            request_context: warp_graphql::client::get_request_context(),
-        });
-        let response = send_graphql_request(self.base_client.as_ref(), operation, None).await?;
-        Ok(response.expire_api_key)
-    }
-
-    async fn list_agent_identities(&self) -> Result<Vec<AgentIdentity>> {
-        let response: AgentIdentitiesResponse =
-            self.base_client.get_public_api("agent/identities").await?;
-        Ok(response.agents)
     }
 }
 

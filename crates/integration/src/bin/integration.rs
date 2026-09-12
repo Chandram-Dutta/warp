@@ -266,13 +266,6 @@ fn register_tests() -> HashMap<&'static str, BoxedBuilderFn> {
     register_test!(test_ssh_into_ash);
     register_test!(test_ssh_with_shell_override);
 
-    // Remote server integration tests
-    register_test!(test_remote_server_connect_bash);
-    register_test!(test_remote_server_connect_zsh);
-    register_test!(test_remote_server_navigate_to_repo);
-    register_test!(test_remote_server_completions);
-    register_test!(test_remote_server_file_operations);
-    register_test!(test_remote_server_lazy_load_directory);
     register_test!(test_custom_open_completions_menu_binding);
     register_test!(test_color_overrides_in_prompt_dont_crash);
     register_test!(test_copy_prompt_from_block_honor_ps1_disabled);
@@ -290,17 +283,7 @@ fn register_tests() -> HashMap<&'static str, BoxedBuilderFn> {
     register_test!(test_open_input_context_menu);
     register_test!(test_copy_all_from_input_context_menu);
     register_test!(test_cut_paste_from_input_context_menu);
-    register_test!(test_inline_model_selector_restores_prompt_on_dismissal);
-    register_test!(test_inline_model_selector_restores_prompt_on_model_selection);
-    register_test!(test_inline_model_selector_restores_prompt_on_chip_toggle_close);
     register_test!(test_paste_and_type_characters_before_bootstrap);
-    register_test!(test_code_review_scroll_anchor_preserved_when_inserting_above);
-    register_test!(test_code_review_scroll_anchor_unchanged_when_inserting_below);
-    register_test!(test_code_review_scroll_preserved_second_file);
-    register_test!(test_code_review_scroll_preserved_deleted_range);
-    register_test!(test_code_review_scroll_preserved_header_range);
-    register_test!(test_code_review_scroll_preserved_footer_range);
-    register_test!(test_code_review_double_click_fully_expands_hidden_section);
     register_test!(test_alt_screen_context_menu_with_sgr_with_mouse_reporting);
     register_test!(test_alt_screen_context_menu_with_sgr_without_mouse_reporting);
     register_test!(test_alt_screen_context_menu_without_sgr_with_mouse_reporting);
@@ -323,9 +306,6 @@ fn register_tests() -> HashMap<&'static str, BoxedBuilderFn> {
     register_test!(test_can_bootstrap_remote_zsh_subshell);
 
     register_test!(test_can_auto_bootstrap);
-
-    register_test!(test_ask_warp_ai_keybinding_for_selected_block);
-    register_test!(test_create_folder_from_command_palette);
 
     register_test!(test_tab_behavior_setting);
 
@@ -382,7 +362,6 @@ fn register_tests() -> HashMap<&'static str, BoxedBuilderFn> {
 
     register_test!(test_notebook_pane_tracking);
     register_test!(test_close_notebook_tab);
-    register_test!(test_open_in_warp_banner);
     register_test!(test_close_notebook_window);
     register_test!(test_backspace_inside_raw_mermaid_block_edits_text_without_removing_block);
 
@@ -426,7 +405,6 @@ fn register_tests() -> HashMap<&'static str, BoxedBuilderFn> {
     register_test!(test_settings_search_subpage_still_renders_content);
     register_test!(test_settings_search_clear_restores_umbrella_state);
     register_test!(test_settings_search_preserved_on_sidebar_click);
-    register_test!(test_settings_agent_mcp_servers_renders_standalone_page);
 
     register_test!(test_middle_click_paste);
 
@@ -503,12 +481,6 @@ fn register_tests() -> HashMap<&'static str, BoxedBuilderFn> {
 
     // Video recording test (manual only)
     register_test!(test_video_recording);
-
-    // Rich Input Ctrl+Enter submit toggle (issue #11588)
-    // Full-stack wiring guard: toggle ON → Enter inserts newline, Ctrl+Enter submits.
-    register_test!(test_rich_input_toggle_on_enter_inserts_newline_and_ctrl_enter_submits);
-    // Regression: Enter must accept inline menus (not insert newline) when toggle=true (PR #11723)
-    register_test!(test_rich_input_enter_accepts_menu_item_when_toggle_is_true);
 
     tests
 }

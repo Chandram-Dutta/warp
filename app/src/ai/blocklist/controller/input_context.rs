@@ -12,6 +12,7 @@ use warpui::{AppContext, SingletonEntity};
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent::{
     AIAgentAttachment, AIAgentContext, DocumentContentAttachmentSource, DriveObjectPayload,
+    WarpAiExecutionContext,
 };
 use crate::ai::block_context::BlockContext;
 use crate::ai::blocklist::{BlocklistAIContextModel, SessionContext};
@@ -23,8 +24,6 @@ use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::{
     GenericCloudObject, GenericStringObjectFormat, JsonObjectType, ObjectType,
 };
-#[cfg(not(target_family = "wasm"))]
-use crate::remote_server::codebase_index_model::RemoteCodebaseIndexModel;
 use crate::terminal::TerminalView;
 use crate::terminal::model::block::BlockId;
 use crate::terminal::model::session::active_session::ActiveSession;
@@ -63,17 +62,17 @@ pub(super) fn input_context_for_request(
         current_time: Local::now(),
     });
 
-    if let Some(env) = active_session.ai_execution_environment(app) {
-        context.push(AIAgentContext::ExecutionEnvironment(env));
+    if let Some(session) = active_session.session(app) {
+        context.push(AIAgentContext::ExecutionEnvironment(
+            WarpAiExecutionContext::new(&session),
+        ));
     }
 
     if FeatureFlag::FullSourceCodeEmbedding.is_enabled()
         && FeatureFlag::CrossRepoContext.is_enabled()
     {
         let session_context = SessionContext::from_session(active_session, app);
-        if session_context.is_remote() {
-            add_remote_codebase_context(&mut context, &session_context, app);
-        } else {
+        if !session_context.is_remote() {
             add_local_codebase_context(&mut context, app);
         }
     }
@@ -116,31 +115,6 @@ fn add_local_codebase_context(context: &mut Vec<AIAgentContext>, app: &AppContex
             })
         }
     }
-}
-
-#[cfg(not(target_family = "wasm"))]
-fn add_remote_codebase_context(
-    context: &mut Vec<AIAgentContext>,
-    session_context: &SessionContext,
-    app: &AppContext,
-) {
-    let Some(host_id) = session_context.host_id() else {
-        return;
-    };
-    for codebase in RemoteCodebaseIndexModel::as_ref(app).codebases_for_agent_context(host_id) {
-        context.push(AIAgentContext::Codebase {
-            name: codebase.name,
-            path: codebase.path,
-        });
-    }
-}
-
-#[cfg(target_family = "wasm")]
-fn add_remote_codebase_context(
-    _context: &mut Vec<AIAgentContext>,
-    _session_context: &SessionContext,
-    _app: &AppContext,
-) {
 }
 
 /// Parses context reference strings like <block:123> from the user query and returns

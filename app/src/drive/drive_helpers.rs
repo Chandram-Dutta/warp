@@ -82,9 +82,6 @@ fn has_feature_gated_anonymous_user_reached_limit(
             object_limit,
         )
     }) {
-        AuthManager::handle(ctx).update(ctx, |auth_manager: &mut AuthManager, ctx| {
-            auth_manager.anonymous_user_hit_drive_object_limit(ctx);
-        });
         return true;
     };
 

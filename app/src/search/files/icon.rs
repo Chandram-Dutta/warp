@@ -10,7 +10,7 @@ pub fn icon_from_file_path(
     appearance: &Appearance,
     highlight_state: ItemHighlightState,
 ) -> Box<dyn Element> {
-    let icon = crate::code::icon_from_file_path(path, appearance);
+    let icon = super::type_icon::icon_from_file_path(path, appearance);
     match icon {
         Some(icon) => icon,
         None => Icon::new(

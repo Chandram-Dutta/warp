@@ -4,8 +4,6 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use warp_core::send_telemetry_from_app_ctx;
-use warp_util::path::LineAndColumnArg;
 use warpui::elements::{
     Align, Border, ChildView, Clipped, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox,
     Container, CornerRadius, Dismiss, DispatchEventResult, Empty, EventHandler, Fill, Flex,
@@ -23,8 +21,6 @@ use warpui::{
 use super::super::palette_styles as styles;
 use super::CommandPaletteMixer;
 use crate::appearance::Appearance;
-use crate::drive::CloudObjectTypeAndId;
-use crate::features::FeatureFlag;
 use crate::palette::PaletteMode;
 use crate::root_view::OpenLaunchConfigArg;
 use crate::search::QueryFilter;
@@ -39,23 +35,19 @@ use crate::search::result_renderer::QueryResultRenderer;
 use crate::search::search_bar::{
     SearchBar, SearchBarEvent, SearchBarState, SearchResultOrdering, SelectionUpdate,
 };
-use crate::server::ids::SyncId;
+use crate::send_telemetry_from_ctx;
 use crate::server::telemetry::{LaunchConfigUiLocation, TelemetryEvent};
 use crate::session_management::SessionSource;
 use crate::settings::CtrlTabBehavior;
 use crate::terminal::keys_settings::KeysSettings;
 use crate::themes::theme::WarpTheme;
-use crate::view_components::DismissibleToast;
-use crate::workspace::{ForkedConversationDestination, WorkspaceAction, active_terminal_in_window};
-use crate::{ToastStack, send_telemetry_from_ctx};
+use crate::workspace::WorkspaceAction;
 
 lazy_static! {
     /// Set of hardcoded action names that we want to show in the command palette zero state.
     static ref SUGGESTED_ACTIONS: HashSet<&'static str> = HashSet::from_iter(
         [
-            if FeatureFlag::AgentMode.is_enabled() { "input:toggle_input_type" } else { "workspace:toggle_ai_assistant" },
             "workspace:show_theme_chooser",
-            "workspace:create_personal_workflow",
         ]
     );
 }
@@ -88,21 +80,6 @@ pub enum Event {
     Close {
         accepted_action_type: Option<&'static str>,
     },
-    /// Execute the workflow identified by `id`.
-    ExecuteWorkflow { id: SyncId },
-    /// Invoke the env vars identified by `id`.
-    InvokeEnvironmentVariables { id: SyncId },
-    /// Open a notebook identified by `id`.
-    OpenNotebook { id: SyncId },
-    /// View the relevant object in the Warp Drive sidebar.
-    ViewInWarpDrive { id: CloudObjectTypeAndId },
-    /// Open a file at the given path.
-    OpenFile {
-        path: String,
-        line_and_column_arg: Option<LineAndColumnArg>,
-    },
-    /// Open a directory at the given path.
-    OpenDirectory { path: String },
 }
 
 #[derive(Debug, Clone, Default)]
@@ -134,10 +111,6 @@ pub struct View {
 
     /// The current navigation mode.
     navigation_mode: NavigationMode,
-
-    /// Whether the active session is a shared session viewer.
-    /// This is set by the workspace when opening the palette.
-    is_shared_session_viewer: bool,
 }
 
 impl Entity for View {
@@ -238,14 +211,8 @@ impl View {
         let binding_source = ctx.add_model(|_| BindingSource::None);
         let session_source = ctx.add_model(|_| SessionSource::None);
 
-        let window_id = ctx.window_id();
         let data_source_store = ctx.add_model(|ctx| {
-            DataSourceStore::new(
-                binding_source.clone(),
-                session_source.clone(),
-                window_id,
-                ctx,
-            )
+            DataSourceStore::new(binding_source.clone(), session_source.clone(), ctx)
         });
 
         ctx.observe(&binding_source, |me, _, ctx| {
@@ -275,7 +242,7 @@ impl View {
 
         let mixer = ctx.add_model(|_| CommandPaletteMixer::new());
         data_source_store.update(ctx, |store, ctx| {
-            store.reset_search_mixer(mixer.clone(), false, ctx);
+            store.reset_search_mixer(mixer.clone(), ctx);
             ctx.notify();
         });
 
@@ -317,7 +284,6 @@ impl View {
             placeholder_query_renderer: placeholder_element,
             suggested_binding_ids,
             zero_state_items,
-            is_shared_session_viewer: false,
         }
     }
 
@@ -393,9 +359,6 @@ impl View {
             (PaletteMode::Command, QueryFilter::Actions)
                 | (PaletteMode::Navigation, QueryFilter::Sessions)
                 | (PaletteMode::LaunchConfig, QueryFilter::LaunchConfigurations)
-                | (PaletteMode::Files, QueryFilter::Files)
-                | (PaletteMode::Conversations, QueryFilter::Conversations)
-                | (PaletteMode::WarpDrive, QueryFilter::Drive)
         )
     }
 
@@ -411,14 +374,10 @@ impl View {
         });
     }
 
-    /// Sets whether the active session is a shared session viewer.
-    /// This should be called by the workspace before opening the palette.
-    pub fn set_is_shared_session_viewer(&mut self, is_viewer: bool, ctx: &mut ViewContext<Self>) {
-        self.is_shared_session_viewer = is_viewer;
-
+    pub fn reset_search_sources(&mut self, ctx: &mut ViewContext<Self>) {
         let mixer = self.search_bar.as_ref(ctx).mixer().clone();
         self.data_source_store.update(ctx, |store, ctx| {
-            store.reset_search_mixer(mixer.clone(), self.is_shared_session_viewer, ctx);
+            store.reset_search_mixer(mixer.clone(), ctx);
             ctx.notify();
         });
     }
@@ -547,12 +506,6 @@ impl View {
                 self.scroll_selected_index_into_view(*index, ctx);
                 ctx.notify();
             }
-            // The QueryFilterChanged event is deferred (fires after the current
-            // view update returns). When switching to the Files filter,
-            // open_files_palette has already called reset_search_mixer and
-            // run_query.  Resetting the mixer here would abort the in-flight
-            // async file search without re-running it, leaving the palette
-            // empty.
             SearchBarEvent::QueryFilterChanged { .. } => {}
             SearchBarEvent::SelectionUpdateInZeroState { selection_update } => {
                 self.zero_state_items.update(ctx, |items, ctx| {
@@ -765,22 +718,6 @@ impl View {
                     return;
                 }
                 Some(WorkspaceAction::TogglePalette {
-                    mode: PaletteMode::Files,
-                    source: _,
-                }) => {
-                    self.reset(ctx);
-                    self.set_active_query_filter(QueryFilter::Files, ctx);
-                    return;
-                }
-                Some(WorkspaceAction::TogglePalette {
-                    mode: PaletteMode::Conversations,
-                    source: _,
-                }) => {
-                    self.reset(ctx);
-                    self.set_active_query_filter(QueryFilter::Conversations, ctx);
-                    return;
-                }
-                Some(WorkspaceAction::TogglePalette {
                     mode: PaletteMode::Command,
                     source: _,
                 }) => {
@@ -826,61 +763,6 @@ impl View {
                 }
                 send_telemetry_from_ctx!(TelemetryEvent::SelectNavigationPaletteItem, ctx);
             }
-            CommandPaletteItemAction::NavigateToConversation {
-                pane_view_locator,
-                window_id,
-                conversation_id,
-                terminal_view_id,
-            } => {
-                let should_block = {
-                    window_id
-                        .and_then(|window_id| {
-                            active_terminal_in_window(window_id, ctx, |terminal_view, ctx| {
-                                !terminal_view
-                                    .ai_context_model()
-                                    .as_ref(ctx)
-                                    .can_start_new_conversation()
-                            })
-                        })
-                        .unwrap_or(false)
-                };
-
-                if should_block {
-                    if let Some(window_id) = window_id {
-                        ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                            toast_stack.add_ephemeral_toast(
-                                DismissibleToast::error(
-                                    "Cannot switch conversations while agent is monitoring a command."
-                                        .to_string(),
-                                ),
-                                window_id,
-                                ctx,
-                            );
-                        });
-                    }
-                    return;
-                }
-
-                ctx.dispatch_typed_action(&WorkspaceAction::RestoreOrNavigateToConversation {
-                    pane_view_locator,
-                    window_id,
-                    conversation_id,
-                    terminal_view_id,
-                    restore_layout: None,
-                });
-                send_telemetry_from_app_ctx!(TelemetryEvent::SelectNavigationPaletteItem, ctx);
-            }
-            CommandPaletteItemAction::ForkConversation { conversation_id } => {
-                ctx.dispatch_typed_action(&WorkspaceAction::ForkAIConversation {
-                    conversation_id,
-                    fork_from_exchange: None,
-                    summarize_after_fork: false,
-                    summarization_prompt: None,
-                    initial_prompt: None,
-                    initial_attachments: vec![],
-                    destination: ForkedConversationDestination::SplitPane,
-                });
-            }
             CommandPaletteItemAction::OpenLaunchConfiguration {
                 open_in_active_window,
                 config,
@@ -894,118 +776,8 @@ impl View {
                     },
                 );
             }
-            CommandPaletteItemAction::ExecuteWorkflow { id } => {
-                ctx.emit(Event::ExecuteWorkflow { id })
-            }
-            CommandPaletteItemAction::InvokeEnvironmentVariables { id } => {
-                ctx.emit(Event::InvokeEnvironmentVariables { id })
-            }
-            CommandPaletteItemAction::OpenNotebook { id } => ctx.emit(Event::OpenNotebook { id }),
-            CommandPaletteItemAction::ViewInWarpDrive { id } => {
-                ctx.emit(Event::ViewInWarpDrive { id })
-            }
             CommandPaletteItemAction::NewSession { source } => {
                 self.dispatch_typed_action_on_view(source.action().deref(), ctx);
-            }
-            CommandPaletteItemAction::OpenFile {
-                path,
-                project_directory,
-                line_and_column_arg,
-            } => {
-                let absolute_path = std::path::Path::new(&project_directory)
-                    .join(&path)
-                    .to_string_lossy()
-                    .to_string();
-
-                ctx.emit(Event::OpenFile {
-                    path: absolute_path,
-                    line_and_column_arg,
-                });
-            }
-            CommandPaletteItemAction::OpenDirectory {
-                path,
-                project_directory,
-            } => {
-                let absolute_path = std::path::Path::new(&project_directory)
-                    .join(&path)
-                    .to_string_lossy()
-                    .to_string();
-
-                ctx.emit(Event::OpenDirectory {
-                    path: absolute_path,
-                });
-            }
-            CommandPaletteItemAction::CreateFile {
-                file_name,
-                current_directory,
-            } => {
-                let file_path = std::path::Path::new(&current_directory).join(&file_name);
-
-                if let Err(e) = std::fs::File::create_new(&file_path)
-                    && e.kind() != std::io::ErrorKind::AlreadyExists
-                {
-                    log::warn!("Failed to create file {}: {e}", file_path.display());
-                    return;
-                }
-
-                ctx.emit(Event::OpenFile {
-                    path: file_path.to_string_lossy().to_string(),
-                    line_and_column_arg: None,
-                });
-            }
-            CommandPaletteItemAction::NewConversationInProject {
-                path: _,
-                project_name,
-            } => {
-                // AcceptProject is handled by the welcome palette, not the regular command palette.
-                // This case should not normally be reached in the command palette context, but we
-                // include it for completeness. If this somehow gets executed, we'll just log it.
-                log::warn!(
-                    "OpenProjectConvo action unexpectedly handled in command palette for project: {project_name}"
-                );
-            }
-            CommandPaletteItemAction::NewConversation => {
-                let window_id = match self.binding_source.as_ref(ctx) {
-                    BindingSource::View { window_id, .. } => *window_id,
-                    BindingSource::None => return,
-                };
-
-                let (terminal_view_id, can_start_new_conversation) = {
-                    let terminal_view_id =
-                        active_terminal_in_window(window_id, ctx, |terminal_view, _| {
-                            terminal_view.id()
-                        });
-
-                    let should_block =
-                        active_terminal_in_window(window_id, ctx, |terminal_view, ctx| {
-                            !terminal_view
-                                .ai_context_model()
-                                .as_ref(ctx)
-                                .can_start_new_conversation()
-                        })
-                        .unwrap_or(false);
-
-                    (terminal_view_id, should_block)
-                };
-
-                if can_start_new_conversation {
-                    ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                        toast_stack.add_ephemeral_toast(
-                            DismissibleToast::error(
-                                "Cannot start a new conversation while agent is monitoring a command.".to_string(),
-                            ),
-                            window_id,
-                            ctx,
-                        );
-                    });
-                    return;
-                }
-
-                if let Some(terminal_view_id) = terminal_view_id {
-                    ctx.dispatch_typed_action(&WorkspaceAction::StartNewConversation {
-                        terminal_view_id,
-                    });
-                }
             }
             CommandPaletteItemAction::NoOp => {
                 // No-op action (used for non-interactable separator items that don't do anything on click).

@@ -26,13 +26,10 @@ pub const MAC_MENUS_CONTEXT: DescriptionContext = DescriptionContext::Custom("ma
 #[repr(isize)]
 pub enum CustomAction {
     NewTab,
-    NewFile,
     ShowAboutWarp,
     ShowSettings,
     ConfigureKeybindings,
-    ShowAccount,
     ShowAppearance,
-    ReferAFriend,
     ViewChangelog,
     FocusInput,
     ClearBlocks,
@@ -76,19 +73,16 @@ pub enum CustomAction {
     SelectBlockAbove,
     SelectBlockBelow,
     SelectAllBlocks,
-    CreateBlockPermalink,
     ToggleBookmarkBlock,
     FindWithinBlock,
     CopyBlock,
     CopyBlockCommand,
     CopyBlockOutput,
-    ViewSharedBlocks,
     CloseTab,
     CloseOtherTabs,
     CloseTabsRight,
     ToggleMaximizePane,
     LaunchConfigPalette,
-    FilesPalette,
     TriggerWelcomeBlock,
     CommandSearch,
     ToggleResourceCenter,
@@ -99,7 +93,6 @@ pub enum CustomAction {
     ToggleSyncTerminalInputsInCurrentTab,
     DisableSyncTerminalInputs,
     ReopenClosedSession,
-    ToggleWarpDrive,
     AddWindow,
     CloseCurrentSession,
     CloseWindow,
@@ -107,39 +100,23 @@ pub enum CustomAction {
     NewPersonalNotebook,
     NewPersonalEnvVars,
     NewTeamWorkflow,
-    NewTeamNotebook,
-    NewTeamEnvVars,
-    SearchDrive,
-    OpenTeamSettings,
-    ShareCurrentSession,
     SharePaneContents,
     #[cfg(windows)]
     WindowsPaste,
     #[cfg(windows)]
     WindowsCopy,
-    /// Also applies to legacy Warp AI (toggles the panel)
     NewAgentModePane,
-    /// Also applies to legacy Warp AI (attaches the selection to the panel editor)
-    AttachSelectionAsAgentModeContext,
     OpenAIFactCollection,
-    OpenMCPServerCollection,
-    ToggleProjectExplorer,
     NewPersonalAIPrompt,
     NewTeamAIPrompt,
     OpenRepository,
     NewTerminalTab,
     NewAgentTab,
     GoToLine,
-    ToggleGlobalSearch,
-    ToggleConversationListView,
 }
 
 impl CustomAction {
     pub fn is_available_in_product(self) -> bool {
-        #[cfg(not(feature = "local_only"))]
-        return true;
-
-        #[cfg(feature = "local_only")]
         match self {
             Self::NewTab
             | Self::ShowAboutWarp
@@ -208,40 +185,23 @@ impl CustomAction {
             | Self::CloseCurrentSession
             | Self::CloseWindow
             | Self::NewTerminalTab => true,
-            Self::NewFile
-            | Self::ShowAccount
-            | Self::ReferAFriend
-            | Self::ViewChangelog
+            Self::ViewChangelog
             | Self::AISearch
             | Self::Workflows
-            | Self::CreateBlockPermalink
-            | Self::ViewSharedBlocks
-            | Self::FilesPalette
             | Self::CommandSearch
             | Self::ToggleResourceCenter
-            | Self::ToggleWarpDrive
             | Self::NewPersonalWorkflow
             | Self::NewPersonalNotebook
             | Self::NewPersonalEnvVars
             | Self::NewTeamWorkflow
-            | Self::NewTeamNotebook
-            | Self::NewTeamEnvVars
-            | Self::SearchDrive
-            | Self::OpenTeamSettings
-            | Self::ShareCurrentSession
             | Self::SharePaneContents
             | Self::NewAgentModePane
-            | Self::AttachSelectionAsAgentModeContext
             | Self::OpenAIFactCollection
-            | Self::OpenMCPServerCollection
-            | Self::ToggleProjectExplorer
             | Self::NewPersonalAIPrompt
             | Self::NewTeamAIPrompt
             | Self::OpenRepository
             | Self::NewAgentTab
-            | Self::GoToLine
-            | Self::ToggleGlobalSearch
-            | Self::ToggleConversationListView => false,
+            | Self::GoToLine => false,
             #[cfg(windows)]
             Self::WindowsPaste | Self::WindowsCopy => true,
         }
@@ -464,12 +424,9 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
         }
         CustomAction::NavigationPalette => mac_only_keystroke("cmd-shift-P"),
         CustomAction::LaunchConfigPalette => mac_only_keystroke("ctrl-cmd-l"),
-        CustomAction::FilesPalette => Keystroke::parse(cmd_or_ctrl_shift("o")).ok(),
         CustomAction::ClearBlocks => Keystroke::parse(cmd_or_ctrl_shift("k")).ok(),
         CustomAction::SelectBlockAbove => Keystroke::parse("cmdorctrl-up").ok(),
         CustomAction::SelectBlockBelow => Keystroke::parse("cmdorctrl-down").ok(),
-        // Set this to mac-only. On Linux this conflicts with the binding to save a workflow.
-        CustomAction::CreateBlockPermalink => mac_only_keystroke("cmd-shift-S"),
         CustomAction::ToggleBookmarkBlock => Keystroke::parse(cmd_or_ctrl_shift("b")).ok(),
         CustomAction::CopyBlockOutput => Keystroke::parse("cmdorctrl-alt-shift-C").ok(),
         // Set this to mac-only. On Linux this conflicts with the general binding to copy.
@@ -506,27 +463,10 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
 
         // This is one of the app's hardcoded keybindings.
         CustomAction::AddWindow => Keystroke::parse(cmd_or_ctrl_shift("n")).ok(),
-        CustomAction::ToggleWarpDrive => {
-            if OperatingSystem::get().is_mac() {
-                Keystroke::parse("cmd-\\").ok()
-            } else {
-                Keystroke::parse("ctrl-shift-|").ok()
-            }
-        }
         CustomAction::CloseWindow => mac_only_keystroke("cmd-shift-W"),
         CustomAction::CloseCurrentSession => Keystroke::parse(cmd_or_ctrl_shift("w")).ok(),
         CustomAction::ViewChangelog => Keystroke::parse(cmd_or_ctrl_shift("alt-o")).ok(),
         CustomAction::NewAgentModePane => Keystroke::parse("ctrl-space").ok(),
-        CustomAction::AttachSelectionAsAgentModeContext => {
-            Keystroke::parse("ctrl-shift-space").ok()
-        }
-        CustomAction::ToggleProjectExplorer => {
-            if OperatingSystem::get().is_mac() {
-                Keystroke::parse("ctrl-1").ok()
-            } else {
-                Keystroke::parse("alt-1").ok()
-            }
-        }
         CustomAction::OpenRepository => {
             if OperatingSystem::get().is_mac() {
                 Keystroke::parse("cmd-shift-O").ok()
@@ -535,22 +475,7 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
             }
         }
         CustomAction::GoToLine => Keystroke::parse("ctrl-g").ok(),
-        CustomAction::ToggleGlobalSearch => {
-            if OperatingSystem::get().is_mac() {
-                Keystroke::parse("ctrl-3").ok()
-            } else {
-                Keystroke::parse("alt-3").ok()
-            }
-        }
-        CustomAction::ToggleConversationListView => {
-            if OperatingSystem::get().is_mac() {
-                Keystroke::parse("ctrl-2").ok()
-            } else {
-                Keystroke::parse("alt-2").ok()
-            }
-        }
         CustomAction::NewTerminalTab
-        | CustomAction::NewFile
         | CustomAction::ShowAboutWarp
         | CustomAction::SplitPaneLeft
         | CustomAction::SelectAllBlocks
@@ -560,9 +485,6 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
         | CustomAction::CloseTab
         | CustomAction::CloseOtherTabs
         | CustomAction::CloseTabsRight
-        | CustomAction::ReferAFriend
-        | CustomAction::ViewSharedBlocks
-        | CustomAction::ShowAccount
         | CustomAction::ShowAppearance
         | CustomAction::SaveCurrentConfig
         | CustomAction::TriggerWelcomeBlock
@@ -573,14 +495,8 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
         | CustomAction::NewPersonalNotebook
         | CustomAction::NewPersonalEnvVars
         | CustomAction::NewTeamWorkflow
-        | CustomAction::NewTeamNotebook
-        | CustomAction::NewTeamEnvVars
-        | CustomAction::SearchDrive
-        | CustomAction::OpenTeamSettings
-        | CustomAction::ShareCurrentSession
         | CustomAction::SharePaneContents
         | CustomAction::OpenAIFactCollection
-        | CustomAction::OpenMCPServerCollection
         | CustomAction::NewPersonalAIPrompt
         | CustomAction::NewTeamAIPrompt
         | CustomAction::NewAgentTab => None,

@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use serde::{Deserialize, Deserializer};
 use settings::macros::define_settings_group;
 use settings::{RespectUserSyncSetting, SupportedPlatforms, SyncToCloud};
 use warp_core::ui::theme::AnsiColorIdentifier;
+
+use super::header_toolbar_item::HeaderToolbarItemKind;
 
 #[derive(
     Default,
@@ -256,34 +259,46 @@ pub enum HeaderToolbarChipSelection {
     #[default]
     Default,
     Custom {
+        #[serde(deserialize_with = "deserialize_header_toolbar_items")]
         left: Vec<super::header_toolbar_item::HeaderToolbarItemKind>,
+        #[serde(deserialize_with = "deserialize_header_toolbar_items")]
         right: Vec<super::header_toolbar_item::HeaderToolbarItemKind>,
     },
+}
+
+fn deserialize_header_toolbar_items<'de, D>(
+    deserializer: D,
+) -> Result<Vec<HeaderToolbarItemKind>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Vec::<serde_json::Value>::deserialize(deserializer)?
+        .into_iter()
+        .filter(|item| {
+            !matches!(
+                item.as_str(),
+                Some("ToolsPanel" | "AgentManagement" | "CodeReview" | "NotificationsMailbox")
+            )
+        })
+        .map(|item| serde_json::from_value(item).map_err(serde::de::Error::custom))
+        .collect()
 }
 
 impl HeaderToolbarChipSelection {
     pub fn left_items(&self) -> Vec<super::header_toolbar_item::HeaderToolbarItemKind> {
         use super::header_toolbar_item::HeaderToolbarItemKind;
-        let items = match self {
+        match self {
             Self::Default => HeaderToolbarItemKind::default_left(),
             Self::Custom { left, .. } => left.clone(),
-        };
-        items
-            .into_iter()
-            .filter(HeaderToolbarItemKind::is_available_in_product)
-            .collect()
+        }
     }
 
     pub fn right_items(&self) -> Vec<super::header_toolbar_item::HeaderToolbarItemKind> {
         use super::header_toolbar_item::HeaderToolbarItemKind;
-        let items = match self {
+        match self {
             Self::Default => HeaderToolbarItemKind::default_right(),
             Self::Custom { right, .. } => right.clone(),
-        };
-        items
-            .into_iter()
-            .filter(HeaderToolbarItemKind::is_available_in_product)
-            .collect()
+        }
     }
 
     pub fn contains_item(&self, item: &super::header_toolbar_item::HeaderToolbarItemKind) -> bool {
@@ -474,26 +489,6 @@ define_settings_group!(TabSettings, settings: [
         private: false,
         toml_path: "appearance.tabs.show_indicators_button",
         description: "Whether to show activity indicators on tabs.",
-    },
-    show_code_review_button: ShowCodeReviewButton {
-        type: bool,
-        default: true,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-        surface: settings::SettingSurfaces::GUI,
-        private: false,
-        toml_path: "code.editor.show_code_review_button",
-        description: "Whether to show the code review button on tabs.",
-    },
-    show_code_review_diff_stats: ShowCodeReviewDiffStats {
-        type: bool,
-        default: true,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-        surface: settings::SettingSurfaces::GUI,
-        private: false,
-        toml_path: "code.editor.show_code_review_diff_stats",
-        description: "Whether to show lines added/removed counts on the code review button.",
     },
     preserve_active_tab_color: PreserveActiveTabColor {
         type: bool,

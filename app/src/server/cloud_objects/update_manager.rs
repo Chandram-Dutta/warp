@@ -270,42 +270,6 @@ impl UpdateManager {
         }
     }
 
-    /// Remove team-owned objects in response to leaving a team.
-    pub fn remove_team_objects(&mut self, left_team_uid: ServerId, ctx: &mut ModelContext<Self>) {
-        let cloud_model = CloudModel::handle(ctx);
-        let objects_to_remove = cloud_model
-            .as_ref(ctx)
-            .all_cloud_objects_in_space(
-                Space::Team {
-                    team_uid: left_team_uid,
-                },
-                ctx,
-            )
-            .map(|object| object.cloud_object_type_and_id())
-            .collect_vec();
-
-        // First, delete in-memory from CloudModel and object actions.
-        cloud_model.update(ctx, |cloud_model, ctx| {
-            for object in objects_to_remove.iter() {
-                cloud_model.delete_object(object.sync_id(), ctx);
-            }
-        });
-        ObjectActions::handle(ctx).update(ctx, |object_actions, ctx| {
-            for object in objects_to_remove.iter() {
-                object_actions.delete_actions_for_object(&object.uid(), ctx);
-            }
-        });
-
-        // Then, delete from SQLite.
-        let object_ids_and_types = objects_to_remove
-            .into_iter()
-            .map(|object| (object.sync_id(), object.object_id_type()))
-            .collect();
-        self.save_to_db([ModelEvent::DeleteObjects {
-            ids: object_ids_and_types,
-        }]);
-    }
-
     fn handle_team_tester_status_changed(
         &mut self,
         _: ModelHandle<TeamTesterStatus>,
@@ -3356,9 +3320,6 @@ impl UpdateManager {
                 count + 1,
             )
         }) {
-            AuthManager::handle(ctx).update(ctx, |auth_manager: &mut AuthManager, ctx| {
-                auth_manager.anonymous_user_hit_drive_object_limit(ctx);
-            });
             return;
         };
 
@@ -3427,9 +3388,6 @@ impl UpdateManager {
                 count + 1,
             )
         }) {
-            AuthManager::handle(ctx).update(ctx, |auth_manager: &mut AuthManager, ctx| {
-                auth_manager.anonymous_user_hit_drive_object_limit(ctx);
-            });
             return;
         };
 
@@ -3490,9 +3448,6 @@ impl UpdateManager {
         if AuthStateProvider::handle(ctx).read(ctx, |auth_state_provider, _ctx| {
             is_feature_gated_anonymous_user_past_env_var_limit(auth_state_provider.get(), count + 1)
         }) {
-            AuthManager::handle(ctx).update(ctx, |auth_manager: &mut AuthManager, ctx| {
-                auth_manager.anonymous_user_hit_drive_object_limit(ctx);
-            });
             return;
         };
 

@@ -9,9 +9,6 @@ use std::path::{Component, Path};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use ai::agent::action::{
-    RequestComputerUseRequest, SuggestPromptRequest, UploadArtifactRequest, UseComputerRequest,
-};
 use ai::agent::document_action_presentation::DocumentActionPresentation;
 use ai::agent::file_locations::group_file_contexts_for_display;
 use ai::skills::{ParsedSkill, SkillReference};
@@ -55,7 +52,6 @@ use super::{
 };
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::comment::ReviewComment;
-use crate::ai::agent::conversation::{RecordingSpanInfo, RecordingSpanStatus};
 use crate::ai::agent::icons::{self, gray_stop_icon, yellow_stop_icon};
 use crate::ai::agent::task::TaskId;
 use crate::ai::agent::{
@@ -63,9 +59,8 @@ use crate::ai::agent::{
     AIAgentActionType, AIAgentCitation, AIAgentInput, AIAgentOutputMessage,
     AIAgentOutputMessageType, AIAgentText, AIAgentTextSection, CancellationOutcome, MessageId,
     ReadFilesFailedFile, ReadFilesRequest, ReadFilesResult, RequestCommandOutputResult,
-    SearchCodebaseFailureReason, SearchCodebaseResult, StartRecordingResult, StopRecordingResult,
-    SubagentCall, SubagentType, SuggestNewConversationResult, SummarizationType, TodoOperation,
-    UploadArtifactResult,
+    SearchCodebaseFailureReason, SearchCodebaseResult, SubagentCall, SubagentType,
+    SuggestNewConversationResult, SummarizationType, TodoOperation,
 };
 use crate::ai::agent_conversations_model::AgentConversationsModel;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
@@ -97,7 +92,6 @@ use crate::ai::blocklist::inline_action::requested_action::{
 use crate::ai::blocklist::inline_action::requested_command::RequestedCommand;
 use crate::ai::blocklist::inline_action::run_agents_card_view::RunAgentsCardView;
 use crate::ai::blocklist::inline_action::search_codebase::SearchCodebaseView;
-use crate::ai::blocklist::inline_action::suggested_unit_tests::SuggestedUnitTestsView;
 use crate::ai::blocklist::inline_action::web_fetch::WebFetchView;
 use crate::ai::blocklist::inline_action::web_search::WebSearchView;
 use crate::ai::blocklist::keyboard_navigable_buttons::KeyboardNavigableButtons;
@@ -108,13 +102,9 @@ use crate::ai::blocklist::view_util::{
 };
 use crate::ai::blocklist::{AIBlockResponseRating, BlocklistAIActionModel, SuggestionChipView};
 use crate::ai::paths::shell_native_absolute_path;
-use crate::ai::skills::{
-    SkillManager, SkillOpenOrigin, icon_override_for_skill_name, render_skill_button,
-    skill_path_from_location,
-};
+use crate::ai::skills::SkillManager;
 use crate::appearance::Appearance;
 use crate::code::diff_viewer::DisplayMode;
-use crate::code::editor_management::CodeSource;
 use crate::settings_view::SettingsSection;
 use crate::terminal::ShellLaunchData;
 #[cfg(not(target_family = "wasm"))]
@@ -134,19 +124,12 @@ use crate::view_components::compactible_action_button::{
 use crate::workspace::WorkspaceAction;
 use crate::{AIAgentTodoList, FeatureFlag};
 
-const BLOCKED_ACTION_MESSAGE_FOR_UPLOADING_ARTIFACT: &str = "Grant access to upload this artifact?";
-
 /// Data required to render the AI block output component.
 #[derive(Copy, Clone)]
 pub(crate) struct Props<'a> {
     pub(crate) model: &'a dyn AIBlockModel<View = AIBlock>,
     pub(super) state_handles: &'a AIBlockStateHandles,
     pub(super) action_buttons: &'a HashMap<AIAgentActionId, ActionButtons>,
-    pub(super) view_screenshot_buttons: &'a HashMap<AIAgentActionId, ui_components::button::Button>,
-    pub(super) open_recording_buttons: &'a HashMap<AIAgentActionId, ui_components::button::Button>,
-    /// Whether this block's output contains recording-related actions, so
-    /// rendering can skip deriving recording spans for unrelated blocks.
-    pub(super) has_recording_related_actions: bool,
     pub(crate) action_model: &'a ModelHandle<BlocklistAIActionModel>,
     pub(crate) active_session: &'a ModelHandle<ActiveSession>,
     pub(super) editor_views: &'a [EmbeddedCodeEditorView],
@@ -157,8 +140,6 @@ pub(crate) struct Props<'a> {
     pub(super) requested_commands: &'a HashMap<AIAgentActionId, RequestedCommand>,
     pub(super) requested_mcp_tools: &'a HashMap<AIAgentActionId, RequestedCommand>,
     pub(super) requested_edits: &'a IndexMap<AIAgentActionId, RequestedEdit>,
-    pub(super) unit_test_suggestions:
-        &'a HashMap<AIAgentActionId, ViewHandle<SuggestedUnitTestsView>>,
     pub(super) todo_list_states: &'a HashMap<MessageId, TodoListElementState>,
     pub(super) collapsible_block_states: &'a HashMap<MessageId, CollapsibleElementState>,
     pub(crate) is_selecting_text: bool,
@@ -175,8 +156,6 @@ pub(crate) struct Props<'a> {
     pub(super) search_codebase_view: &'a HashMap<AIAgentActionId, ViewHandle<SearchCodebaseView>>,
     pub(super) web_search_views: &'a HashMap<MessageId, ViewHandle<WebSearchView>>,
     pub(super) web_fetch_views: &'a HashMap<MessageId, ViewHandle<WebFetchView>>,
-    pub(super) review_changes_button: &'a ViewHandle<ActionButton>,
-    pub(super) open_all_comments_button: &'a ViewHandle<ActionButton>,
     pub(super) dismiss_suggestion_button: &'a ViewHandle<ActionButton>,
     pub(super) disable_rule_suggestions_button: &'a ViewHandle<ActionButton>,
     pub(super) current_todo_list: Option<&'a AIAgentTodoList>,
@@ -211,17 +190,6 @@ pub(crate) struct Props<'a> {
     /// `true` when this block belongs to a cloud agent pane that is still in its setup phase
     /// (running environment startup commands before the first agent turn).
     pub(super) is_cloud_agent_pre_first_exchange: bool,
-}
-
-/// A `UseComputer` call whose actions are all no-ops (typically a single
-/// zero-duration wait alongside screenshot params) is a screenshot-only
-/// capture rather than a user-visible interaction, so it shouldn't be labeled
-/// as captured in a recording.
-fn should_decorate_recorded_use_computer(request: &UseComputerRequest) -> bool {
-    request
-        .actions
-        .iter()
-        .any(|action| !action.action.is_no_op())
 }
 
 pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
@@ -261,16 +229,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
         | AIBlockOutputStatus::Failed { .. } => {
             if let Some(output) = status.output_to_render() {
                 let output = output.get();
-                let recording_spans_by_action_id = if props.has_recording_related_actions {
-                    props.model.conversation(app).map(|conversation| {
-                        props
-                            .action_model
-                            .as_ref(app)
-                            .recording_spans_for_conversation(conversation)
-                    })
-                } else {
-                    None
-                };
+
                 let is_complete = matches!(status, AIBlockOutputStatus::Complete { .. });
                 let is_output_for_static_prompt_suggestions =
                     props.model.contains_static_prompt_suggestion_input(app);
@@ -309,10 +268,6 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                 let mut table_section_index = 0;
                 let mut image_section_index = 0;
                 let mut action_index = 0;
-
-                fn open_code_block_action(source: CodeSource) -> AIBlockAction {
-                    AIBlockAction::OpenCodeInWarp { source }
-                }
 
                 fn copy_code_action(snippet: String) -> AIBlockAction {
                     AIBlockAction::CopyAIBlockCodeSnippet(snippet)
@@ -357,7 +312,6 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                                         .state_handles
                                         .image_section_tooltip_handles,
                                     is_ai_input_enabled: props.is_ai_input_enabled,
-                                    open_code_block_action_factory: Some(&open_code_block_action),
                                     copy_code_action_factory: Some(&copy_code_action),
                                     detected_links: Some(props.detected_links_state),
                                     secret_redaction_state: props.secret_redaction_state,
@@ -532,29 +486,11 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                                     ),
                                 };
 
-                                let file_locations = files
-                                    .iter()
-                                    .map(|file| {
-                                        let path = shell_native_absolute_path(
-                                            &file.name,
-                                            props.shell_launch_data,
-                                            props.current_working_directory,
-                                        );
-                                        props
-                                            .active_session
-                                            .as_ref(app)
-                                            .location_for_path(&path, app)
-                                    })
-                                    .collect::<Option<Vec<_>>>();
-                                let skill = file_locations.and_then(|file_locations| {
-                                    parsed_skill_for_common_locations(file_locations, app)
-                                });
                                 output_items.add_child(render_read_files(
                                     props,
                                     id,
                                     file_names.iter(),
                                     app,
-                                    skill,
                                     action_index,
                                     &result_failed_files,
                                 ));
@@ -737,24 +673,6 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                         },
                         AIAgentOutputMessageType::Action(AIAgentAction {
                             action:
-                                AIAgentActionType::SuggestPrompt(
-                                    SuggestPromptRequest::UnitTestsSuggestion { .. },
-                                ),
-                            id,
-                            ..
-                        }) => {
-                            if let Some(unit_test_suggestion_view) =
-                                props.unit_test_suggestions.get(id)
-                                && !unit_test_suggestion_view.as_ref(app).is_hidden()
-                            {
-                                output_items.add_child(render_unit_test_suggestion(
-                                    unit_test_suggestion_view,
-                                    app,
-                                ));
-                            }
-                        }
-                        AIAgentOutputMessageType::Action(AIAgentAction {
-                            action:
                                 action @ (AIAgentActionType::CreateDocuments(_)
                                 | AIAgentActionType::EditDocuments(_)),
                             id,
@@ -765,43 +683,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                                 output_items.add_child(document);
                             }
                         }
-                        AIAgentOutputMessageType::Action(AIAgentAction {
-                            action: AIAgentActionType::UseComputer(request),
-                            id,
-                            ..
-                        }) => {
-                            should_render_footer = false;
-                            output_items.add_child(render_use_computer(
-                                props,
-                                id,
-                                request,
-                                recording_spans_by_action_id
-                                    .as_ref()
-                                    .and_then(|spans| spans.get(id)),
-                                app,
-                            ));
-                        }
-                        AIAgentOutputMessageType::Action(AIAgentAction {
-                            action: AIAgentActionType::StartRecording { summary, .. },
-                            id,
-                            ..
-                        }) => {
-                            should_render_footer = false;
-                            output_items.add_child(render_start_recording(
-                                props,
-                                id,
-                                summary.as_deref(),
-                                app,
-                            ));
-                        }
-                        AIAgentOutputMessageType::Action(AIAgentAction {
-                            action: AIAgentActionType::StopRecording { .. },
-                            id,
-                            ..
-                        }) => {
-                            should_render_footer = false;
-                            output_items.add_child(render_stop_recording(props, id, app));
-                        }
+
                         AIAgentOutputMessageType::Action(AIAgentAction {
                             action: AIAgentActionType::ReadSkill(request),
                             id,
@@ -815,23 +697,7 @@ pub(super) fn render(props: Props, app: &AppContext) -> Box<dyn Element> {
                                 app,
                             ));
                         }
-                        AIAgentOutputMessageType::Action(AIAgentAction {
-                            action: AIAgentActionType::UploadArtifact(request),
-                            id,
-                            ..
-                        }) => {
-                            should_render_footer = false;
-                            output_items.add_child(render_upload_artifact(props, id, request, app));
-                        }
-                        AIAgentOutputMessageType::Action(AIAgentAction {
-                            action: AIAgentActionType::RequestComputerUse(request),
-                            id,
-                            ..
-                        }) => {
-                            should_render_footer = false;
-                            output_items
-                                .add_child(render_request_computer_use(props, id, request, app));
-                        }
+
                         AIAgentOutputMessageType::Action(AIAgentAction {
                             action: AIAgentActionType::RunAgents(_req),
                             id,
@@ -1576,25 +1442,12 @@ fn render_search_codebase(
                                 .render(app)
                                 .finish()
                             } else {
-                                let file_locations = files
-                                    .iter()
-                                    .map(|file| {
-                                        props
-                                            .active_session
-                                            .as_ref(app)
-                                            .location_for_path(&file.file_name, app)
-                                    })
-                                    .collect::<Option<Vec<_>>>();
-                                let skill = file_locations.and_then(|file_locations| {
-                                    parsed_skill_for_common_locations(file_locations, app)
-                                });
                                 let grouped = group_file_contexts_for_display(files, None, None);
                                 return Some(render_read_files(
                                     props,
                                     id,
                                     grouped.iter(),
                                     app,
-                                    skill,
                                     0,
                                     &[],
                                 ));
@@ -1836,34 +1689,6 @@ fn render_read_skill(
     renderable_action =
         renderable_action.with_icon(action_icon(id, props.action_model, props.model, app).finish());
 
-    // Renders the 'open skill' button for known, non-bundled skills.
-    if let Some(skill) = skill
-        && !skill.is_bundled()
-        && let Some(button_handle) = props.state_handles.skill_button_handles.get(id).cloned()
-    {
-        let source = CodeSource::Skill {
-            reference: skill_reference.clone(),
-            location: skill.path.clone(),
-            origin: SkillOpenOrigin::ReadSkill,
-        };
-
-        let skill_icon_override = icon_override_for_skill_name(&skill.name);
-        let open_button = render_skill_button(
-            "Open skill",
-            button_handle,
-            appearance,
-            skill.provider,
-            skill_icon_override,
-            move |ctx| {
-                ctx.dispatch_typed_action(AIBlockAction::OpenCodeInWarp {
-                    source: source.clone(),
-                });
-            },
-        );
-
-        renderable_action = renderable_action.with_action_button(open_button);
-    }
-
     renderable_action.render(app).finish()
 }
 
@@ -1892,53 +1717,20 @@ fn render_inline_action_secondary_button(
 /// Renders successful and failed file reads as separate sections in one widget.
 fn render_read_files_partial(
     props: Props,
-    id: &AIAgentActionId,
     file_names: impl IntoIterator<Item = impl AsRef<str>>,
     failed_files: &[ReadFilesFailedFile],
     app: &AppContext,
-    parsed_skill: Option<&ai::skills::ParsedSkill>,
     action_index: usize,
 ) -> Box<dyn Element> {
     let appearance = Appearance::as_ref(app);
     let theme = appearance.theme();
-
-    let skill_button = parsed_skill.and_then(|skill| {
-        props
-            .state_handles
-            .skill_button_handles
-            .get(id)
-            .cloned()
-            .map(|button_handle| {
-                let reference = SkillManager::handle(app)
-                    .as_ref(app)
-                    .reference_for_skill_path(&skill.path);
-                let source = CodeSource::Skill {
-                    reference,
-                    location: skill.path.clone(),
-                    origin: SkillOpenOrigin::ReadFiles,
-                };
-                let skill_icon_override = icon_override_for_skill_name(&skill.name);
-                render_skill_button(
-                    &format!("/{}", skill.name),
-                    button_handle,
-                    appearance,
-                    skill.provider,
-                    skill_icon_override,
-                    move |ctx| {
-                        ctx.dispatch_typed_action(AIBlockAction::OpenCodeInWarp {
-                            source: source.clone(),
-                        });
-                    },
-                )
-            })
-    });
 
     let success_text =
         render_read_files_text(props.into(), file_names, app, appearance, action_index);
     let success_row = render_requested_action_row(
         FormattedTextOrElement::FormattedText(Box::new(success_text)),
         Some(inline_action_icons::green_check_icon(appearance).finish()),
-        skill_button,
+        None,
         true,
         false,
         app,
@@ -1982,7 +1774,6 @@ fn render_read_files(
     id: &AIAgentActionId,
     file_names: impl IntoIterator<Item = impl AsRef<str>>,
     app: &AppContext,
-    parsed_skill: Option<&ai::skills::ParsedSkill>,
     action_index: usize,
     failed_files: &[ReadFilesFailedFile],
 ) -> Box<dyn Element> {
@@ -1992,15 +1783,7 @@ fn render_read_files(
     // For partial reads (some files succeeded, some failed) show a two-section
     // layout once the action is done.
     if !failed_files.is_empty() && status.as_ref().is_some_and(|s| s.is_done()) {
-        return render_read_files_partial(
-            props,
-            id,
-            file_names,
-            failed_files,
-            app,
-            parsed_skill,
-            action_index,
-        );
+        return render_read_files_partial(props, file_names, failed_files, app, action_index);
     }
 
     let formatted_files =
@@ -2066,51 +1849,7 @@ fn render_read_files(
         _ => (),
     };
 
-    // Renders the 'open skill' button if all files belong to the same skill directory.
-    if let Some(skill) = parsed_skill
-        && let Some(button_handle) = props.state_handles.skill_button_handles.get(id).cloned()
-    {
-        let reference = SkillManager::handle(app)
-            .as_ref(app)
-            .reference_for_skill_path(&skill.path);
-        let source = CodeSource::Skill {
-            reference,
-            location: skill.path.clone(),
-            origin: SkillOpenOrigin::ReadFiles,
-        };
-        let skill_icon_override = icon_override_for_skill_name(&skill.name);
-        let open_button = render_skill_button(
-            &format!("/{}", skill.name),
-            button_handle,
-            appearance,
-            skill.provider,
-            skill_icon_override,
-            move |ctx| {
-                ctx.dispatch_typed_action(AIBlockAction::OpenCodeInWarp {
-                    source: source.clone(),
-                });
-            },
-        );
-        renderable_action = renderable_action.with_action_button(open_button);
-    }
-
     renderable_action.render(app).finish()
-}
-
-fn parsed_skill_for_common_locations(
-    file_locations: impl IntoIterator<Item = LocalOrRemotePath>,
-    app: &AppContext,
-) -> Option<&ai::skills::ParsedSkill> {
-    let skill_paths = file_locations
-        .into_iter()
-        .map(|location| skill_path_from_location(&location))
-        .collect::<Option<Vec<_>>>()?;
-    let first_skill_path = skill_paths.first()?;
-    skill_paths
-        .iter()
-        .all(|skill_path| skill_path == first_skill_path)
-        .then(|| SkillManager::as_ref(app).skill_by_path(first_skill_path))
-        .flatten()
 }
 
 fn maybe_render_document(
@@ -2381,21 +2120,6 @@ fn render_requested_edits_output_message(
             }
         }
     }
-}
-
-fn render_unit_test_suggestion(
-    suggested_prompt: &ViewHandle<SuggestedUnitTestsView>,
-    app: &AppContext,
-) -> Box<dyn Element> {
-    let appearance = Appearance::as_ref(app);
-    let theme = appearance.theme();
-
-    Container::new(ChildView::new(suggested_prompt).finish())
-        .with_border(Border::all(1.).with_border_fill(theme.surface_2()))
-        .with_horizontal_padding(INLINE_ACTION_HORIZONTAL_PADDING)
-        .with_background_color(blended_colors::fg_overlay_2(theme).into())
-        .with_vertical_padding(CONTENT_ITEM_VERTICAL_MARGIN)
-        .finish()
 }
 
 fn render_ask_user_question(
@@ -2890,398 +2614,6 @@ fn render_read_mcp_resource(
     renderable_action.render(app).finish()
 }
 
-fn format_upload_artifact_text(
-    request: &UploadArtifactRequest,
-    result: Option<&UploadArtifactResult>,
-) -> String {
-    let mut lines = vec![format!("Upload artifact: {}", request.file_path)];
-
-    if let Some(description) = request.description.as_deref() {
-        lines.push(format!("Description: {description}"));
-    }
-
-    match result {
-        Some(UploadArtifactResult::Success {
-            artifact_uid,
-            filepath,
-            ..
-        }) => {
-            lines.push(format!("Status: uploaded artifact {artifact_uid}"));
-            if let Some(filepath) = filepath.as_deref() {
-                lines.push(format!("Uploaded file: {filepath}"));
-            }
-        }
-        Some(UploadArtifactResult::Error(error)) => {
-            lines.push(format!("Status: upload failed: {error}"));
-        }
-        Some(UploadArtifactResult::Cancelled) => {}
-        None => {}
-    }
-
-    lines.join("\n")
-}
-
-fn render_upload_artifact(
-    props: Props,
-    action_id: &AIAgentActionId,
-    request: &UploadArtifactRequest,
-    app: &AppContext,
-) -> Box<dyn Element> {
-    let appearance = Appearance::as_ref(app);
-    let status = props.action_model.as_ref(app).get_action_status(action_id);
-    let result = props
-        .action_model
-        .as_ref(app)
-        .get_action_result(action_id)
-        .and_then(|result| match &result.result {
-            AIAgentActionResultType::UploadArtifact(upload_result) => Some(upload_result),
-            _ => None,
-        });
-
-    let text = format_upload_artifact_text(request, result);
-    let mut renderable_action = RenderableAction::new(&text, app);
-
-    if status.as_ref().is_some_and(|status| status.is_blocked()) {
-        let buttons = props
-            .action_buttons
-            .get(action_id)
-            .expect("Button states must exist for each requested action.");
-
-        renderable_action = renderable_action
-            .with_header(blocked_action_header(
-                action_id.clone(),
-                BLOCKED_ACTION_MESSAGE_FOR_UPLOADING_ARTIFACT,
-                buttons.run_button.clone(),
-                buttons.cancel_button.clone(),
-                props.action_model,
-                props.model,
-                app,
-            ))
-            .with_highlighted_border()
-            .with_background_color(appearance.theme().background().into_solid());
-    } else {
-        if (props.model.status(app).is_streaming()
-            && !props.model.is_first_action_in_output(action_id, app))
-            || status.as_ref().is_some_and(|s| s.is_queued())
-        {
-            renderable_action = renderable_action.with_font_color(blended_colors::text_disabled(
-                appearance.theme(),
-                appearance.theme().surface_2(),
-            ));
-        }
-        renderable_action = renderable_action
-            .with_icon(action_icon(action_id, props.action_model, props.model, app).finish());
-    }
-
-    renderable_action.render(app).finish()
-}
-
-fn recording_summary(props: Props, agent_summary: Option<&str>, app: &AppContext) -> String {
-    let title = props
-        .model
-        .conversation(app)
-        .and_then(|conversation| conversation.title());
-    agent_summary
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .or_else(|| title.as_deref().map(str::trim).filter(|s| !s.is_empty()))
-        .map(ToString::to_string)
-        .unwrap_or_else(|| "Recording computer-use session".to_string())
-}
-
-#[derive(Debug, PartialEq, Eq)]
-struct RecordingCardText {
-    primary: String,
-    subtext: Option<String>,
-}
-
-fn start_recording_card_text(
-    description: &str,
-    result: Option<&StartRecordingResult>,
-) -> RecordingCardText {
-    match result {
-        Some(StartRecordingResult::Success(_)) => RecordingCardText {
-            primary: "Recording started".to_string(),
-            subtext: Some(description.to_string()),
-        },
-        Some(StartRecordingResult::Error(error)) => RecordingCardText {
-            primary: "Recording failed to start".to_string(),
-            subtext: Some(error.clone()),
-        },
-        Some(StartRecordingResult::Cancelled) => RecordingCardText {
-            primary: "Recording cancelled".to_string(),
-            subtext: None,
-        },
-        None => RecordingCardText {
-            primary: "Starting recording".to_string(),
-            subtext: Some(description.to_string()),
-        },
-    }
-}
-
-fn stop_recording_card_text(result: Option<&StopRecordingResult>) -> RecordingCardText {
-    match result {
-        Some(StopRecordingResult::Success(stopped)) => {
-            let duration = format_video_duration(stopped.duration);
-            let subtext = if matches!(
-                stopped.completion_status,
-                computer_use::RecordingCompletionStatus::Completed
-            ) {
-                duration
-            } else {
-                // TODO(vkodithala): Switch to typed, user-facing termination copy once finalization emits structured reasons.
-                format!("Partial recording • {duration}")
-            };
-            RecordingCardText {
-                primary: "Recording saved".to_string(),
-                subtext: Some(subtext),
-            }
-        }
-        Some(StopRecordingResult::Error(_)) | Some(StopRecordingResult::Cancelled) => {
-            RecordingCardText {
-                primary: "Recording could not be saved".to_string(),
-                subtext: None,
-            }
-        }
-        Some(StopRecordingResult::Discarded) => RecordingCardText {
-            primary: "Recording discarded".to_string(),
-            subtext: None,
-        },
-        None => RecordingCardText {
-            primary: "Saving recording".to_string(),
-            subtext: None,
-        },
-    }
-}
-
-fn format_video_duration(duration: std::time::Duration) -> String {
-    let seconds = duration.as_secs();
-    format!("{}:{:02}", seconds / 60, seconds % 60)
-}
-
-fn recording_icon(app: &AppContext) -> Box<dyn Element> {
-    let appearance = Appearance::as_ref(app);
-    let color = appearance.theme().ansi_fg_red();
-    ConstrainedBox::new(Icon::CircleFilled.to_warpui_icon(color.into()).finish())
-        .with_width(icon_size(app))
-        .with_height(icon_size(app))
-        .finish()
-}
-
-fn recording_card(
-    text: RecordingCardText,
-    action_button: Option<Box<dyn Element>>,
-    app: &AppContext,
-) -> Box<dyn Element> {
-    let appearance = Appearance::as_ref(app);
-    let theme = appearance.theme();
-    let primary = Text::new(
-        text.primary,
-        appearance.ui_font_family(),
-        appearance.monospace_font_size(),
-    )
-    .with_color(blended_colors::text_main(theme, theme.background()))
-    .finish();
-    let mut body = Flex::column().with_cross_axis_alignment(CrossAxisAlignment::Start);
-    body.add_child(primary);
-    if let Some(subtext) = text.subtext.filter(|subtext| !subtext.trim().is_empty()) {
-        body.add_child(
-            Text::new(
-                subtext,
-                appearance.ui_font_family(),
-                appearance.ui_font_size(),
-            )
-            .with_color(blended_colors::text_disabled(theme, theme.surface_2()))
-            .finish(),
-        );
-    }
-
-    let mut action =
-        RenderableAction::new_with_element(body.finish(), app).with_icon(recording_icon(app));
-    if let Some(action_button) = action_button {
-        action = action.with_action_button(action_button);
-    }
-    action.render(app).finish()
-}
-
-fn render_start_recording(
-    props: Props,
-    action_id: &AIAgentActionId,
-    agent_summary: Option<&str>,
-    app: &AppContext,
-) -> Box<dyn Element> {
-    let result = props
-        .action_model
-        .as_ref(app)
-        .get_action_result(action_id)
-        .and_then(|result| match &result.result {
-            AIAgentActionResultType::StartRecording(result) => Some(result),
-            _ => None,
-        });
-    let text = start_recording_card_text(&recording_summary(props, agent_summary, app), result);
-    recording_card(text, None, app)
-}
-
-fn render_recording_footer(status: RecordingSpanStatus, app: &AppContext) -> Box<dyn Element> {
-    let appearance = Appearance::as_ref(app);
-    let theme = appearance.theme();
-    let icon_offset =
-        icon_size(app) + crate::ai::blocklist::inline_action::inline_action_header::ICON_MARGIN;
-    let text = match status {
-        RecordingSpanStatus::Active => "Recording active",
-        RecordingSpanStatus::Captured => "Captured in recording",
-    };
-    Container::new(
-        Text::new(
-            text.to_string(),
-            appearance.ui_font_family(),
-            appearance.ui_font_size(),
-        )
-        .with_color(theme.sub_text_color(theme.surface_1()).into())
-        .finish(),
-    )
-    .with_margin_left(icon_offset)
-    .finish()
-}
-
-fn render_stop_recording(
-    props: Props,
-    action_id: &AIAgentActionId,
-    app: &AppContext,
-) -> Box<dyn Element> {
-    let appearance = Appearance::handle(app).as_ref(app);
-    let result = props
-        .action_model
-        .as_ref(app)
-        .get_action_result(action_id)
-        .and_then(|result| match &result.result {
-            AIAgentActionResultType::StopRecording(result) => Some(result),
-            _ => None,
-        });
-    let mut action_button = None;
-    if let Some(StopRecordingResult::Success(stopped)) = result
-        && !stopped.artifact_uid.trim().is_empty()
-    {
-        let artifact_uid = stopped.artifact_uid.clone();
-        action_button = props.open_recording_buttons.get(action_id).map(|btn| {
-            render_inline_action_secondary_button(
-                appearance,
-                btn,
-                "Open recording",
-                Box::new(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(AIBlockAction::OpenRecordingArtifact {
-                        artifact_uid: artifact_uid.clone(),
-                    });
-                }),
-            )
-        });
-    }
-
-    recording_card(stop_recording_card_text(result), action_button, app)
-}
-
-fn render_use_computer(
-    props: Props,
-    action_id: &AIAgentActionId,
-    request: &UseComputerRequest,
-    recording_span: Option<&RecordingSpanInfo>,
-    app: &AppContext,
-) -> Box<dyn Element> {
-    let appearance = Appearance::handle(app).as_ref(app);
-
-    let mut renderable_action = RenderableAction::new(&request.action_summary, app)
-        .with_icon(action_icon(action_id, props.action_model, props.model, app).finish());
-
-    if should_decorate_recorded_use_computer(request)
-        && let Some(recording_span) = recording_span
-    {
-        renderable_action =
-            renderable_action.with_footer(render_recording_footer(recording_span.status, app));
-    }
-
-    // Add a "View screenshot" button if the action result contains a screenshot.
-    let has_screenshot = props
-        .action_model
-        .as_ref(app)
-        .get_action_result(action_id)
-        .is_some_and(|result| {
-            matches!(
-                &result.result,
-                AIAgentActionResultType::UseComputer(
-                    crate::ai::agent::UseComputerResult::Success(action_result)
-                ) if action_result.screenshot.is_some()
-            )
-        });
-
-    if has_screenshot {
-        let action_id_clone = action_id.clone();
-        let view_screenshot_button = props.view_screenshot_buttons.get(action_id).map(|btn| {
-            render_inline_action_secondary_button(
-                appearance,
-                btn,
-                "View screenshot",
-                Box::new(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(AIBlockAction::ViewScreenshot {
-                        action_id: action_id_clone.clone(),
-                    });
-                }),
-            )
-        });
-
-        if let Some(button_element) = view_screenshot_button {
-            renderable_action = renderable_action.with_action_button(button_element);
-        }
-    }
-
-    renderable_action.render(app).finish()
-}
-
-fn render_request_computer_use(
-    props: Props,
-    action_id: &AIAgentActionId,
-    request: &RequestComputerUseRequest,
-    app: &AppContext,
-) -> Box<dyn Element> {
-    let appearance = Appearance::as_ref(app);
-    let status = props.action_model.as_ref(app).get_action_status(action_id);
-
-    let mut renderable_action = RenderableAction::new(&request.task_summary, app);
-
-    if status.as_ref().is_some_and(|status| status.is_blocked()) {
-        let buttons = props
-            .action_buttons
-            .get(action_id)
-            .expect("Button states must exist for each requested action.");
-
-        renderable_action = renderable_action
-            .with_header(blocked_action_header(
-                action_id.clone(),
-                "OK if I use computer control for this task?",
-                buttons.run_button.clone(),
-                buttons.cancel_button.clone(),
-                props.action_model,
-                props.model,
-                app,
-            ))
-            .with_highlighted_border()
-            .with_background_color(appearance.theme().background().into_solid());
-    } else {
-        if (props.model.status(app).is_streaming()
-            && !props.model.is_first_action_in_output(action_id, app))
-            || status.as_ref().is_some_and(|s| s.is_queued())
-        {
-            renderable_action = renderable_action.with_font_color(blended_colors::text_disabled(
-                appearance.theme(),
-                appearance.theme().surface_2(),
-            ));
-        }
-        renderable_action = renderable_action
-            .with_icon(action_icon(action_id, props.action_model, props.model, app).finish());
-    }
-
-    renderable_action.render(app).finish()
-}
-
 /// Renders the collapsible references footer
 /// if there are any citations.
 fn render_references_footer(
@@ -3634,33 +2966,6 @@ fn render_response_footer(props: Props, app: &AppContext) -> Option<Box<dyn Elem
     }
 
     flex.add_child(render_usage_button(props, app));
-
-    // Review changes button.
-    if props.has_accepted_edits && !props.shared_session_status.is_viewer() {
-        // Only show Review Changes button if we're in a git repository
-        let is_in_git_repo = props
-            .current_working_directory
-            .as_ref()
-            .map(|path| repo_metadata::is_in_repo(path, app))
-            .unwrap_or(false);
-
-        if is_in_git_repo {
-            flex.add_child(
-                Container::new(ChildView::new(props.review_changes_button).finish())
-                    .with_margin_left(4.)
-                    .finish(),
-            );
-        }
-    }
-
-    // "Open all review comments" bulk-import button.
-    if props.conversation_has_imported_comments && !props.shared_session_status.is_viewer() {
-        flex.add_child(
-            Container::new(ChildView::new(props.open_all_comments_button).finish())
-                .with_margin_left(4.)
-                .finish(),
-        );
-    }
 
     Some(flex.finish().with_content_item_spacing().finish())
 }
@@ -4040,9 +3345,6 @@ fn render_collapsible_text_block_section(
             table_section_handles: &[],
             image_section_tooltip_handles: &[],
             is_ai_input_enabled: props.is_ai_input_enabled,
-            open_code_block_action_factory: (None as Option<
-                &'static dyn Fn(CodeSource) -> AIBlockAction,
-            >),
             copy_code_action_factory: (None as Option<&'static dyn Fn(String) -> AIBlockAction>),
             detected_links: Some(props.detected_links_state),
             secret_redaction_state: props.secret_redaction_state,

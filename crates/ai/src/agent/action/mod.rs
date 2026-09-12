@@ -22,10 +22,8 @@ use crate::agent::action_result::{
     EditDocumentsResult, FetchConversationResult, FileGlobResult, FileGlobV2Result, GrepResult,
     InsertReviewCommentsResult, ReadDocumentsResult, ReadFilesResult, ReadMCPResourceResult,
     ReadShellCommandOutputResult, ReadSkillResult, RequestCommandOutputResult,
-    RequestComputerUseResult, RequestFileEditsResult, RunAgentsResult, SearchCodebaseResult,
-    SendMessageToAgentResult, StartRecordingResult, StopRecordingResult,
-    SuggestNewConversationResult, SuggestPromptResult, TransferShellCommandControlToUserResult,
-    UploadArtifactResult, UseComputerResult, WaitForEventsResult,
+    RequestFileEditsResult, RunAgentsResult, SearchCodebaseResult, SendMessageToAgentResult,
+    SuggestNewConversationResult, TransferShellCommandControlToUserResult, WaitForEventsResult,
     WriteToLongRunningShellCommandResult,
 };
 use crate::agent::{AIAgentCitation, FileLocations};
@@ -71,9 +69,6 @@ pub enum AIAgentActionType {
     /// AI requested getting the content of some files.
     ReadFiles(ReadFilesRequest),
 
-    /// AI requested uploading a local file as a conversation artifact.
-    UploadArtifact(UploadArtifactRequest),
-
     SearchCodebase(SearchCodebaseRequest),
 
     /// AI requested a vector of edits. Each edit holds a list of diffs on a single code file.
@@ -118,8 +113,6 @@ pub enum AIAgentActionType {
         message_id: String,
     },
 
-    SuggestPrompt(SuggestPromptRequest),
-
     InitProject,
     OpenCodeReview,
 
@@ -132,43 +125,10 @@ pub enum AIAgentActionType {
         delay: Option<ShellCommandDelay>,
     },
 
-    UseComputer(UseComputerRequest),
-
     InsertCodeReviewComments {
         repo_path: PathBuf,
         comments: Vec<InsertReviewComment>,
         base_branch: Option<String>,
-    },
-
-    RequestComputerUse(RequestComputerUseRequest),
-
-    /// AI requested to start recording a video of the computer-use session.
-    /// Capture configuration (frame rate, limits, speed) is server-owned and
-    /// arrives on the tool call; the client applies it. `frame_rate` of 0 means
-    /// unset. `summary` is a short agent-authored title shown in badges.
-    /// `description` is an optional longer description shown in detail views.
-    /// `playback_speed_multiplier` is the integer speed factor from the proto
-    /// (e.g. 4 = 4×). `None` or a value ≤ 1 means real-time (use client default).
-    StartRecording {
-        frame_rate: u32,
-        max_duration: Option<Duration>,
-        max_size_bytes: Option<u64>,
-        summary: Option<String>,
-        description: Option<String>,
-        playback_speed_multiplier: Option<u32>,
-        /// The surface to record. `None` records the whole screen; a `Window`
-        /// target records just that window via native ffmpeg `x11grab
-        /// -window_id` on the foreground-visible window. Applied by the client
-        /// only when background computer use is enabled.
-        window: Option<computer_use::Target>,
-    },
-
-    /// AI requested to stop an in-progress recording. When `should_persist` is
-    /// false the recording is discarded instead of uploaded; an unset proto
-    /// field defaults to `true` (persist).
-    StopRecording {
-        recording_id: String,
-        should_persist: bool,
     },
 
     // AI requested to read a skill.
@@ -339,9 +299,7 @@ impl AIAgentActionType {
                 AIAgentActionResultType::RequestFileEdits(RequestFileEditsResult::Cancelled)
             }
             Self::ReadFiles(..) => AIAgentActionResultType::ReadFiles(ReadFilesResult::Cancelled),
-            Self::UploadArtifact(..) => {
-                AIAgentActionResultType::UploadArtifact(UploadArtifactResult::Cancelled)
-            }
+
             Self::SearchCodebase(..) => {
                 AIAgentActionResultType::SearchCodebase(SearchCodebaseResult::Cancelled)
             }
@@ -364,9 +322,6 @@ impl AIAgentActionType {
             Self::SuggestNewConversation { .. } => AIAgentActionResultType::SuggestNewConversation(
                 SuggestNewConversationResult::Cancelled,
             ),
-            Self::SuggestPrompt { .. } => {
-                AIAgentActionResultType::SuggestPrompt(SuggestPromptResult::Cancelled)
-            }
             Self::OpenCodeReview => AIAgentActionResultType::OpenCodeReview,
             Self::InitProject => AIAgentActionResultType::InitProject,
             Self::ReadDocuments(_) => {
@@ -381,21 +336,11 @@ impl AIAgentActionType {
             Self::ReadShellCommandOutput { .. } => AIAgentActionResultType::ReadShellCommandOutput(
                 ReadShellCommandOutputResult::Cancelled,
             ),
-            Self::UseComputer(_) => {
-                AIAgentActionResultType::UseComputer(UseComputerResult::Cancelled)
-            }
+
             Self::InsertCodeReviewComments { .. } => {
                 AIAgentActionResultType::InsertReviewComments(InsertReviewCommentsResult::Cancelled)
             }
-            Self::RequestComputerUse(_) => {
-                AIAgentActionResultType::RequestComputerUse(RequestComputerUseResult::Cancelled)
-            }
-            Self::StartRecording { .. } => {
-                AIAgentActionResultType::StartRecording(StartRecordingResult::Cancelled)
-            }
-            Self::StopRecording { .. } => {
-                AIAgentActionResultType::StopRecording(StopRecordingResult::Cancelled)
-            }
+
             Self::ReadSkill(_) => AIAgentActionResultType::ReadSkill(ReadSkillResult::Cancelled),
             Self::FetchConversation { .. } => {
                 AIAgentActionResultType::FetchConversation(FetchConversationResult::Cancelled)
@@ -427,7 +372,7 @@ impl AIAgentActionType {
                 "Write to long running shell command".to_string()
             }
             Self::ReadFiles(_) => "Read files".to_string(),
-            Self::UploadArtifact(_) => "Upload artifact".to_string(),
+
             Self::SearchCodebase(_) => "Search codebase".to_string(),
             Self::RequestFileEdits { file_edits, .. } => {
                 let file_names = file_edits.iter().filter_map(|edit| edit.file()).join(", ");
@@ -438,20 +383,17 @@ impl AIAgentActionType {
             Self::ReadMCPResource { .. } => "Read mcp resource".to_string(),
             Self::CallMCPTool { .. } => "Call mcp tool".to_string(),
             Self::SuggestNewConversation { .. } => "Suggest new conversation".to_string(),
-            Self::SuggestPrompt { .. } => "Suggest prompt".to_string(),
             Self::InitProject => "Init project".to_string(),
             Self::OpenCodeReview => "Open code review".to_string(),
             Self::ReadDocuments(_) => "Read documents".to_string(),
             Self::EditDocuments(_) => "Edit documents".to_string(),
             Self::CreateDocuments(_) => "Create documents".to_string(),
             Self::ReadShellCommandOutput { .. } => "Read shell command output".to_string(),
-            Self::UseComputer(_) => "Use computer".to_string(),
+
             Self::InsertCodeReviewComments { comments, .. } => {
                 format!("Insert {} code review comments", comments.len())
             }
-            Self::RequestComputerUse(_) => "Request computer use".to_string(),
-            Self::StartRecording { .. } => "Start recording".to_string(),
-            Self::StopRecording { .. } => "Stop recording".to_string(),
+
             Self::ReadSkill(_) => "Read skill".to_string(),
             Self::FetchConversation { .. } => "Fetch conversation".to_string(),
             Self::SendMessageToAgent { subject, .. } => format!("Send message: {subject}"),
@@ -496,9 +438,7 @@ impl Display for AIAgentActionType {
             AIAgentActionType::ReadFiles(request) => {
                 write!(f, "{request}")
             }
-            AIAgentActionType::UploadArtifact(request) => {
-                write!(f, "{request}")
-            }
+
             AIAgentActionType::SearchCodebase(request) => {
                 write!(f, "{request}")
             }
@@ -549,9 +489,6 @@ impl Display for AIAgentActionType {
             AIAgentActionType::SuggestNewConversation { message_id } => {
                 write!(f, "SuggestNewConversation: {message_id}")
             }
-            AIAgentActionType::SuggestPrompt(request) => {
-                write!(f, "SuggestPrompt: {request:?}")
-            }
             AIAgentActionType::InitProject => {
                 write!(f, "InitProject")
             }
@@ -585,14 +522,7 @@ impl Display for AIAgentActionType {
                     "ReadShellCommandOutput (block id: {block_id}): with {delay} delay"
                 )
             }
-            AIAgentActionType::UseComputer(req) => {
-                write!(
-                    f,
-                    "UseComputer: {} actions, screenshot_params={:?}",
-                    req.actions.len(),
-                    req.screenshot_params
-                )
-            }
+
             AIAgentActionType::InsertCodeReviewComments { comments, .. } => {
                 let file_paths = comments
                     .iter()
@@ -610,21 +540,7 @@ impl Display for AIAgentActionType {
                     file_paths
                 )
             }
-            AIAgentActionType::RequestComputerUse(req) => {
-                write!(f, "RequestComputerUse: {}", req.task_summary)
-            }
-            AIAgentActionType::StartRecording { .. } => {
-                write!(f, "StartRecording")
-            }
-            AIAgentActionType::StopRecording {
-                recording_id,
-                should_persist,
-            } => {
-                write!(
-                    f,
-                    "StopRecording: {recording_id} (persist: {should_persist})"
-                )
-            }
+
             AIAgentActionType::ReadSkill(req) => {
                 write!(f, "ReadSkill: {}", req.skill)
             }
@@ -734,18 +650,6 @@ impl Display for ReadFilesRequest {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct UploadArtifactRequest {
-    pub file_path: String,
-    pub description: Option<String>,
-}
-
-impl Display for UploadArtifactRequest {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "UploadArtifact: {}", self.file_path)
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SearchCodebaseRequest {
     pub query: String,
 
@@ -790,23 +694,6 @@ pub struct DocumentToCreate {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CreateDocumentsRequest {
     pub documents: Vec<DocumentToCreate>,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct UseComputerRequest {
-    pub action_summary: String,
-    /// Each action carries the surface (screen or a specific window) it targets.
-    pub actions: Vec<computer_use::TargetedAction>,
-    /// If set, a screenshot will be captured after the actions are executed.
-    pub screenshot_params: Option<computer_use::ScreenshotParams>,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct RequestComputerUseRequest {
-    /// A short summary of the task.
-    pub task_summary: String,
-    /// If set, a screenshot will be captured after the actions are executed.
-    pub screenshot_params: Option<computer_use::ScreenshotParams>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -916,19 +803,6 @@ pub struct InsertedCommentLine {
     pub diff_hunk_text: String,
     /// The side of the diff the comment is attached to.
     pub side: Option<CommentSide>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum SuggestPromptRequest {
-    UnitTestsSuggestion {
-        query: String,
-        title: String,
-        description: String,
-    },
-    PromptSuggestion {
-        prompt: String,
-        label: Option<String>,
-    },
 }
 
 /// A file-editing request from the agent.

@@ -16,17 +16,11 @@ use crate::features::FeatureFlag;
 pub mod ai_agent;
 pub mod manager;
 pub mod network;
-pub mod participant_avatar_view;
 pub mod permissions_manager;
 pub mod presence_manager;
-pub mod render_util;
 pub mod replay_agent_conversations;
-pub mod role_change_modal;
 mod selections;
-pub mod settings;
-pub mod share_modal;
 pub(super) mod shared_handlers;
-pub mod sharer;
 pub mod viewer;
 
 #[cfg(test)]
@@ -81,25 +75,10 @@ impl Default for SharedSessionSource {
     }
 }
 
-/// Whether or not a local session is also being shared.
-/// Since a shared session creator is also the creator of a local session,
-/// we make use of the local_tty::TerminalManager for shared session creators.
-/// Otherwise, there would be a lot of overlap between a shared session creator
-/// and a regular, purely local session.
-#[derive(Debug, Clone, Default)]
-pub enum IsSharedSessionCreator {
-    /// This session should be shared automatically once bootstrapped.
-    Yes { source: SharedSessionSource },
-    #[default]
-    No,
-}
-
 /// The type of shared session a particular session is, if applicable.
 #[derive(Debug, Clone)]
 pub enum SharedSessionStatus {
     /// This session is not a shared session.
-    /// When a sharer ends a session, the status
-    /// changes back to [`SharedSessionStatus::NotShared`].
     NotShared,
 
     /// We're in the process of joining the session but have not
@@ -112,19 +91,6 @@ pub enum SharedSessionStatus {
 
     /// We were viewing a shared session but it ended.
     FinishedViewer,
-
-    /// We haven't yet attempted to share the session because it is not bootstrapped yet.
-    /// The `source` encodes what kind of shared session will be created once
-    /// the session finishes bootstrapping.
-    SharePendingPreBootstrap { source: SharedSessionSource },
-
-    /// The session is bootstrapped and we're in the process of
-    /// sharing the session but have not yet established the
-    /// connection with the server.
-    SharePending,
-
-    /// This session is actively being shared.
-    ActiveSharer,
 }
 
 impl SharedSessionStatus {
@@ -165,26 +131,6 @@ impl SharedSessionStatus {
         )
     }
 
-    pub fn is_share_pending(&self) -> bool {
-        matches!(
-            self,
-            SharedSessionStatus::SharePending
-                | SharedSessionStatus::SharePendingPreBootstrap { .. }
-        )
-    }
-
-    pub fn is_active_sharer(&self) -> bool {
-        matches!(self, SharedSessionStatus::ActiveSharer)
-    }
-
-    pub fn is_sharer(&self) -> bool {
-        self.is_share_pending() || self.is_active_sharer()
-    }
-
-    pub fn is_sharer_or_viewer(&self) -> bool {
-        !matches!(self, Self::NotShared)
-    }
-
     pub fn as_keymap_context(&self) -> &'static str {
         match self {
             Self::NotShared => "SharedSessionStatus_NotShared",
@@ -194,9 +140,6 @@ impl SharedSessionStatus {
                 role: Role::Executor | Role::Full,
             } => "SharedSessionStatus_Executor",
             Self::FinishedViewer => "SharedSessionStatus_FinishedViewer",
-            Self::SharePendingPreBootstrap { .. } => "SharedSessionStatus_SharePendingPreBootstrap",
-            Self::SharePending => "SharedSessionStatus_SharePending",
-            Self::ActiveSharer => "SharedSessionStatus_ActiveSharer",
         }
     }
 

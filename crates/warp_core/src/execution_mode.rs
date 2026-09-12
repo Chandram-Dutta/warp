@@ -10,12 +10,8 @@ static GLOBAL_EXECUTION_MODE: OnceLock<ExecutionMode> = OnceLock::new();
 pub enum ExecutionMode {
     /// Warp is running as a normal desktop app.
     App,
-    /// Warp is running as the headless terminal UI.
-    Tui,
     /// Warp is running as a CLI.
     Sdk,
-    /// Warp is running as the remote server daemon.
-    RemoteServerDaemon,
 }
 
 impl ExecutionMode {
@@ -24,9 +20,7 @@ impl ExecutionMode {
     pub fn client_id(&self) -> &'static str {
         match self {
             ExecutionMode::App => "warp-app",
-            ExecutionMode::Tui => "warp-tui",
             ExecutionMode::Sdk => "warp-cli",
-            ExecutionMode::RemoteServerDaemon => "warp-remote-server-daemon",
         }
     }
 }
@@ -49,11 +43,7 @@ impl AppExecutionMode {
 
     /// True if running as an interactive app client.
     fn is_app(&self) -> bool {
-        matches!(self.mode, ExecutionMode::App | ExecutionMode::Tui)
-    }
-    /// Whether Warp is running as the headless terminal UI.
-    pub fn is_tui(&self) -> bool {
-        matches!(self.mode, ExecutionMode::Tui)
+        matches!(self.mode, ExecutionMode::App)
     }
 
     /// Whether Active AI features are allowed in this execution mode.
@@ -99,24 +89,17 @@ impl AppExecutionMode {
     }
 
     /// Whether telemetry should be sent synchronously at shutdown.
-    /// In TUI, CLI, and daemon modes, we synchronously send events at shutdown because there's
+    /// In CLI mode, we synchronously send events at shutdown because there's
     /// a higher likelihood that they will be lost otherwise.
     pub fn send_telemetry_at_shutdown(&self) -> bool {
-        cfg!(not(feature = "local_only"))
-            && matches!(
-                self.mode,
-                ExecutionMode::Tui | ExecutionMode::Sdk | ExecutionMode::RemoteServerDaemon
-            )
+        cfg!(not(feature = "local_only")) && matches!(self.mode, ExecutionMode::Sdk)
     }
 
     /// If true, the app is running autonomously, without a user present.
     /// Wherever possible, prefer more targeted capability checks like
     /// [`Self::can_autostart_mcp_servers`].
     pub fn is_autonomous(&self) -> bool {
-        matches!(
-            self.mode,
-            ExecutionMode::Sdk | ExecutionMode::RemoteServerDaemon
-        )
+        matches!(self.mode, ExecutionMode::Sdk)
     }
 
     /// Returns the client ID to report to the server.

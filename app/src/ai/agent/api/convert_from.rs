@@ -654,9 +654,7 @@ impl ConvertAPIToolCallToAIAgentAction for api::message::ToolCall {
             api::message::tool_call::Tool::ReadFiles(read_files) => {
                 create_standard_action(read_files.into())
             }
-            api::message::tool_call::Tool::UploadFileArtifact(upload_file_artifact) => {
-                create_standard_action(upload_file_artifact.try_into()?)
-            }
+
             api::message::tool_call::Tool::SearchCodebase(search_codebase) => {
                 create_standard_action(search_codebase.into())
             }
@@ -679,12 +677,6 @@ impl ConvertAPIToolCallToAIAgentAction for api::message::ToolCall {
             api::message::tool_call::Tool::SuggestNewConversation(suggest_new_conversation) => {
                 create_standard_action(suggest_new_conversation.into())
             }
-            api::message::tool_call::Tool::SuggestPrompt(suggest_prompt) => {
-                match suggest_prompt.try_into() {
-                    Ok(suggest_prompt_action) => create_standard_action(suggest_prompt_action),
-                    Err(_) => Ok(MaybeAIAgentAction::NoClientRepresentation),
-                }
-            }
             api::message::tool_call::Tool::OpenCodeReview(_) => {
                 create_standard_action(AIAgentActionType::OpenCodeReview)
             }
@@ -706,18 +698,7 @@ impl ConvertAPIToolCallToAIAgentAction for api::message::ToolCall {
             api::message::tool_call::Tool::TransferShellCommandControlToUser(
                 transfer_shell_command_control_to_user,
             ) => create_standard_action(transfer_shell_command_control_to_user.into()),
-            api::message::tool_call::Tool::UseComputer(use_computer) => {
-                create_standard_action(use_computer.try_into()?)
-            }
-            api::message::tool_call::Tool::RequestComputerUse(request_computer_use) => {
-                create_standard_action(request_computer_use.into())
-            }
-            api::message::tool_call::Tool::StartRecording(start_recording) => {
-                create_standard_action(start_recording.try_into()?)
-            }
-            api::message::tool_call::Tool::StopRecording(stop_recording) => {
-                create_standard_action(stop_recording.into())
-            }
+
             api::message::tool_call::Tool::Subagent(subagent) => {
                 use api::message::tool_call::subagent::Metadata;
                 use api::message::tool_call::subagent::conversation_search_metadata::Target;
@@ -791,7 +772,8 @@ impl ConvertAPIToolCallToAIAgentAction for api::message::ToolCall {
             }
             // Clients do not need to know how to parse server tool-calls but receiving
             // them is not an error.
-            api::message::tool_call::Tool::Server(_) => {
+            api::message::tool_call::Tool::Server(_)
+            | api::message::tool_call::Tool::SuggestPrompt(_) => {
                 Ok(MaybeAIAgentAction::NoClientRepresentation)
             }
             api::message::tool_call::Tool::WaitForEvents(payload) => {

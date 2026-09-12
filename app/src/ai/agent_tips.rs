@@ -19,9 +19,7 @@ use crate::terminal::view::init::{
 };
 use crate::util::bindings::trigger_to_keystroke;
 use crate::workspace::WorkspaceAction;
-use crate::workspace::view::{
-    TOGGLE_COMMAND_PALETTE_KEYBINDING_NAME, TOGGLE_RIGHT_PANEL_BINDING_NAME,
-};
+use crate::workspace::view::TOGGLE_COMMAND_PALETTE_KEYBINDING_NAME;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 
 /// Trait for tip implementations that can be displayed to users.
@@ -119,13 +117,6 @@ static DEFAULT_TIPS: LazyLock<Vec<AgentTip>> = LazyLock::new(|| {
             kind: AgentTipKind::General,
         },
         AgentTip {
-            description: "Store reusable workflows, notebooks, and prompts in your".to_string(),
-            link: Some("https://docs.warp.dev/knowledge-and-collaboration/warp-drive".to_string()),
-            binding_name: None,
-            action: Some(WorkspaceAction::OpenWarpDrive),
-            kind: AgentTipKind::WarpDrive,
-        },
-        AgentTip {
             description: "Enter a new prompt to redirect the agent while it's running.".to_string(),
             link: None,
             binding_name: None,
@@ -189,13 +180,6 @@ static DEFAULT_TIPS: LazyLock<Vec<AgentTip>> = LazyLock::new(|| {
             kind: AgentTipKind::General,
         },
         AgentTip {
-            description: "<keybinding> to open the code review panel and review the agent's changes.".to_string(),
-            link: Some("https://docs.warp.dev/code/code-review".to_string()),
-            binding_name: Some(TOGGLE_RIGHT_PANEL_BINDING_NAME),
-            action: None,
-            kind: AgentTipKind::Code,
-        },
-        AgentTip {
             description: "`/add-mcp` to add an MCP server to your workspace.".to_string(),
             link: Some("https://docs.warp.dev/agents/capabilities/mcp".to_string()),
             binding_name: None,
@@ -236,13 +220,6 @@ static DEFAULT_TIPS: LazyLock<Vec<AgentTip>> = LazyLock::new(|| {
             binding_name: None,
             action: None,
             kind: AgentTipKind::SlashCommands,
-        },
-        AgentTip {
-            description: "`/open-code-review` to open the code review panel and inspect agent-generated diffs.".to_string(),
-            link: None,
-            binding_name: None,
-            action: Some(WorkspaceAction::ToggleRightPanel),
-            kind: AgentTipKind::Code,
         },
         AgentTip {
             description: "`/new` to start a new agent conversation with clean context.".to_string(),
@@ -439,8 +416,6 @@ impl WorkspaceAction {
     pub fn display_text(&self) -> Option<String> {
         match self {
             WorkspaceAction::OpenPalette { .. } => Some("Open palette".to_string()),
-            WorkspaceAction::OpenWarpDrive => Some("Warp Drive.".to_string()),
-            WorkspaceAction::ToggleRightPanel => Some("Show diff view".to_string()),
             _ => None,
         }
     }
@@ -621,53 +596,3 @@ impl AITipModel<AgentTip> {
 }
 
 impl SingletonEntity for AITipModel<AgentTip> {}
-
-// Specific implementation for CloudModeTip
-impl AITipModel<crate::terminal::view::ambient_agent::CloudModeTip> {
-    /// Refreshes the current tip with a new random selection.
-    /// Only updates if not in cooldown period (60 seconds).
-    pub fn maybe_refresh_tip(&mut self, ctx: &mut ModelContext<Self>) {
-        // Don't update if cooldown is active
-        if self.cooldown_handle.is_some() {
-            return;
-        }
-
-        use rand::seq::SliceRandom;
-
-        // Select a random tip
-        let mut rng = rand::thread_rng();
-        self.current_tip = self.tips.choose(&mut rng).cloned();
-
-        // Start 60-second cooldown
-        let handle = ctx.spawn(
-            async {
-                Timer::after(Duration::from_secs(60)).await;
-            },
-            |me, _, _| {
-                me.cooldown_handle = None;
-            },
-        );
-        self.cooldown_handle = Some(handle);
-        ctx.notify();
-    }
-
-    /// Resets the cooldown timer without changing the current tip.
-    /// This ensures the current tip will be shown for the full cooldown period.
-    pub fn reset_cooldown(&mut self, ctx: &mut ModelContext<Self>) {
-        // Cancel any existing cooldown
-        if let Some(handle) = self.cooldown_handle.take() {
-            handle.abort();
-        }
-
-        // Start a new 60-second cooldown
-        let handle = ctx.spawn(
-            async {
-                Timer::after(Duration::from_secs(60)).await;
-            },
-            |me, _, _| {
-                me.cooldown_handle = None;
-            },
-        );
-        self.cooldown_handle = Some(handle);
-    }
-}

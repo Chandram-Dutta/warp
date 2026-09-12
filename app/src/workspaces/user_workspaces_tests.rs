@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use mockall::Sequence;
@@ -80,17 +81,11 @@ struct CachedResources {
     workspaces: Vec<Workspace>,
 }
 
-fn initialize_app(
-    app: &mut App,
-    resources: CachedResources,
-    team_client: Arc<dyn TeamClient>,
-    workspace_client: Arc<dyn WorkspaceClient>,
-) {
+fn initialize_app(app: &mut App, resources: CachedResources, team_client: Arc<dyn TeamClient>) {
     initialize_app_with_auth(
         app,
         resources,
         team_client,
-        workspace_client,
         AuthStateProvider::new_for_test(),
     );
 }
@@ -99,7 +94,6 @@ fn initialize_app_with_auth(
     app: &mut App,
     resources: CachedResources,
     team_client: Arc<dyn TeamClient>,
-    workspace_client: Arc<dyn WorkspaceClient>,
     auth_state_provider: AuthStateProvider,
 ) {
     // Add the necessary singleton models to the App
@@ -108,14 +102,7 @@ fn initialize_app_with_auth(
     app.add_singleton_model(TeamTesterStatus::new);
     app.add_singleton_model(SyncQueue::mock);
     app.add_singleton_model(CloudModel::mock);
-    app.add_singleton_model(|ctx| {
-        UserWorkspaces::mock(
-            team_client.clone(),
-            workspace_client.clone(),
-            resources.workspaces,
-            ctx,
-        )
-    });
+    app.add_singleton_model(|ctx| UserWorkspaces::mock(resources.workspaces, ctx));
     app.add_singleton_model(|ctx| TeamUpdateManager::new(team_client.clone(), None, ctx));
     app.add_singleton_model(UpdateManager::mock);
     app.add_singleton_model(PrivacySettings::mock);
@@ -143,14 +130,7 @@ fn initialize_app_with_auth(
 
 fn initialize_window_team_test_app(app: &mut App, workspaces: Vec<Workspace>) {
     app.add_singleton_model(PrivacySettings::mock);
-    app.add_singleton_model(|ctx| {
-        UserWorkspaces::mock(
-            Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
-            workspaces,
-            ctx,
-        )
-    });
+    app.add_singleton_model(|ctx| UserWorkspaces::mock(workspaces, ctx));
 }
 
 fn register_ai_usage_model(app: &mut App) {
@@ -217,7 +197,6 @@ fn test_loading_all_spaces_after_switching_from_offline() {
                 Ok(WorkspacesMetadataWithPricing {
                     metadata: WorkspacesMetadataResponse {
                         workspaces: vec![],
-                        joinable_teams: vec![],
                         experiments: None,
                         feature_model_choices: None,
                         ai_credit_availability: None,
@@ -236,7 +215,6 @@ fn test_loading_all_spaces_after_switching_from_offline() {
                 Ok(WorkspacesMetadataWithPricing {
                     metadata: WorkspacesMetadataResponse {
                         workspaces: vec![workspace.clone()],
-                        joinable_teams: vec![],
                         experiments: None,
                         feature_model_choices: None,
                         ai_credit_availability: None,
@@ -250,7 +228,6 @@ fn test_loading_all_spaces_after_switching_from_offline() {
             &mut app,
             CachedResources { workspaces: vec![] },
             Arc::new(team_client),
-            Arc::new(MockWorkspaceClient::new()),
         );
 
         // We also ensure that UserWorkspaces stores no teams.
@@ -288,7 +265,6 @@ fn test_codebase_context_enabled_with_no_workspace() {
             &mut app,
             CachedResources { workspaces: vec![] },
             Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
         );
 
         app.read(|ctx| {
@@ -341,7 +317,6 @@ fn test_aws_bedrock_credentials_default_off_when_admin_respects_user_setting() {
                 workspaces: vec![workspace],
             },
             Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
         );
 
         app.read(|ctx| {
@@ -376,7 +351,6 @@ fn test_aws_bedrock_credentials_respect_user_setting() {
         Ok(WorkspacesMetadataWithPricing {
             metadata: WorkspacesMetadataResponse {
                 workspaces: vec![workspace_for_poll.clone()],
-                joinable_teams: vec![],
                 experiments: None,
                 feature_model_choices: None,
                 ai_credit_availability: None,
@@ -393,7 +367,6 @@ fn test_aws_bedrock_credentials_respect_user_setting() {
                 workspaces: vec![workspace],
             },
             Arc::new(team_client),
-            Arc::new(MockWorkspaceClient::new()),
         );
 
         AISettings::handle(&app).update(&mut app, |settings, ctx| {
@@ -434,7 +407,6 @@ fn test_aws_bedrock_credentials_enforced_by_admin() {
         Ok(WorkspacesMetadataWithPricing {
             metadata: WorkspacesMetadataResponse {
                 workspaces: vec![workspace_for_poll.clone()],
-                joinable_teams: vec![],
                 experiments: None,
                 feature_model_choices: None,
                 ai_credit_availability: None,
@@ -451,7 +423,6 @@ fn test_aws_bedrock_credentials_enforced_by_admin() {
                 workspaces: vec![workspace],
             },
             Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
         );
 
         AISettings::handle(&app).update(&mut app, |settings, ctx| {
@@ -512,7 +483,6 @@ fn test_gemini_enterprise_credentials_default_off_when_admin_respects_user_setti
                 workspaces: vec![workspace],
             },
             Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
         );
 
         app.read(|ctx| {
@@ -545,7 +515,6 @@ fn test_gemini_enterprise_credentials_respect_user_setting_honors_member_toggle(
                 workspaces: vec![workspace],
             },
             Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
         );
 
         AISettings::handle(&app).update(&mut app, |settings, ctx| {
@@ -577,7 +546,6 @@ fn test_gemini_enterprise_credentials_enforced_by_admin() {
                 workspaces: vec![workspace],
             },
             Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
         );
 
         AISettings::handle(&app).update(&mut app, |settings, ctx| {
@@ -613,7 +581,6 @@ fn test_gemini_enterprise_credentials_disabled_when_host_disabled() {
                 workspaces: vec![workspace],
             },
             Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
         );
 
         app.read(|ctx| {
@@ -652,7 +619,6 @@ fn test_gemini_enterprise_credentials_disabled_when_host_absent() {
                 workspaces: vec![workspace],
             },
             Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
         );
 
         app.read(|ctx| {
@@ -684,7 +650,6 @@ fn test_gemini_enterprise_credentials_disabled_when_logged_out() {
                 workspaces: vec![workspace],
             },
             Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
             AuthStateProvider::new_logged_out_for_test(),
         );
 
@@ -713,7 +678,6 @@ fn test_gemini_enterprise_host_settings_carries_federation_config() {
                 workspaces: vec![workspace],
             },
             Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
         );
 
         app.read(|ctx| {
@@ -1306,7 +1270,6 @@ fn test_codebase_context_enabled_by_team_disabled_by_user() {
                 workspaces: vec![workspace],
             },
             Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
         );
 
         app.read(|ctx| {
@@ -1334,7 +1297,6 @@ fn test_codebase_context_enabled_by_team_and_user() {
                 workspaces: vec![workspace],
             },
             Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
         );
 
         app.read(|ctx| {
@@ -1364,7 +1326,6 @@ fn test_codebase_context_disabled_by_workspace() {
                 workspaces: vec![workspace],
             },
             Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
         );
 
         app.read(|ctx| {
@@ -1394,7 +1355,6 @@ fn test_codebase_context_respect_user_setting() {
                 workspaces: vec![workspace],
             },
             Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
         );
 
         app.read(|ctx| {
@@ -1470,7 +1430,6 @@ fn test_joining_team_moves_objects() {
             &mut app,
             CachedResources { workspaces: vec![] },
             Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
         );
         CloudModel::handle(&app).update(&mut app, |cloud_model, _| {
             cloud_model.add_object(object_id, shared_object);
@@ -1510,7 +1469,6 @@ fn test_agent_attribution_default_with_no_workspace() {
             &mut app,
             CachedResources { workspaces: vec![] },
             Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
         );
 
         app.read(|ctx| {
@@ -1537,7 +1495,6 @@ fn test_agent_attribution_forced_on_by_team() {
                 workspaces: vec![workspace],
             },
             Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
         );
 
         app.read(|ctx| {
@@ -1564,7 +1521,6 @@ fn test_agent_attribution_forced_off_by_team() {
                 workspaces: vec![workspace],
             },
             Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
         );
 
         app.read(|ctx| {
@@ -1591,7 +1547,6 @@ fn test_agent_attribution_respects_user_setting() {
                 workspaces: vec![workspace],
             },
             Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
         );
 
         app.read(|ctx| {
@@ -1711,7 +1666,6 @@ fn test_leaving_team_moves_objects() {
                 workspaces: vec![workspace],
             },
             Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
         );
         CloudModel::handle(&app).update(&mut app, |cloud_model, _| {
             cloud_model.add_object(object_id, shared_object);
@@ -1829,229 +1783,6 @@ fn test_team_billing_metadata_disabled_policy_stays_disabled_without_team() {
             assert!(
                 !billing.is_some_and(|billing| billing.is_purchase_add_on_credits_policy_enabled()),
                 "a fully disabled policy should keep purchases disabled without a team"
-            );
-        });
-    })
-}
-
-#[test]
-fn test_purchase_addon_credits_forwards_teamless_team_uid() {
-    App::test((), |mut app| async move {
-        let mut workspace_client = MockWorkspaceClient::new();
-        workspace_client
-            .expect_purchase_addon_credits()
-            .withf(|team_uid, credits| team_uid.is_none() && *credits == 1_000)
-            .times(1)
-            .returning(|_, _| {
-                Ok(PurchaseAddonCreditsOutcome::CheckoutRequired {
-                    checkout_url: "https://example.com/checkout".to_string(),
-                })
-            });
-
-        app.add_singleton_model(|ctx| {
-            UserWorkspaces::mock(
-                Arc::new(MockTeamClient::new()),
-                Arc::new(workspace_client),
-                vec![],
-                ctx,
-            )
-        });
-
-        UserWorkspaces::handle(&app).update(&mut app, |user_workspaces, ctx| {
-            user_workspaces.purchase_addon_credits(None, 1_000, ctx);
-        });
-
-        // Give the spawned client call time to run so the mock expectation is
-        // exercised before the test ends.
-        warpui::r#async::Timer::after(Duration::from_millis(100)).await;
-    })
-}
-
-#[test]
-fn test_purchase_addon_credits_forwards_team_uid_when_present() {
-    App::test((), |mut app| async move {
-        let mut workspace_client = MockWorkspaceClient::new();
-        workspace_client
-            .expect_purchase_addon_credits()
-            .withf(|team_uid, credits| *team_uid == Some(123.into()) && *credits == 2_000)
-            .times(1)
-            .returning(|_, _| {
-                Ok(PurchaseAddonCreditsOutcome::CheckoutRequired {
-                    checkout_url: "https://example.com/checkout".to_string(),
-                })
-            });
-
-        app.add_singleton_model(|ctx| {
-            UserWorkspaces::mock(
-                Arc::new(MockTeamClient::new()),
-                Arc::new(workspace_client),
-                vec![],
-                ctx,
-            )
-        });
-
-        UserWorkspaces::handle(&app).update(&mut app, |user_workspaces, ctx| {
-            user_workspaces.purchase_addon_credits(Some(123.into()), 2_000, ctx);
-        });
-
-        // Give the spawned client call time to run so the mock expectation is
-        // exercised before the test ends.
-        warpui::r#async::Timer::after(Duration::from_millis(100)).await;
-    })
-}
-
-#[test]
-fn test_remove_user_from_team_rejected_emits_error_event_without_updating_workspaces() {
-    let team = team_for_test();
-    let team_uid = team.uid;
-    let workspace = workspace_for_test(&team);
-
-    App::test((), |mut app| async move {
-        let mut team_client = MockTeamClient::new();
-        team_client
-            .expect_remove_user_from_team()
-            .times(1)
-            .returning(|_, _, _| {
-                Err(anyhow::anyhow!(
-                    "missing response data for RemoveUserFromTeam: Not found: no rows in result set"
-                ))
-            });
-
-        app.add_singleton_model(|ctx| {
-            UserWorkspaces::mock(
-                Arc::new(team_client),
-                Arc::new(MockWorkspaceClient::new()),
-                vec![workspace],
-                ctx,
-            )
-        });
-
-        let user_workspaces_handle = UserWorkspaces::handle(&app);
-        let (sender, receiver) = async_channel::unbounded();
-        app.update(|ctx| {
-            let sender = sender.clone();
-            ctx.subscribe_to_model(
-                &user_workspaces_handle,
-                move |_, event: &UserWorkspacesEvent, _| {
-                    if let UserWorkspacesEvent::RemoveUserFromTeamRejected(err) = event {
-                        let _ = sender.try_send(err.to_string());
-                    }
-                },
-            );
-        });
-
-        UserWorkspaces::handle(&app).update(&mut app, |user_workspaces, ctx| {
-            user_workspaces.remove_user_from_team(
-                UserUid::new("member-uid"),
-                team_uid,
-                CloudObjectEventEntrypoint::TeamSettings,
-                ctx,
-            );
-        });
-
-        warpui::r#async::Timer::after(Duration::from_millis(100)).await;
-
-        let error_message = receiver
-            .try_recv()
-            .expect("expected RemoveUserFromTeamRejected to be emitted");
-        assert!(
-            error_message.contains("no rows in result set"),
-            "the rejected event should carry the server's error message, got: {error_message}"
-        );
-
-        // A failed removal must not silently drop the team from local state.
-        app.read(|ctx| {
-            assert!(
-                UserWorkspaces::as_ref(ctx).has_teams(),
-                "a rejected removal should leave the existing team data untouched"
-            );
-        });
-    })
-}
-
-#[test]
-fn test_remove_user_from_team_success_emits_success_event_and_refreshes_members() {
-    let user_uid = UserUid::new("member-uid");
-    let mut team = team_for_test();
-    team.members.push(TeamMember {
-        uid: user_uid,
-        email: "member@example.com".to_string(),
-        role: MembershipRole::User,
-    });
-    let team_uid = team.uid;
-    let workspace = workspace_for_test(&team);
-
-    let mut updated_team = team.clone();
-    updated_team.members.clear();
-    let updated_workspace = workspace_for_test(&updated_team);
-
-    App::test((), |mut app| async move {
-        let mut team_client = MockTeamClient::new();
-        team_client
-            .expect_remove_user_from_team()
-            .times(1)
-            .returning(move |_, _, _| {
-                Ok(WorkspacesMetadataWithPricing {
-                    metadata: WorkspacesMetadataResponse {
-                        workspaces: vec![updated_workspace.clone()],
-                        joinable_teams: vec![],
-                        experiments: None,
-                        feature_model_choices: None,
-                        ai_credit_availability: None,
-                        user_purchase_policy: None,
-                    },
-                    pricing_info: None,
-                })
-            });
-
-        app.add_singleton_model(PrivacySettings::mock);
-        app.add_singleton_model(|ctx| {
-            UserWorkspaces::mock(
-                Arc::new(team_client),
-                Arc::new(MockWorkspaceClient::new()),
-                vec![workspace],
-                ctx,
-            )
-        });
-
-        let user_workspaces_handle = UserWorkspaces::handle(&app);
-        let (sender, receiver) = async_channel::unbounded();
-        app.update(|ctx| {
-            let sender = sender.clone();
-            ctx.subscribe_to_model(
-                &user_workspaces_handle,
-                move |_, event: &UserWorkspacesEvent, _| {
-                    if matches!(event, UserWorkspacesEvent::RemoveUserFromTeamSuccess) {
-                        let _ = sender.try_send(());
-                    }
-                },
-            );
-        });
-
-        UserWorkspaces::handle(&app).update(&mut app, |user_workspaces, ctx| {
-            user_workspaces.remove_user_from_team(
-                user_uid,
-                team_uid,
-                CloudObjectEventEntrypoint::TeamSettings,
-                ctx,
-            );
-        });
-
-        warpui::r#async::Timer::after(Duration::from_millis(100)).await;
-
-        receiver
-            .try_recv()
-            .expect("expected RemoveUserFromTeamSuccess to be emitted");
-
-        // The acceptance criteria requires that a successful removal continues to
-        // refresh the member list, exactly like before this fix.
-        app.read(|ctx| {
-            let team = UserWorkspaces::as_ref(ctx)
-                .team_from_uid(team_uid)
-                .expect("team should still exist after removal");
-            assert!(
-                team.members.is_empty(),
-                "member list should refresh to reflect the removal"
             );
         });
     })
@@ -2461,7 +2192,6 @@ fn gql_user(
         }),
         workspaces,
         experiments: None,
-        discoverable_teams: vec![],
     }
 }
 

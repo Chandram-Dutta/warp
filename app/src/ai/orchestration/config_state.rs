@@ -69,12 +69,6 @@ impl OrchestrationConfigState {
             | AuthSecretSelection::CreatingNew => None,
         }
     }
-
-    /// User picked "New API key…"; mark `CreatingNew` to block Accept until a
-    /// key is created or another option is chosen.
-    pub fn select_create_new_auth_secret(&mut self) {
-        self.auth_secret_selection = AuthSecretSelection::CreatingNew;
-    }
 }
 
 impl OrchestrationConfigState {

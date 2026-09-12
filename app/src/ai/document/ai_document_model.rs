@@ -34,8 +34,7 @@ use crate::global_resource_handles::GlobalResourceHandlesProvider;
 use crate::notebooks::editor::model::{
     FileLinkResolutionContext, NotebooksEditorModel, RichTextEditorModelEvent,
 };
-use crate::notebooks::editor::rich_text_styles;
-use crate::notebooks::file::MarkdownDisplayMode;
+use crate::notebooks::editor::{MarkdownDisplayMode, rich_text_styles};
 use crate::notebooks::{CloudNotebookModel, NotebookId};
 use crate::persistence::ModelEvent;
 use crate::server::cloud_objects::update_manager::{
@@ -245,7 +244,7 @@ impl AIDocumentModel {
         }
     }
 
-    #[cfg(any(test, all(feature = "tui", feature = "test-util")))]
+    #[cfg(test)]
     pub fn new_for_test() -> Self {
         let (save_tx, _save_rx) = async_channel::unbounded();
         Self {

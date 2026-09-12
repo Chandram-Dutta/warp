@@ -23,7 +23,6 @@ pub enum BlocklistOrchestrationTelemetryEvent {
     PlanConfigApprovalToggled(PlanConfigApprovalToggledEvent),
     RunAgentsCardDecision(RunAgentsCardDecisionEvent),
     RunAgentsCompleted(RunAgentsCompletedEvent),
-    PillBarInteraction(PillBarInteractionEvent),
     OrchestrationEntered(OrchestrationEnteredEvent),
     AgentProposedConfig(AgentProposedConfigEvent),
 }
@@ -256,72 +255,6 @@ pub struct AgentProposedConfigEvent {
     pub has_worker_host: bool,
 }
 
-#[derive(Clone, Copy, Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PillBarPillKind {
-    Orchestrator,
-    Child,
-    /// A leading breadcrumb pill navigating back up the drill-down tree
-    /// (to the tree root or the anchor's parent level).
-    Breadcrumb,
-}
-
-/// Concrete user actions against an orchestration pill bar entry.
-#[derive(Clone, Copy, Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PillBarActionKind {
-    /// User clicked the pill body. See `switch_outcome` for what
-    /// happened next.
-    Switch,
-    OpenInNewPane,
-    OpenInNewTab,
-    /// User picked "Focus pane" from a pill's 3-dot menu. Distinct
-    /// from a pill-body click that resolves to the same outcome
-    /// (those are `Switch` with `switch_outcome = focused_existing_pane`).
-    FocusOpenedConversation,
-    Stop,
-    Kill,
-    TogglePinOn,
-    TogglePinOff,
-    ViewInOz,
-    OpenMenu,
-}
-
-/// Outcome of a pill-body click. Closed enum so future navigation
-/// outcomes can be added without splitting `Switch` into multiple
-/// action variants again.
-#[derive(Clone, Copy, Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PillSwitchOutcome {
-    /// Pill click navigated within the current pane.
-    SwitchedInPlace,
-    /// Target conversation was already owned by another visible
-    /// terminal view; focus moved there instead of switching in place.
-    FocusedExistingPane,
-}
-
-#[derive(Debug, Serialize)]
-pub struct PillBarInteractionEvent {
-    pub action: PillBarActionKind,
-    pub pill_kind: PillBarPillKind,
-    pub total_pills: usize,
-    pub total_pinned: usize,
-    /// The drill-down anchor whose level the bar was rendering when the
-    /// interaction happened. At orchestration depth 1 this is always the
-    /// tree root.
-    pub source_conversation_id: AIConversationId,
-    /// Root of the orchestration tree containing the anchor. Equal to
-    /// `source_conversation_id` when the bar is anchored at the root.
-    pub root_conversation_id: AIConversationId,
-    /// The pill the action targets.
-    pub target_conversation_id: AIConversationId,
-    /// Present only when `action == Switch`. Distinguishes whether the
-    /// pill-body click navigated within the current pane or moved
-    /// focus to an existing pane already owning the conversation.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub switch_outcome: Option<PillSwitchOutcome>,
-}
-
 pub fn run_agents_card_decision_event(
     conversation_id: AIConversationId,
     plan_id: Option<String>,
@@ -547,7 +480,6 @@ impl TelemetryEvent for BlocklistOrchestrationTelemetryEvent {
             Self::PlanConfigApprovalToggled(event) => Some(json!(event)),
             Self::RunAgentsCardDecision(event) => Some(json!(event)),
             Self::RunAgentsCompleted(event) => Some(json!(event)),
-            Self::PillBarInteraction(event) => Some(json!(event)),
             Self::OrchestrationEntered(event) => Some(json!(event)),
             Self::AgentProposedConfig(event) => Some(json!(event)),
         }
@@ -579,7 +511,6 @@ impl TelemetryEventDesc for BlocklistOrchestrationTelemetryEventDiscriminants {
             Self::PlanConfigApprovalToggled => "AgentMode.Orchestration.PlanConfigApprovalToggled",
             Self::RunAgentsCardDecision => "AgentMode.Orchestration.RunAgentsCardDecision",
             Self::RunAgentsCompleted => "AgentMode.Orchestration.RunAgentsCompleted",
-            Self::PillBarInteraction => "AgentMode.Orchestration.PillBarInteraction",
             Self::OrchestrationEntered => "AgentMode.Orchestration.Entered",
             Self::AgentProposedConfig => "AgentMode.Orchestration.AgentProposedConfig",
         }
@@ -598,9 +529,6 @@ impl TelemetryEventDesc for BlocklistOrchestrationTelemetryEventDiscriminants {
             }
             Self::RunAgentsCompleted => {
                 "A run_agents request completed with actual launched and failed child counts"
-            }
-            Self::PillBarInteraction => {
-                "User interacted with the orchestration pill bar (switch, pin, open in pane/tab, stop, kill, etc.)"
             }
             Self::OrchestrationEntered => {
                 "Orchestration was activated in a conversation via /orchestrate or a run_agents confirmation card surfacing. Plan-card entries are tracked separately via AgentProposedConfig + PlanConfigApprovalToggled."

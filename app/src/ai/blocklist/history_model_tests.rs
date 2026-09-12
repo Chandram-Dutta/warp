@@ -33,7 +33,6 @@ use crate::ai::blocklist::controller::RequestInput;
 use crate::ai::llms::LLMId;
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::{Owner, Revision, ServerMetadata, ServerPermissions};
-use crate::input_suggestions::HistoryInputSuggestion;
 use crate::persistence::ModelEvent;
 use crate::persistence::model::{
     AgentConversation, AgentConversationData, AgentConversationRecord, AgentConversationSummary,
@@ -1100,12 +1099,10 @@ fn prompt_history_candidates_seeds_from_snapshot_then_appends_session_prompts() 
 }
 
 #[test]
-fn test_ai_queries_for_terminal_view_up_arrow_history() {
+fn test_ai_queries_order() {
     App::test((), |mut app| async move {
         let now = Local::now();
         let terminal_view_id = EntityId::new();
-        let current_session_id = SessionId::from(0);
-        let all_live_session_ids = HashSet::from([current_session_id]);
 
         // Create initial persisted queries
         let conversation_id_1 = AIConversationId::new();
@@ -1128,13 +1125,11 @@ fn test_ai_queries_for_terminal_view_up_arrow_history() {
         let history_model = app
             .add_singleton_model(|_| BlocklistAIHistoryModel::new(persisted_queries, vec![], &[]));
 
-        // Helper function to get and sort AI queries using the same logic as Input
         let get_sorted_queries = |model: &BlocklistAIHistoryModel| -> Vec<String> {
             model
                 .all_ai_queries(Some(terminal_view_id))
-                .map(|query| HistoryInputSuggestion::AIQuery { entry: query })
-                .sorted_by(|a, b| a.cmp(b, Some(current_session_id), &all_live_session_ids))
-                .map(|suggestion| suggestion.text().to_string())
+                .sorted_by_key(|query| (query.history_order, query.start_time))
+                .map(|query| query.query_text)
                 .collect()
         };
 

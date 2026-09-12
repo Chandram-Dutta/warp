@@ -19,7 +19,6 @@ use prost::Message;
 use warp_core::channel::ChannelState;
 use warp_core::features::FeatureFlag;
 use warp_errors::report_error;
-use warp_graphql::ai::{AgentTaskState, PlatformErrorCode};
 use warp_graphql::client::Operation;
 use warp_graphql::mutations::confirm_file_artifact_upload::{
     ConfirmFileArtifactUpload, ConfirmFileArtifactUploadInput, ConfirmFileArtifactUploadResult,
@@ -40,19 +39,6 @@ use warp_graphql::mutations::generate_code_embeddings::{
     GenerateCodeEmbeddings, GenerateCodeEmbeddingsInput, GenerateCodeEmbeddingsResult,
     GenerateCodeEmbeddingsVariables,
 };
-use warp_graphql::mutations::generate_commands::{
-    GenerateCommands, GenerateCommandsInput, GenerateCommandsResult, GenerateCommandsStatus,
-    GenerateCommandsVariables,
-};
-use warp_graphql::mutations::generate_dialogue::{
-    GenerateDialogue, GenerateDialogueInput,
-    GenerateDialogueResult as GenerateDialogueResultGraphql, GenerateDialogueStatus,
-    GenerateDialogueVariables, TranscriptPart as TranscriptPartGraphql,
-};
-use warp_graphql::mutations::generate_metadata_for_command::{
-    GenerateMetadataForCommand, GenerateMetadataForCommandInput, GenerateMetadataForCommandResult,
-    GenerateMetadataForCommandStatus, GenerateMetadataForCommandVariables,
-};
 use warp_graphql::mutations::populate_merkle_tree_cache::{
     PopulateMerkleTreeCache, PopulateMerkleTreeCacheResult, PopulateMerkleTreeCacheVariables,
 };
@@ -60,10 +46,6 @@ use warp_graphql::mutations::request_bonus::{
     ProvideNegativeFeedbackResponseForAiConversation,
     ProvideNegativeFeedbackResponseForAiConversationInput,
     ProvideNegativeFeedbackResponseForAiConversationVariables, RequestsRefundedResult,
-};
-use warp_graphql::mutations::update_agent_task::{
-    AgentTaskStatusMessageInput, UpdateAgentTask, UpdateAgentTaskInput, UpdateAgentTaskResult,
-    UpdateAgentTaskVariables,
 };
 use warp_graphql::mutations::update_merkle_tree::{
     MerkleTreeNode, UpdateMerkleTree, UpdateMerkleTreeInput, UpdateMerkleTreeResult,
@@ -118,7 +100,7 @@ use warp_multi_agent_api::ConversationData;
 use super::ServerApi;
 #[cfg(not(target_family = "wasm"))]
 use super::download::write_response_body_to_path;
-use super::harness_support::{UploadField, UploadFieldValue, UploadTarget};
+use super::presigned_upload::{UploadField, UploadFieldValue, UploadTarget};
 #[cfg(not(feature = "agent_mode_evals"))]
 use crate::ai::BonusGrant;
 pub use crate::ai::agent::UserQueryMode;
@@ -146,11 +128,6 @@ use crate::ai::llms::{
 #[cfg(feature = "agent_mode_evals")]
 use crate::ai::request_usage_model::RequestLimitInfo;
 use crate::ai::{AICreditAvailability, RequestUsageInfo};
-use crate::ai_assistant::execution_context::WarpAiExecutionContext;
-use crate::ai_assistant::requests::GenerateDialogueResult;
-use crate::ai_assistant::utils::TranscriptPart;
-use crate::ai_assistant::{AIGeneratedCommand, GenerateCommandsFromNaturalLanguageError};
-use crate::drive::workflows::ai_assist::{GeneratedCommandMetadata, GeneratedCommandMetadataError};
 use crate::persistence::model::ConversationUsageMetadata;
 use crate::server::graphql::{get_request_context, get_user_facing_error_message};
 use crate::terminal::model::block::SerializedBlock;
@@ -162,11 +139,6 @@ use crate::{
 
 const AI_ASSISTANT_REQUEST_TIMEOUT_SECONDS: u64 = 30;
 
-/// A status update for a task, optionally including a platform error code.
-pub struct TaskStatusUpdate {
-    pub message: String,
-    pub error_code: Option<PlatformErrorCode>,
-}
 fn public_api_user_query_mode(mode: UserQueryMode) -> &'static str {
     match mode {
         UserQueryMode::Normal => "normal",
@@ -183,24 +155,6 @@ where
     S: serde::Serializer,
 {
     serializer.serialize_str(public_api_user_query_mode(*mode))
-}
-
-impl TaskStatusUpdate {
-    /// Create a status update with just a message (no error code).
-    pub fn message(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-            error_code: None,
-        }
-    }
-
-    /// Create a status update with a message and error code.
-    pub fn with_error_code(message: impl Into<String>, error_code: PlatformErrorCode) -> Self {
-        Self {
-            message: message.into(),
-            error_code: Some(error_code),
-        }
-    }
 }
 
 /// JSON payload sent to the public `POST /agent/run` API.
@@ -1145,24 +1099,6 @@ pub struct UpdateMemoryResponse {
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 pub trait AIClient: 'static + Send + Sync {
-    async fn generate_commands_from_natural_language(
-        &self,
-        prompt: String,
-        ai_execution_context: Option<WarpAiExecutionContext>,
-    ) -> Result<Vec<AIGeneratedCommand>, GenerateCommandsFromNaturalLanguageError>;
-
-    async fn generate_dialogue_answer(
-        &self,
-        transcript: Vec<TranscriptPart>,
-        prompt: String,
-        ai_execution_context: Option<WarpAiExecutionContext>,
-    ) -> anyhow::Result<GenerateDialogueResult>;
-
-    async fn generate_metadata_for_command(
-        &self,
-        command: String,
-    ) -> Result<GeneratedCommandMetadata, GeneratedCommandMetadataError>;
-
     async fn get_request_limit_info(&self) -> Result<RequestUsageInfo, anyhow::Error>;
 
     /// Fetches the server-authoritative decision on whether the authenticated
@@ -1221,22 +1157,6 @@ pub trait AIClient: 'static + Send + Sync {
         parent_run_id: Option<String>,
         config: Option<AgentConfigSnapshot>,
     ) -> anyhow::Result<AmbientAgentTaskId, anyhow::Error>;
-
-    /// Updates a run's server-side record. Every argument is independently optional; omitted
-    /// fields are left untouched rather than cleared.
-    ///
-    /// `session_debug_until` is the deadline of an open post-failure debug window. It is
-    /// deliberately separate from `status_message` so a refresh can move the deadline without
-    /// rewriting the failure text the run reported.
-    async fn update_agent_task(
-        &self,
-        task_id: AmbientAgentTaskId,
-        task_state: Option<AgentTaskState>,
-        session_id: Option<session_sharing_protocol::common::SessionId>,
-        conversation_id: Option<String>,
-        status_message: Option<TaskStatusUpdate>,
-        session_debug_until: Option<DateTime<Utc>>,
-    ) -> anyhow::Result<(), anyhow::Error>;
 
     async fn spawn_agent(
         &self,
@@ -1637,136 +1557,6 @@ fn convert_upload_field(
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 impl AIClient for ServerApi {
-    async fn generate_commands_from_natural_language(
-        &self,
-        prompt: String,
-        // TODO: use relevant context from RequestContext and deprecate usage of ai_execution_context
-        _ai_execution_context: Option<WarpAiExecutionContext>,
-    ) -> Result<Vec<AIGeneratedCommand>, GenerateCommandsFromNaturalLanguageError> {
-        let default_err = GenerateCommandsFromNaturalLanguageError::Other;
-
-        let variables = GenerateCommandsVariables {
-            input: GenerateCommandsInput { prompt },
-            request_context: get_request_context(),
-        };
-
-        let operation = GenerateCommands::build(variables);
-        let response = self
-            .send_graphql_request(
-                operation,
-                Some(Duration::from_secs(AI_ASSISTANT_REQUEST_TIMEOUT_SECONDS)),
-            )
-            .await
-            .map_err(|_| default_err)?;
-
-        match response.generate_commands {
-            GenerateCommandsResult::GenerateCommandsOutput(output) => match output.status {
-                GenerateCommandsStatus::GenerateCommandsSuccess(success) => {
-                    Ok(success.commands.into_iter().map(Into::into).collect_vec())
-                }
-                GenerateCommandsStatus::GenerateCommandsFailure(failure) => {
-                    Err(failure.type_.into())
-                }
-                GenerateCommandsStatus::Unknown => {
-                    Err(GenerateCommandsFromNaturalLanguageError::Other)
-                }
-            },
-            _ => Err(GenerateCommandsFromNaturalLanguageError::Other),
-        }
-    }
-
-    async fn generate_dialogue_answer(
-        &self,
-        transcript: Vec<TranscriptPart>,
-        prompt: String,
-        // TODO: use relevant context from RequestContext and deprecate usage of ai_execution_context
-        _ai_execution_context: Option<WarpAiExecutionContext>,
-    ) -> anyhow::Result<GenerateDialogueResult> {
-        let graphql_transcript: Vec<TranscriptPartGraphql> = transcript
-            .into_iter()
-            .map(|part| TranscriptPartGraphql {
-                user: part.raw_user_prompt().to_string(),
-                assistant: part.raw_assistant_answer().to_string(),
-            })
-            .collect();
-        let variables = GenerateDialogueVariables {
-            input: GenerateDialogueInput {
-                transcript: graphql_transcript,
-                prompt,
-            },
-            request_context: get_request_context(),
-        };
-
-        let operation = GenerateDialogue::build(variables);
-        let response = self
-            .send_graphql_request(
-                operation,
-                Some(Duration::from_secs(AI_ASSISTANT_REQUEST_TIMEOUT_SECONDS)),
-            )
-            .await?;
-        match response.generate_dialogue {
-            GenerateDialogueResultGraphql::GenerateDialogueOutput(output) => match output.status {
-                GenerateDialogueStatus::GenerateDialogueSuccess(success) => {
-                    Ok(GenerateDialogueResult::Success {
-                        answer: success.answer,
-                        truncated: success.truncated,
-                        request_limit_info: success.request_limit_info.into(),
-                        transcript_summarized: success.transcript_summarized,
-                    })
-                }
-                GenerateDialogueStatus::GenerateDialogueFailure(failure) => {
-                    Ok(GenerateDialogueResult::Failure {
-                        request_limit_info: failure.request_limit_info.into(),
-                    })
-                }
-                GenerateDialogueStatus::Unknown => Err(anyhow!("failed to generate AI dialogue")),
-            },
-            GenerateDialogueResultGraphql::UserFacingError(e) => {
-                Err(anyhow!(get_user_facing_error_message(e)))
-            }
-            GenerateDialogueResultGraphql::Unknown => {
-                Err(anyhow!("failed to generate AI dialogue"))
-            }
-        }
-    }
-
-    async fn generate_metadata_for_command(
-        &self,
-        command: String,
-    ) -> Result<GeneratedCommandMetadata, GeneratedCommandMetadataError> {
-        let default_err = GeneratedCommandMetadataError::Other;
-        let variables = GenerateMetadataForCommandVariables {
-            input: GenerateMetadataForCommandInput { command },
-            request_context: get_request_context(),
-        };
-
-        let operation = GenerateMetadataForCommand::build(variables);
-        let response = self
-            .send_graphql_request(
-                operation,
-                Some(Duration::from_secs(AI_ASSISTANT_REQUEST_TIMEOUT_SECONDS)),
-            )
-            .await
-            .map_err(|_| default_err)?;
-
-        match response.generate_metadata_for_command {
-            GenerateMetadataForCommandResult::GenerateMetadataForCommandOutput(output) => {
-                match output.status {
-                    GenerateMetadataForCommandStatus::GenerateMetadataForCommandSuccess(
-                        success,
-                    ) => Ok(success.into()),
-                    GenerateMetadataForCommandStatus::GenerateMetadataForCommandFailure(
-                        failure,
-                    ) => Err(failure.type_.into()),
-                    GenerateMetadataForCommandStatus::Unknown => {
-                        Err(GeneratedCommandMetadataError::Other)
-                    }
-                }
-            }
-            _ => Err(GeneratedCommandMetadataError::Other),
-        }
-    }
-
     #[cfg(feature = "agent_mode_evals")]
     async fn get_request_limit_info(&self) -> Result<RequestUsageInfo, anyhow::Error> {
         Ok(RequestUsageInfo {
@@ -2130,49 +1920,6 @@ impl AIClient for ServerApi {
                 Err(anyhow!(get_user_facing_error_message(e)))
             }
             CreateAgentTaskResult::Unknown => Err(anyhow!("failed to create agent task")),
-        }
-    }
-
-    #[tracing::instrument(skip_all, err, fields(
-        tags.cloud_agent = true,
-        ?task_state,
-        ?session_id,
-        ?conversation_id,
-        error_code = ?status_message.as_ref().map(|m| m.error_code)
-    ))]
-    async fn update_agent_task(
-        &self,
-        task_id: AmbientAgentTaskId,
-        task_state: Option<AgentTaskState>,
-        session_id: Option<session_sharing_protocol::common::SessionId>,
-        conversation_id: Option<String>,
-        status_message: Option<TaskStatusUpdate>,
-        session_debug_until: Option<DateTime<Utc>>,
-    ) -> anyhow::Result<(), anyhow::Error> {
-        let variables = UpdateAgentTaskVariables {
-            input: UpdateAgentTaskInput {
-                task_id: task_id.into(),
-                task_state,
-                session_id: session_id.map(|id| id.to_string().into()),
-                conversation_id: conversation_id.map(|id| id.into()),
-                status_message: status_message.map(|update| AgentTaskStatusMessageInput {
-                    message: update.message,
-                    error_code: update.error_code,
-                }),
-                session_debug_until: session_debug_until.map(Into::into),
-            },
-            request_context: get_request_context(),
-        };
-
-        let operation = UpdateAgentTask::build(variables);
-        let response = self.send_graphql_request(operation, None).await?;
-
-        match response.update_agent_task {
-            UpdateAgentTaskResult::UpdateAgentTaskOutput(_) => Ok(()),
-            UpdateAgentTaskResult::UserFacingError(e) => {
-                Err(anyhow!(get_user_facing_error_message(e)))
-            }
-            UpdateAgentTaskResult::Unknown => Err(anyhow!("failed to update agent task")),
         }
     }
 

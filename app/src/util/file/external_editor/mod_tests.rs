@@ -5,6 +5,29 @@ use warp_util::path::LineAndColumnArg;
 use super::generate_editor_command;
 
 #[test]
+fn persisted_editor_choices_preserve_external_editors_and_replace_removed_warp() {
+    use super::Editor;
+    use super::settings::EditorChoice;
+
+    for (json, expected) in [
+        (r#""Warp""#, EditorChoice::SystemDefault),
+        (r#""SystemDefault""#, EditorChoice::SystemDefault),
+        ("null", EditorChoice::SystemDefault),
+        (r#""EnvEditor""#, EditorChoice::EnvEditor),
+        (r#""VSCode""#, EditorChoice::ExternalEditor(Editor::VSCode)),
+        (
+            r#"{"ExternalEditor":"VSCode"}"#,
+            EditorChoice::ExternalEditor(Editor::VSCode),
+        ),
+    ] {
+        assert_eq!(
+            serde_json::from_str::<EditorChoice>(json).unwrap(),
+            expected
+        );
+    }
+}
+
+#[test]
 fn test_editor_missing_no_line_col() {
     let path = PathBuf::from("/path/to/file.txt");
     let result = generate_editor_command(&path, None, None);

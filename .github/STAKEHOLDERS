@@ -48,14 +48,13 @@
 /app/src/palette.rs @acarl005
 /app/src/search/command_palette/ @acarl005
 
-# @ context, slash commands, and global search / file tree
+# @ context, slash commands, and file tree
 /app/src/search/ai_context_menu/ @moirahuang
 /app/src/search/files/ @moirahuang
 /app/src/search/search_results_menu/ @moirahuang
 /app/src/search/slash_command_menu/ @moirahuang
 /app/src/terminal/input/slash_commands/ @moirahuang
 /app/src/code/file_tree/ @moirahuang
-/app/src/workspace/view/global_search/ @moirahuang
 
 # Tab configs and worktrees
 /app/src/tab_configs/ @moirahuang
@@ -195,9 +194,6 @@
 /app/src/ai/agent_sdk/oauth_flow.rs @Legoben @jefflloyd @vorporeal @bnavetta
 /app/src/ai/mcp/manager/oauth.rs @Legoben @jefflloyd @vorporeal @bnavetta
 /app/src/ai/mcp/templatable_manager/oauth.rs @Legoben @jefflloyd @vorporeal @bnavetta
-
-# Self-hosted agents
-/crates/remote_server/ @kevinyang372 @alokedesai
 
 # Orchestration (multi-agent parent/child runs, orchestration UI)
 /app/src/ai/blocklist/orchestration_event_streamer.rs @Advait-M @cephalonaut

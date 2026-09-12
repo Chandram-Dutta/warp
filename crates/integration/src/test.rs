@@ -3,11 +3,9 @@
 //! to be run.
 
 mod agent_mode;
-mod ai_assistant;
 mod ai_document;
 mod block_filtering;
 mod bootstrapping;
-mod code_review;
 mod copy_current_path;
 mod ctrl_d;
 mod file_tree;
@@ -21,8 +19,6 @@ mod osc8_hyperlinks;
 mod pane_restoration;
 #[cfg(target_os = "macos")]
 mod preview_config_migration;
-mod remote_server;
-mod rich_input_ctrl_enter;
 mod rules;
 mod secrets;
 mod session_restoration;
@@ -48,12 +44,10 @@ use std::rc::Rc;
 use std::time::Duration;
 
 pub use agent_mode::*;
-pub use ai_assistant::*;
 pub use ai_document::*;
 use anyhow::{Result, anyhow};
 pub use block_filtering::*;
 pub use bootstrapping::*;
-pub use code_review::*;
 pub use copy_current_path::*;
 pub use ctrl_d::*;
 pub use file_tree::*;
@@ -71,8 +65,6 @@ use pathfinder_geometry::rect::RectF;
 use pathfinder_geometry::vector::Vector2F;
 #[cfg(target_os = "macos")]
 pub use preview_config_migration::*;
-pub use remote_server::*;
-pub use rich_input_ctrl_enter::*;
 pub use rules::*;
 use rust_embed::RustEmbed;
 pub use secrets::*;
@@ -149,9 +141,6 @@ use warp::integration_testing::view_getters::{
     pane_group_view, single_input_suggestions_view_for_tab, single_input_view_for_tab,
     single_terminal_pane_view_for_tab, single_terminal_view, single_terminal_view_for_tab,
     workspace_view,
-};
-use warp::integration_testing::warp_drive::{
-    assert_is_left_panel_open, assert_warp_drive_is_closed, assert_warp_drive_is_open,
 };
 use warp::integration_testing::window::{
     add_and_save_window, add_window, add_window_and_check_bounds, close_window,
@@ -587,9 +576,20 @@ pub fn test_suggestions_menu_positioning() -> Builder {
                 ),
         )
         .with_step(
-            new_step_with_default_assertions("Open Warp Drive")
-                .with_click_on_saved_position("workspace:toggle_left_panel")
-                .add_assertion(assert_is_left_panel_open()),
+            new_step_with_default_assertions("Open theme chooser")
+                .with_action(|app, window_id, _| {
+                    workspace_view(app, window_id).update(app, |workspace, ctx| {
+                        workspace.show_theme_chooser_for_active_theme(ctx);
+                    });
+                })
+                .add_named_assertion("Theme chooser is open", |app, window_id| {
+                    workspace_view(app, window_id).read(app, |workspace, _| {
+                        async_assert!(
+                            workspace.is_theme_chooser_open(),
+                            "Theme chooser should be open"
+                        )
+                    })
+                }),
         )
         .with_step(
             new_step_with_default_assertions("Assert that suggestions menu updated")
@@ -2271,7 +2271,7 @@ pub fn test_shell_reinitializing() -> Builder {
             TestStep::new("Initialize shell")
                 .add_named_assertion("Ensure input box is visible", move |app, window_id| {
                     let terminal_view = single_terminal_view_for_tab(app, window_id, 0);
-                    terminal_view.read(app, |view, ctx| {
+                    terminal_view.read(app, |view, _| {
                         let mut model = view.model.lock();
                         model.init_shell(InitShellValue {
                             session_id: 0.into(),
@@ -2280,7 +2280,7 @@ pub fn test_shell_reinitializing() -> Builder {
                             hostname: "local:host".to_owned(),
                             ..Default::default()
                         });
-                        let input_visible = view.is_input_box_visible(&model, ctx);
+                        let input_visible = model.is_input_box_visible();
 
                         async_assert!(input_visible, "Input box should be visible")
                     })
@@ -6809,32 +6809,6 @@ pub fn test_agent_mode_pane_minimum_size() -> Builder {
                         })
                     },
                 ),
-        )
-}
-
-// cheating a little bit in this test; it's hard to tell if the create folder dialog is open from
-// the workspace view, but we DO force warp drive open to show the dialog, so we can look for that
-pub fn test_create_folder_from_command_palette() -> Builder {
-    new_builder()
-        .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        .with_step(join_a_workspace())
-        .with_step(go_offline())
-        .with_steps(
-            open_command_palette_and_run_action("Create a New Team Folder")
-                .add_assertion(assert_warp_drive_is_closed()),
-        )
-        .with_steps(
-            open_command_palette_and_run_action("Create a New Personal Folder")
-                .add_assertion(assert_warp_drive_is_closed()),
-        )
-        .with_step(go_online())
-        .with_steps(
-            open_command_palette_and_run_action("Create a New Team Folder")
-                .add_assertion(assert_warp_drive_is_open()),
-        )
-        .with_steps(
-            open_command_palette_and_run_action("Create a New Personal Folder")
-                .add_assertion(assert_warp_drive_is_open()),
         )
 }
 

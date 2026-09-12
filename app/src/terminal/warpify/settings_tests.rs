@@ -1,7 +1,7 @@
 use settings::{Setting, SyncToCloud};
 use warpui::{App, SingletonEntity};
 
-use super::{EnableSshWrapper, UseSshTmuxWrapper, WarpifySettings};
+use super::{EnableSshWrapper, WarpifySettings};
 use crate::test_util::settings::initialize_settings_for_tests;
 
 #[test]
@@ -109,11 +109,6 @@ fn test_deprecated_ssh_wrapper_migration_triggers_are_not_synced() {
         SyncToCloud::Never,
         "enable_legacy_ssh_wrapper must not sync — a stale synced value re-arms the \
          migration and re-disables enable_ssh_warpification (#13228)"
-    );
-    assert_eq!(
-        UseSshTmuxWrapper::sync_to_cloud(),
-        SyncToCloud::Never,
-        "use_ssh_tmux_wrapper must not sync — same re-arm hazard for the tmux notice"
     );
 }
 

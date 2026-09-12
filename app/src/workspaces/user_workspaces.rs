@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 use anyhow::Result;
 use regex::Regex;
@@ -14,7 +13,7 @@ use warpui::{
 
 #[cfg(test)]
 use super::team::TeamVisibility;
-use super::team::{DiscoverableTeam, MembershipRole, Team};
+use super::team::{MembershipRole, Team};
 #[cfg(test)]
 use super::workspace::WorkspaceMemberUsageInfo;
 use super::workspace::{
@@ -27,21 +26,17 @@ use crate::ai::request_usage_model::AIRequestUsageModel;
 use crate::auth::{AuthStateProvider, UserUid};
 use crate::channel::ChannelState;
 use crate::cloud_object::model::persistence::CloudModel;
-use crate::cloud_object::{CloudObjectEventEntrypoint, ObjectType, Owner, Space};
+use crate::cloud_object::{ObjectType, Owner, Space};
 use crate::pricing::PricingInfoModel;
 use crate::server::experiments::{ServerExperiment, ServerExperiments, ServerExperimentsEvent};
 use crate::server::ids::ServerId;
-use crate::server::server_api::team::TeamClient;
-use crate::server::server_api::workspace::{PurchaseAddonCreditsOutcome, WorkspaceClient};
-#[cfg(test)]
-use crate::server::server_api::{team::MockTeamClient, workspace::MockWorkspaceClient};
 use crate::settings::{
     AISettings, AISettingsChangedEvent, CodeSettings, CodeSettingsChangedEvent, PrivacySettings,
 };
 #[cfg(test)]
 use crate::workspaces::workspace::{AIAutonomyPolicy, WorkspaceMember, WorkspaceSettings};
 use crate::workspaces::workspace::{
-    AiAutonomySettings, AiOverages, PurchaseAddOnCreditsPolicy, SandboxedAgentSettings,
+    AiAutonomySettings, PurchaseAddOnCreditsPolicy, SandboxedAgentSettings,
     UsageBasedPricingSettings,
 };
 
@@ -49,45 +44,8 @@ const STRIPE_SUBSCRIPTION_INTERVAL_PAGE_PREFIX: &str = "/upgrade";
 
 #[derive(Debug)]
 pub enum UserWorkspacesEvent {
-    AddDomainRestrictionsSuccess,
-    AddDomainRestrictionsRejected(anyhow::Error),
-    DeleteDomainRestrictionSuccess,
-    DeleteDomainRestrictionRejected(anyhow::Error),
-    EmailInviteSent,
-    EmailInviteRejected(anyhow::Error),
-    ToggleInviteLinksSuccess,
-    ToggleInviteLinksRejected(anyhow::Error),
-    ResetInviteLinks,
-    ResetInviteLinksRejected(anyhow::Error),
-    DeleteTeamInvite,
-    DeleteTeamInviteRejected(anyhow::Error),
     GenerateUpgradeLink(String),
     GenerateUpgradeLinkRejected(anyhow::Error),
-    GenerateStripeBillingPortalLink(String),
-    GenerateStripeBillingPortalLinkRejected(anyhow::Error),
-    ToggleTeamDiscoverabilitySuccess,
-    ToggleTeamDiscoverabilityRejected(anyhow::Error),
-    JoinTeamWithTeamDiscoverySuccess,
-    JoinTeamWithTeamDiscoveryRejected(anyhow::Error),
-    FetchDiscoverableTeamsSuccess(Vec<DiscoverableTeam>),
-    FetchDiscoverableTeamsRejected(anyhow::Error),
-    TransferTeamOwnershipSuccess,
-    TransferTeamOwnershipRejected(anyhow::Error),
-    SetTeamMemberRoleSuccess,
-    SetTeamMemberRoleRejected(anyhow::Error),
-    RemoveUserFromTeamSuccess,
-    RemoveUserFromTeamRejected(anyhow::Error),
-    UpdateWorkspaceSettingsSuccess,
-    UpdateWorkspaceSettingsRejected(anyhow::Error),
-    AiOveragesUpdated,
-    PurchaseAddonCreditsSuccess,
-    /// The purchase requires the user to complete checkout in the browser
-    /// (no saved payment method). Credits arrive via webhook + polling after
-    /// checkout completes.
-    PurchaseAddonCreditsCheckoutRequired {
-        checkout_url: String,
-    },
-    PurchaseAddonCreditsRejected(anyhow::Error),
     /// Fired whenever the set of teams the user is on changes.
     TeamsChanged,
     /// Fired when the selected workspace actually changes to a different one.
@@ -110,15 +68,12 @@ pub struct UserWorkspaces {
     current_workspace_uid: Tracked<Option<WorkspaceUid>>,
     workspaces: Tracked<Vec<Workspace>>,
     window_team_uids: HashMap<WindowId, Option<ServerId>>,
-    joinable_teams: Vec<DiscoverableTeam>,
     /// The user-level add-on credits purchase policy from the latest
     /// workspaces-metadata response. Teamless (fresh free) users have no
     /// team and their only workspace is the server's placeholder, which is
     /// filtered out of `workspaces` — this is the only place their purchase
     /// policy survives.
     user_purchase_policy: Option<PurchaseAddOnCreditsPolicy>,
-    team_client: Arc<dyn TeamClient>,
-    workspace_client: Arc<dyn WorkspaceClient>,
 }
 
 /// Represents the workspaces a user potentially has access to.
@@ -126,8 +81,6 @@ pub struct UserWorkspaces {
 pub struct WorkspacesMetadataResponse {
     /// The list of workspaces the user is currently on.
     pub workspaces: Vec<Workspace>,
-    /// The list of discoverable teams that the user can join.
-    pub joinable_teams: Vec<DiscoverableTeam>,
     /// The list of experiments applicable to the user.
     pub experiments: Option<Vec<ServerExperiment>>,
     /// TODO(Tyler): Post-workspaces, move this into the workspace object.
@@ -149,11 +102,6 @@ pub struct WorkspacesMetadataResponse {
 pub struct WorkspacesMetadataWithPricing {
     pub metadata: WorkspacesMetadataResponse,
     pub pricing_info: Option<warp_graphql::billing::PricingInfo>,
-}
-
-pub struct CreateTeamResponse {
-    pub workspace: Workspace,
-    pub team: Team,
 }
 
 /// The team an operation is scoped to, captured once from the window that started it.
@@ -192,13 +140,8 @@ pub(crate) struct TeamRenderContext<'a> {
 }
 
 impl UserWorkspaces {
-    #[cfg(any(test, all(feature = "tui", feature = "test-util")))]
-    pub fn mock(
-        team_client: Arc<dyn TeamClient>,
-        workspace_client: Arc<dyn WorkspaceClient>,
-        cached_workspaces: Vec<Workspace>,
-        _ctx: &mut ModelContext<Self>,
-    ) -> Self {
+    #[cfg(test)]
+    pub fn mock(cached_workspaces: Vec<Workspace>, _ctx: &mut ModelContext<Self>) -> Self {
         // In tests, avoid subscribing to [`ServerExperiments`] because it
         // requires us to register that singleton along with _its_ dependencies
         // for all tests that use [`UserWorkspaces`] (a lot of them do).
@@ -206,27 +149,17 @@ impl UserWorkspaces {
             current_workspace_uid: cached_workspaces.first().map(|w| w.uid).into(),
             workspaces: cached_workspaces.into(),
             window_team_uids: Default::default(),
-            joinable_teams: Default::default(),
             user_purchase_policy: None,
-            team_client,
-            workspace_client,
         }
     }
 
     #[cfg(test)]
     pub fn default_mock(ctx: &mut ModelContext<Self>) -> Self {
-        Self::mock(
-            Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
-            vec![],
-            ctx,
-        )
+        Self::mock(vec![], ctx)
     }
 
     #[cfg(feature = "local_only")]
     pub fn new(
-        team_client: Arc<dyn TeamClient>,
-        workspace_client: Arc<dyn WorkspaceClient>,
         cached_workspaces: Vec<Workspace>,
         current_workspace_uid: Option<WorkspaceUid>,
         ctx: &mut ModelContext<Self>,
@@ -236,17 +169,12 @@ impl UserWorkspaces {
             current_workspace_uid: None.into(),
             workspaces: Vec::new().into(),
             window_team_uids: Default::default(),
-            joinable_teams: Default::default(),
             user_purchase_policy: None,
-            team_client,
-            workspace_client,
         }
     }
 
     #[cfg(not(feature = "local_only"))]
     pub fn new(
-        team_client: Arc<dyn TeamClient>,
-        workspace_client: Arc<dyn WorkspaceClient>,
         cached_workspaces: Vec<Workspace>,
         current_workspace_uid: Option<WorkspaceUid>,
         ctx: &mut ModelContext<Self>,
@@ -277,10 +205,7 @@ impl UserWorkspaces {
             current_workspace_uid: current_workspace_uid.into(),
             workspaces: cached_workspaces.into(),
             window_team_uids: Default::default(),
-            joinable_teams: Default::default(),
             user_purchase_policy: None,
-            team_client,
-            workspace_client,
         }
     }
 
@@ -1029,17 +954,6 @@ impl UserWorkspaces {
         }
     }
 
-    pub fn total_teammates_in_joinable_teams(&self) -> i64 {
-        self.joinable_teams
-            .iter()
-            .map(|team| team.num_members)
-            .sum()
-    }
-
-    pub fn num_joinable_teams(&self) -> usize {
-        self.joinable_teams.len()
-    }
-
     pub fn spaces_for_window(&self, window_id: WindowId, ctx: &AppContext) -> Vec<Space> {
         if AuthStateProvider::as_ref(ctx)
             .get()
@@ -1193,18 +1107,6 @@ impl UserWorkspaces {
         ctx.notify();
     }
 
-    pub fn update_joinable_teams(
-        &mut self,
-        joinable_teams: Vec<DiscoverableTeam>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        self.joinable_teams.clone_from(&joinable_teams);
-        ctx.emit(UserWorkspacesEvent::FetchDiscoverableTeamsSuccess(
-            joinable_teams,
-        ));
-        ctx.notify();
-    }
-
     // TODO follow up with moving other modifying calls out of UserWorkspaces to TeamUpdateManager
     fn on_workspaces_updated(
         &mut self,
@@ -1226,11 +1128,9 @@ impl UserWorkspaces {
                 }
 
                 let workspaces = response.metadata.workspaces;
-                let joinable_teams = response.metadata.joinable_teams;
 
                 self.set_user_purchase_policy(response.metadata.user_purchase_policy);
                 self.update_workspaces(workspaces.clone(), ctx);
-                self.update_joinable_teams(joinable_teams, ctx);
 
                 // Check if the current workspace is still in the list of workspaces.
                 // If it's not, then set the current workspace to the first workspace in the list.
@@ -1253,373 +1153,6 @@ impl UserWorkspaces {
         }
     }
 
-    pub fn team_created(
-        &mut self,
-        create_team_response: &CreateTeamResponse,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        self.workspaces.push(create_team_response.workspace.clone());
-        self.set_current_workspace_uid(create_team_response.workspace.uid, ctx);
-        self.notify_and_emit_teams_changed(ctx);
-    }
-
-    fn on_remove_user_from_team(
-        &mut self,
-        result: Result<WorkspacesMetadataWithPricing>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Err(err) => ctx.emit(UserWorkspacesEvent::RemoveUserFromTeamRejected(err)),
-            Ok(result) => {
-                self.on_workspaces_updated(Ok(result), ctx);
-                ctx.emit(UserWorkspacesEvent::RemoveUserFromTeamSuccess);
-            }
-        };
-        ctx.notify();
-    }
-
-    pub fn remove_user_from_team(
-        &mut self,
-        user_uid: UserUid,
-        team_uid: ServerId,
-        entrypoint: CloudObjectEventEntrypoint,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let team_client = self.team_client.clone();
-        let _ = ctx.spawn(
-            async move {
-                team_client
-                    .remove_user_from_team(user_uid, team_uid, entrypoint)
-                    .await
-            },
-            Self::on_remove_user_from_team,
-        );
-    }
-
-    fn on_add_invite_link_domain_restrictions(
-        &mut self,
-        result: Result<WorkspacesMetadataWithPricing>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Err(err) => ctx.emit(UserWorkspacesEvent::AddDomainRestrictionsRejected(err)),
-            Ok(result) => {
-                self.on_workspaces_updated(Ok(result), ctx);
-                ctx.emit(UserWorkspacesEvent::AddDomainRestrictionsSuccess);
-            }
-        };
-        ctx.notify();
-    }
-
-    pub fn add_invite_link_domain_restrictions(
-        &mut self,
-        team_uid: ServerId,
-        domains: Vec<String>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        for domain in domains {
-            let team_client = self.team_client.clone();
-            let _ = ctx.spawn(
-                async move {
-                    team_client
-                        .add_invite_link_domain_restriction(team_uid, domain)
-                        .await
-                },
-                Self::on_add_invite_link_domain_restrictions,
-            );
-        }
-    }
-
-    fn on_delete_invite_link_domain_restriction(
-        &mut self,
-        result: Result<WorkspacesMetadataWithPricing>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Err(err) => ctx.emit(UserWorkspacesEvent::DeleteDomainRestrictionRejected(err)),
-            Ok(result) => {
-                self.on_workspaces_updated(Ok(result), ctx);
-                ctx.emit(UserWorkspacesEvent::DeleteDomainRestrictionSuccess);
-            }
-        };
-        ctx.notify();
-    }
-
-    pub fn delete_invite_link_domain_restriction(
-        &mut self,
-        team_uid: ServerId,
-        domain_uid: ServerId,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let team_client = self.team_client.clone();
-        let _ = ctx.spawn(
-            async move {
-                team_client
-                    .delete_invite_link_domain_restriction(team_uid, domain_uid)
-                    .await
-            },
-            Self::on_delete_invite_link_domain_restriction,
-        );
-    }
-
-    fn on_email_invite_sent(
-        &mut self,
-        result: Result<WorkspacesMetadataWithPricing>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Err(err) => ctx.emit(UserWorkspacesEvent::EmailInviteRejected(err)),
-            Ok(result) => {
-                self.on_workspaces_updated(Ok(result), ctx);
-                ctx.emit(UserWorkspacesEvent::EmailInviteSent);
-            }
-        };
-        ctx.notify();
-    }
-
-    pub fn send_email_invites(
-        &mut self,
-        team_uid: ServerId,
-        emails: Vec<String>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        for email in emails {
-            let team_client = self.team_client.clone();
-            let _ = ctx.spawn(
-                async move { team_client.send_team_invite_email(team_uid, email).await },
-                Self::on_email_invite_sent,
-            );
-        }
-    }
-
-    pub fn on_is_invite_link_enabled_set(
-        &mut self,
-        result: Result<WorkspacesMetadataWithPricing>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Err(err) => ctx.emit(UserWorkspacesEvent::ToggleInviteLinksRejected(err)),
-            Ok(result) => {
-                self.on_workspaces_updated(Ok(result), ctx);
-                ctx.emit(UserWorkspacesEvent::ToggleInviteLinksSuccess);
-            }
-        };
-        ctx.notify();
-    }
-
-    pub fn set_is_invite_link_enabled(
-        &mut self,
-        team_uid: ServerId,
-        new_value: bool,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let team_client = self.team_client.clone();
-        let _ = ctx.spawn(
-            async move {
-                team_client
-                    .set_is_invite_link_enabled(team_uid, new_value)
-                    .await
-            },
-            Self::on_is_invite_link_enabled_set,
-        );
-    }
-
-    pub fn on_invite_links_reset(
-        &mut self,
-        result: Result<WorkspacesMetadataWithPricing>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Err(err) => ctx.emit(UserWorkspacesEvent::ResetInviteLinksRejected(err)),
-            Ok(result) => {
-                self.on_workspaces_updated(Ok(result), ctx);
-                ctx.emit(UserWorkspacesEvent::ResetInviteLinks);
-            }
-        };
-        ctx.notify();
-    }
-
-    pub fn reset_invite_links(&mut self, team_uid: ServerId, ctx: &mut ModelContext<Self>) {
-        let team_client = self.team_client.clone();
-        let _ = ctx.spawn(
-            async move { team_client.reset_invite_links(team_uid).await },
-            Self::on_invite_links_reset,
-        );
-    }
-
-    pub fn on_team_discoverability_set(
-        &mut self,
-        result: Result<WorkspacesMetadataWithPricing>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Err(err) => ctx.emit(UserWorkspacesEvent::ToggleTeamDiscoverabilityRejected(err)),
-            Ok(result) => {
-                self.on_workspaces_updated(Ok(result), ctx);
-                ctx.emit(UserWorkspacesEvent::ToggleTeamDiscoverabilitySuccess);
-            }
-        };
-        ctx.notify();
-    }
-
-    pub fn set_team_discoverability(
-        &mut self,
-        team_uid: ServerId,
-        discoverable: bool,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let team_client = self.team_client.clone();
-        let _ = ctx.spawn(
-            async move {
-                team_client
-                    .set_team_discoverability(team_uid, discoverable)
-                    .await
-            },
-            Self::on_team_discoverability_set,
-        );
-    }
-
-    pub fn on_join_team_with_team_discovery(
-        &mut self,
-        result: Result<WorkspacesMetadataWithPricing>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Err(err) => ctx.emit(UserWorkspacesEvent::JoinTeamWithTeamDiscoveryRejected(err)),
-            Ok(result) => {
-                self.on_workspaces_updated(Ok(result), ctx);
-                ctx.emit(UserWorkspacesEvent::JoinTeamWithTeamDiscoverySuccess);
-            }
-        };
-        ctx.notify();
-    }
-
-    pub fn join_team_with_team_discovery(
-        &mut self,
-        team_uid: ServerId,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let team_client = self.team_client.clone();
-        let _ = ctx.spawn(
-            async move { team_client.join_team_with_team_discovery(team_uid).await },
-            Self::on_join_team_with_team_discovery,
-        );
-    }
-
-    fn on_fetch_discoverable_teams(
-        &mut self,
-        teams: Result<Vec<DiscoverableTeam>, anyhow::Error>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match teams {
-            Err(e) => ctx.emit(UserWorkspacesEvent::FetchDiscoverableTeamsRejected(e)),
-            Ok(teams) => {
-                self.update_joinable_teams(teams, ctx);
-            }
-        }
-    }
-
-    /// Make request to get list of discoverable teams for a user
-    pub fn fetch_discoverable_teams(&mut self, ctx: &mut ModelContext<Self>) {
-        let team_client = self.team_client.clone();
-        let _ = ctx.spawn(
-            async move { team_client.get_discoverable_teams().await },
-            Self::on_fetch_discoverable_teams,
-        );
-    }
-
-    fn on_team_ownership_transferred(
-        &mut self,
-        result: Result<WorkspacesMetadataWithPricing>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Err(err) => ctx.emit(UserWorkspacesEvent::TransferTeamOwnershipRejected(err)),
-            Ok(result) => {
-                self.on_workspaces_updated(Ok(result), ctx);
-                ctx.emit(UserWorkspacesEvent::TransferTeamOwnershipSuccess);
-            }
-        };
-        ctx.notify();
-    }
-
-    pub fn transfer_team_ownership(
-        &mut self,
-        new_owner_email: String,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let team_client = self.team_client.clone();
-        let _ = ctx.spawn(
-            async move { team_client.transfer_team_ownership(new_owner_email).await },
-            Self::on_team_ownership_transferred,
-        );
-    }
-
-    fn on_team_member_role_set(
-        &mut self,
-        result: Result<WorkspacesMetadataWithPricing>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Err(err) => ctx.emit(UserWorkspacesEvent::SetTeamMemberRoleRejected(err)),
-            Ok(result) => {
-                self.on_workspaces_updated(Ok(result), ctx);
-                ctx.emit(UserWorkspacesEvent::SetTeamMemberRoleSuccess);
-            }
-        };
-        ctx.notify();
-    }
-
-    pub fn set_team_member_role(
-        &mut self,
-        user_uid: UserUid,
-        team_uid: ServerId,
-        role: MembershipRole,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let team_client = self.team_client.clone();
-        let _ = ctx.spawn(
-            async move {
-                team_client
-                    .set_team_member_role(user_uid, team_uid, role)
-                    .await
-            },
-            Self::on_team_member_role_set,
-        );
-    }
-
-    pub fn on_delete_team_invite(
-        &mut self,
-        result: Result<WorkspacesMetadataWithPricing>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Err(err) => ctx.emit(UserWorkspacesEvent::DeleteTeamInviteRejected(err)),
-            Ok(result) => {
-                self.on_workspaces_updated(Ok(result), ctx);
-                ctx.emit(UserWorkspacesEvent::DeleteTeamInvite);
-            }
-        };
-        ctx.notify();
-    }
-
-    pub fn delete_team_invite(
-        &mut self,
-        team_uid: ServerId,
-        invitee_email: String,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let team_client = self.team_client.clone();
-        let _ = ctx.spawn(
-            async move {
-                team_client
-                    .delete_team_invite(team_uid, invitee_email)
-                    .await
-            },
-            Self::on_delete_team_invite,
-        );
-    }
-
     pub fn on_generate_upgrade_link(
         &mut self,
         result: Result<String>,
@@ -1640,182 +1173,6 @@ impl UserWorkspaces {
             Ok(UserWorkspaces::upgrade_link_for_team(team_uid)),
             ctx,
         );
-    }
-
-    pub fn on_generate_stripe_billing_portal_link(
-        &mut self,
-        result: Result<String>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Err(err) => ctx.emit(UserWorkspacesEvent::GenerateStripeBillingPortalLinkRejected(err)),
-            Ok(billing_session_link) => {
-                ctx.emit(UserWorkspacesEvent::GenerateStripeBillingPortalLink(
-                    billing_session_link,
-                ));
-            }
-        };
-        ctx.notify();
-    }
-
-    pub fn generate_stripe_billing_portal_link(
-        &mut self,
-        team_uid: ServerId,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let workspace_client = self.workspace_client.clone();
-        let _ = ctx.spawn(
-            async move {
-                workspace_client
-                    .generate_stripe_billing_portal_link(team_uid)
-                    .await
-            },
-            Self::on_generate_stripe_billing_portal_link,
-        );
-    }
-
-    pub fn update_usage_based_pricing_settings(
-        &mut self,
-        team_uid: ServerId,
-        usage_based_pricing_enabled: bool,
-        max_monthly_spend_cents: Option<u32>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let workspace_client = self.workspace_client.clone();
-        let _ = ctx.spawn(
-            async move {
-                workspace_client
-                    .update_usage_based_pricing_settings(
-                        team_uid,
-                        usage_based_pricing_enabled,
-                        max_monthly_spend_cents,
-                    )
-                    .await
-            },
-            Self::on_update_workspace_metadata,
-        );
-    }
-
-    fn on_update_workspace_metadata(
-        &mut self,
-        result: Result<WorkspacesMetadataResponse>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Ok(result) => {
-                let wrapped = WorkspacesMetadataWithPricing {
-                    metadata: result,
-                    pricing_info: None,
-                };
-                self.on_workspaces_updated(Ok(wrapped), ctx);
-                ctx.emit(UserWorkspacesEvent::UpdateWorkspaceSettingsSuccess);
-            }
-            Err(err) => {
-                let err_for_event = anyhow::anyhow!("{}", err);
-                self.on_workspaces_updated(Err(err), ctx);
-                ctx.emit(UserWorkspacesEvent::UpdateWorkspaceSettingsRejected(
-                    err_for_event,
-                ));
-            }
-        };
-        ctx.notify();
-    }
-
-    pub fn purchase_addon_credits(
-        &mut self,
-        team_uid: Option<ServerId>,
-        credits: i32,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let workspace_client = self.workspace_client.clone();
-        let _ = ctx.spawn(
-            async move {
-                workspace_client
-                    .purchase_addon_credits(team_uid, credits)
-                    .await
-            },
-            Self::on_purchase_addon_credits,
-        );
-    }
-
-    fn on_purchase_addon_credits(
-        &mut self,
-        result: Result<PurchaseAddonCreditsOutcome>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Ok(PurchaseAddonCreditsOutcome::Completed(result)) => {
-                let wrapped = WorkspacesMetadataWithPricing {
-                    metadata: *result,
-                    pricing_info: None,
-                };
-                self.on_workspaces_updated(Ok(wrapped), ctx);
-                ctx.emit(UserWorkspacesEvent::PurchaseAddonCreditsSuccess);
-            }
-            Ok(PurchaseAddonCreditsOutcome::CheckoutRequired { checkout_url }) => {
-                ctx.emit(UserWorkspacesEvent::PurchaseAddonCreditsCheckoutRequired {
-                    checkout_url,
-                });
-            }
-            Err(err) => {
-                ctx.emit(UserWorkspacesEvent::PurchaseAddonCreditsRejected(
-                    anyhow::anyhow!(err),
-                ));
-            }
-        };
-        ctx.notify();
-    }
-
-    pub fn refresh_ai_overages(&mut self, ctx: &mut ModelContext<Self>) {
-        let workspace_client = self.workspace_client.clone();
-        let _ = ctx.spawn(
-            async move { workspace_client.refresh_ai_overages().await },
-            Self::on_refresh_ai_overages,
-        );
-    }
-
-    pub fn update_addon_credits_settings(
-        &mut self,
-        team_uid: ServerId,
-        auto_reload_enabled: Option<bool>,
-        max_monthly_spend_cents: Option<i32>,
-        selected_auto_reload_credit_denomination: Option<i32>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let workspace_client = self.workspace_client.clone();
-        let _ = ctx.spawn(
-            async move {
-                workspace_client
-                    .update_addon_credits_settings(
-                        team_uid,
-                        auto_reload_enabled,
-                        max_monthly_spend_cents,
-                        selected_auto_reload_credit_denomination,
-                    )
-                    .await
-            },
-            Self::on_update_workspace_metadata,
-        );
-    }
-
-    fn on_refresh_ai_overages(&mut self, result: Result<AiOverages>, ctx: &mut ModelContext<Self>) {
-        match result {
-            Ok(fresh_ai_overages) => {
-                // TODO: We really need to stop having duplicate billing metadata...
-                if let Some(workspace) = self.current_workspace_mut() {
-                    workspace.billing_metadata.ai_overages = Some(fresh_ai_overages.clone());
-                    for team in &mut workspace.teams {
-                        team.billing_metadata.ai_overages = Some(fresh_ai_overages.clone());
-                    }
-                }
-
-                ctx.emit(UserWorkspacesEvent::AiOveragesUpdated);
-                ctx.notify();
-            }
-            Err(e) => {
-                log::warn!("Failed to refresh AI overages for workspace: {e:?}");
-            }
-        }
     }
 
     pub fn usage_based_pricing_settings(&self) -> UsageBasedPricingSettings {

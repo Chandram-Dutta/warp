@@ -48,8 +48,8 @@ use super::interaction_state_model::InteractionStateModel;
 use super::notebook_command::NotebookCommand;
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
 use crate::editor::InteractionState;
+use crate::notebooks::editor::MarkdownDisplayMode;
 use crate::notebooks::editor::interaction_state_model::InteractionStateModelEvent;
-use crate::notebooks::file::MarkdownDisplayMode;
 use crate::notebooks::telemetry::BlockInfo;
 use crate::terminal::ShellLaunchData;
 

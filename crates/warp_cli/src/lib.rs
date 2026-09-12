@@ -20,7 +20,6 @@ mod sort_order;
 pub use sort_order::SortOrderArg;
 
 pub mod agent;
-pub mod api_key;
 pub mod completions;
 pub mod config_file;
 mod date_time;
@@ -77,15 +76,6 @@ pub fn is_worker_invocation(arg: &str) -> bool {
                 .get_subcommands()
                 .any(|subcommand| subcommand.get_long_flag() == Some(long_flag))
         })
-}
-
-/// Hidden worker args used to scope remote-server proxy/daemon sockets by
-/// Warp identity without exposing credentials.
-#[derive(Debug, Clone, Default, clap::Args)]
-pub struct RemoteServerIdentityArgs {
-    /// Non-secret identity partition key for the remote-server daemon.
-    #[arg(long = "identity-key", hide = true)]
-    pub identity_key: String,
 }
 
 /// Global options that apply to all CLI commands.
@@ -270,15 +260,6 @@ impl Args {
                     }
                 }
 
-                if !FeatureFlag::APIKeyManagement.is_enabled() {
-                    let args: Vec<String> = env::args().collect();
-                    if args.len() > 1 && args[1] == "api-key" {
-                        eprintln!("error: unrecognized subcommand 'api-key'\n");
-                        eprintln!("For more information, try '--help'");
-                        std::process::exit(2);
-                    }
-                }
-
                 if !FeatureFlag::CloudAgentRunners.is_enabled() {
                     let args: Vec<String> = env::args().collect();
                     if args.len() > 1 && args[1] == "runner" {
@@ -402,11 +383,6 @@ impl Args {
             command = command.mut_subcommand("artifact", |c| c.hide(true));
         }
 
-        // Hide the api-key subcommand from help text.
-        if !FeatureFlag::APIKeyManagement.is_enabled() {
-            command = command.mut_subcommand("api-key", |c| c.hide(true));
-        }
-
         // Hide the runner subcommand from help text.
         if !FeatureFlag::CloudAgentRunners.is_enabled() {
             command = command.mut_subcommand("runner", |c| c.hide(true));
@@ -508,20 +484,6 @@ pub enum WorkerCommand {
         socket_name: std::path::PathBuf,
     },
 
-    /// Run the remote development server proxy over SSH stdio.
-    /// Ensures the daemon is running, then bridges its stdin/stdout
-    /// to the daemon via a Unix domain socket.
-    #[cfg(not(target_family = "wasm"))]
-    #[clap(hide = true)]
-    RemoteServerProxy(RemoteServerIdentityArgs),
-
-    /// Run the long-lived remote development server daemon.
-    /// Listens on a Unix domain socket and accepts multiple concurrent
-    /// connections from proxy processes.
-    #[cfg(not(target_family = "wasm"))]
-    #[clap(hide = true)]
-    RemoteServerDaemon(RemoteServerIdentityArgs),
-
     /// Run a headless ripgrep search worker.
     #[cfg(not(target_family = "wasm"))]
     #[clap(hide = true)]
@@ -605,40 +567,9 @@ pub enum CliCommand {
     #[command(subcommand)]
     Artifact(crate::artifact::ArtifactCommand),
 
-    /// Manage API keys.
-    #[command(subcommand)]
-    ApiKey(crate::api_key::ApiKeyCommand),
-
     /// Manage cloud agent runners.
     #[command(subcommand)]
     Runner(crate::runner::RunnerCommand),
-}
-
-impl CliCommand {
-    /// Returns the command path used to identify this invocation in tracing.
-    pub fn as_str_for_tracing(&self) -> &'static str {
-        match self {
-            CliCommand::Agent(command) => command.as_str_for_tracing(),
-            CliCommand::Environment(command) => command.as_str_for_tracing(),
-            CliCommand::MCP(command) => command.as_str_for_tracing(),
-            CliCommand::Run(command) => command.as_str_for_tracing(),
-            CliCommand::Model(command) => command.as_str_for_tracing(),
-            CliCommand::Login => "login",
-            CliCommand::Logout => "logout",
-            CliCommand::Whoami => "whoami",
-            CliCommand::Provider(command) => command.as_str_for_tracing(),
-            CliCommand::Integration(command) => command.as_str_for_tracing(),
-            CliCommand::Schedule(command) => command.as_str_for_tracing(),
-            CliCommand::Secret(command) => command.as_str_for_tracing(),
-            CliCommand::Federate(command) => command.as_str_for_tracing(),
-            CliCommand::HarnessSupport(args) => args.command.as_str_for_tracing(),
-            CliCommand::Artifact(command) => command.as_str_for_tracing(),
-            CliCommand::ApiKey(command) => command.as_str_for_tracing(),
-            CliCommand::MemoryStore(command) => command.as_str_for_tracing(),
-            CliCommand::Memory(command) => command.as_str_for_tracing(),
-            CliCommand::Runner(command) => command.as_str_for_tracing(),
-        }
-    }
 }
 
 /// A subcommand of the main Warp application. This includes all [`WorkerCommand`]s as well as app-specific debugging tools.

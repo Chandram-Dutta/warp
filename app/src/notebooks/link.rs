@@ -8,14 +8,12 @@ use std::sync::Arc;
 
 use futures_util::future::Either;
 use url::Url;
+use warp_util::file_type::is_markdown_file;
 use warp_util::path::{CleanPathResult, LineAndColumnArg};
 use warpui::r#async::SpawnedFutureHandle;
 use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity, WindowId};
 
-use super::file::is_markdown_file;
-use crate::drive::OpenWarpDriveObjectArgs;
 use crate::terminal::model::session::Session;
-use crate::uri::parse_url_paths::{WarpWebLink, get_item_data_from_warp_link};
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::EditorSettings;
 #[cfg(feature = "local_fs")]
@@ -252,43 +250,10 @@ impl NotebookLinks {
 
     /// Open a resolved link:
     /// * URLs are opened in the web browser or system-default application.
-    /// * Markdown files are opened according to the user's Markdown Viewer preference.
-    /// * Other files are opened in the configured editor or system-default application.
+    /// * Files are opened in the configured editor or system-default application.
     pub fn open(&self, link: LinkTarget, ctx: &mut ModelContext<Self>) {
         match link {
-            LinkTarget::Url(url) => {
-                if let Some(WarpWebLink::DriveObject(args)) = get_item_data_from_warp_link(&url) {
-                    return ctx.emit(LinkEvent::OpenWarpDriveLink {
-                        open_warp_drive_args: *args,
-                    });
-                }
-
-                ctx.open_url(url.as_str())
-            }
-            LinkTarget::LocalFile {
-                path,
-                line_and_column,
-                session,
-                is_markdown: true,
-            } => {
-                #[cfg(not(feature = "local_fs"))]
-                let _ = line_and_column;
-
-                #[cfg(feature = "local_fs")]
-                {
-                    let settings = EditorSettings::as_ref(ctx);
-                    if *settings.prefer_markdown_viewer {
-                        ctx.emit(LinkEvent::OpenFileNotebook { path, session });
-                    } else {
-                        open_file(path, line_and_column, ctx);
-                    }
-                }
-
-                #[cfg(not(feature = "local_fs"))]
-                {
-                    ctx.emit(LinkEvent::OpenFileNotebook { path, session });
-                }
-            }
+            LinkTarget::Url(url) => ctx.open_url(url.as_str()),
             LinkTarget::LocalFile {
                 path,
                 line_and_column,
@@ -376,13 +341,10 @@ fn open_file(
         }
 
         let settings = EditorSettings::as_ref(ctx);
-        let target = resolve_file_target(&path, settings, None);
+        let target = resolve_file_target(&path, settings);
         match target {
             // Safe targets: open in a viewer/editor that won't execute the file.
-            FileTarget::MarkdownViewer(_)
-            | FileTarget::CodeEditor(_)
-            | FileTarget::ExternalEditor(_)
-            | FileTarget::EnvEditor => {
+            FileTarget::ExternalEditor(_) | FileTarget::EnvEditor => {
                 ctx.emit(LinkEvent::OpenFileWithTarget {
                     path,
                     target,
@@ -436,14 +398,6 @@ impl fmt::Display for ResolveError {
 
 #[derive(Debug, Clone)]
 pub enum LinkEvent {
-    /// Emitted when the view should open a Markdown file as a notebook.
-    OpenFileNotebook {
-        path: PathBuf,
-        session: Arc<Session>,
-    },
-    OpenWarpDriveLink {
-        open_warp_drive_args: OpenWarpDriveObjectArgs,
-    },
     /// This event tells the parent pane group to open a new terminal session in the given
     /// directory.
     StartLocalSession { path: PathBuf },

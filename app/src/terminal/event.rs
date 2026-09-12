@@ -6,7 +6,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use instant::Instant;
-pub use remote_server::setup::RemoteServerSetupState;
 use warp_util::lazy::Lazy;
 
 use super::history::HistoryEntry;
@@ -112,21 +111,6 @@ pub enum Event {
     Handler(HandlerEvent),
     /// Carries non-UGC lifecycle diagnostics to the model dispatcher for telemetry.
     LifecycleRecovery(LifecycleRecoveryRecord),
-    /// Emitted when the remote server binary has been successfully checked or
-    /// installed and is ready. The session is initialized independently on
-    /// `Bootstrapped`; when the remote server later connects, the client is
-    /// attached to the existing session's `RemoteServerCommandExecutor` via
-    /// the `RemoteServerManagerEvent::SessionConnected` subscription in
-    /// `Sessions::new`.
-    RemoteServerReady {
-        session_id: SessionId,
-    },
-    /// Emitted when the remote server setup failed. The session falls back to
-    /// the ControlMaster-based `RemoteCommandExecutor`.
-    RemoteServerFailed {
-        session_id: SessionId,
-        error: String,
-    },
     /// Emitted when the assisted auto-update has completed and we're ready to
     /// relaunch the app.
     FinishUpdate(FinishUpdateValue),
@@ -522,15 +506,6 @@ impl Debug for Event {
             }
             Event::Handler(handler_event) => write!(f, "Handler({handler_event:?}))"),
             Event::LifecycleRecovery(record) => write!(f, "LifecycleRecovery({record:?})"),
-            Event::RemoteServerReady { session_id } => {
-                write!(f, "RemoteServerReady(session: {session_id:?})")
-            }
-            Event::RemoteServerFailed { session_id, error } => {
-                write!(
-                    f,
-                    "RemoteServerFailed(session: {session_id:?}, error: {error})"
-                )
-            }
             Event::FinishUpdate(data) => write!(f, "FinishUpdate({})", data.update_id),
             Event::TextSelectionChanged => write!(f, "TextSelectionChanged"),
             Event::ShellSpawned(shell_type) => write!(f, "ShellSpawned({shell_type:?})"),

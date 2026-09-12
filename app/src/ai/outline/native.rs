@@ -20,10 +20,7 @@ use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity};
 
 use super::OutlineStatus;
 use crate::ai::persisted_workspace::all_working_directories;
-use crate::settings::{
-    AISettings, AISettingsChangedEvent, CodeSettings, CodeSettingsChangedEvent, InputSettings,
-    InputSettingsChangedEvent,
-};
+use crate::settings::{AISettings, AISettingsChangedEvent, CodeSettings, CodeSettingsChangedEvent};
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::{TelemetryEvent, safe_info, safe_warn, send_telemetry_from_ctx};
 
@@ -92,13 +89,6 @@ impl RepoOutlines {
             });
         }
 
-        ctx.subscribe_to_model(&InputSettings::handle(ctx), |me, _, event, ctx| {
-            if let InputSettingsChangedEvent::OutlineCodebaseSymbolsForAtContextMenu { .. } = event
-            {
-                Self::handle_setting_change_event(me, ctx);
-            }
-        });
-
         Self {
             outlines: Default::default(),
             outline_queue: Default::default(),
@@ -135,14 +125,8 @@ impl RepoOutlines {
         }
     }
 
-    /// Check if outlines should be built based on if codebase context enabled OR
-    /// outline codebase symbols for @ context menu settings.
     fn should_build_outlines(&self, ctx: &ModelContext<Self>) -> bool {
-        self.indexing_enabled
-            && (UserWorkspaces::as_ref(ctx).is_codebase_context_enabled(ctx)
-                || *InputSettings::as_ref(ctx)
-                    .outline_codebase_symbols_for_at_context_menu
-                    .value())
+        self.indexing_enabled && UserWorkspaces::as_ref(ctx).is_codebase_context_enabled(ctx)
     }
 
     fn handle_setting_change_event(me: &mut RepoOutlines, ctx: &mut ModelContext<Self>) {

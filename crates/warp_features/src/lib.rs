@@ -68,10 +68,6 @@ pub enum FeatureFlag {
     /// lib will use the user's history as a last-ditch effort to find a reasonable correction.
     CommandCorrectionsHistoryRule,
 
-    /// Used to gate an experiment we're doing on WarpDev ONLY
-    /// to get a sense of PTY throughput over time.
-    RecordPtyThroughput,
-
     /// Whether to fetch generic string objects from the server.
     FetchGenericStringObjects,
 
@@ -251,9 +247,6 @@ pub enum FeatureFlag {
     /// Forces users to login.
     ForceLogin,
 
-    /// Enables prediction of Agent Mode queries.
-    PredictAMQueries,
-
     /// Enables full source code embedding of repos when using codebase context.
     FullSourceCodeEmbedding,
 
@@ -298,20 +291,11 @@ pub enum FeatureFlag {
     /// Persist codebase indices to disk.
     CodebaseIndexPersistence,
 
-    /// Enables the AI context menu, or at-menu.
-    AIContextMenuEnabled,
-
-    /// Enables the AI context menu outside of AI input mode.
-    AtMenuOutsideOfAIMode,
-
     /// Enables the resume button for cancelled AI conversations.
     AIResumeButton,
 
     /// Enables the agent to decide whether to execute a command.
     AgentDecidesCommandExecution,
-
-    /// Show speed bump when enabling codebase indexing.
-    CodebaseIndexSpeedbump,
 
     /// Enables inline review comments on specific lines of code.
     ContextLineReviewComments,
@@ -328,20 +312,9 @@ pub enum FeatureFlag {
     /// Enables file search functionality in command palette
     CommandPaletteFileSearch,
 
-    /// Enables the AI context menu nesting and commands
-    AIContextMenuCommands,
-
     /// Enables sending stderr warnings in FileGlobV2 results.
     FileGlobV2Warnings,
 
-    /// Enables code symbols in AI context menu
-    AIContextMenuCode,
-
-    /// Enables Warp Drive objects (like workflows) as context in AI context menu
-    DriveObjectsAsContext,
-
-    /// Expands code diff edits to replace the current pane instead of opening in a new tab.
-    ExpandEditToPane,
     /// Enables fallback model load output messaging in the warping indicator.
     FallbackModelLoadOutputMessaging,
 
@@ -375,9 +348,6 @@ pub enum FeatureFlag {
 
     /// Gates the bundled skill-based implementation of PR comment fetching.
     PRCommentsSkill,
-
-    /// A new first-time user experience which prioritizes choosing a coding repository.
-    GetStartedTab,
 
     /// Enables Projects and Project management
     Projects,
@@ -417,9 +387,6 @@ pub enum FeatureFlag {
 
     /// Enables the one-time modal on app startup for existing users for the Code launch.
     CodeLaunchModal,
-
-    /// Enables API key management UI in settings
-    APIKeyManagement,
 
     /// Enables OAuth support for MCP.
     McpOauth,
@@ -523,9 +490,6 @@ pub enum FeatureFlag {
     /// the conversation usage card.
     ContextWindowUsageBreakdown,
 
-    /// Enables global search
-    GlobalSearch,
-
     /// Enables embedded code review comments.
     EmbeddedCodeReviewComments,
 
@@ -589,9 +553,6 @@ pub enum FeatureFlag {
     /// Enables video recording of computer-use sessions for cloud agents.
     VideoRecording,
 
-    /// Enables team API key creation in the API key management UI.
-    TeamApiKeys,
-
     /// Enables cloud conversation loading via the CLI --conversation flag.
     CloudConversations,
 
@@ -633,9 +594,6 @@ pub enum FeatureFlag {
     /// If disabled, the server will send None as the SkillsContext.
     ListSkills,
 
-    /// When enabled, we expose LSP as a tool to the agent
-    LSPAsATool,
-
     /// Enables conversation artifacts.
     ConversationArtifacts,
 
@@ -661,19 +619,6 @@ pub enum FeatureFlag {
 
     /// Enables loading and returning bundled skills in the SkillManager.
     BundledSkills,
-
-    /// Enables the Oz launch modal for introducing cloud agent features.
-    OzLaunchModal,
-
-    /// Enables the OpenWarp launch modal announcing Warp going open-source.
-    /// When enabled, the HOA onboarding flow is suppressed.
-    OpenWarpLaunchModal,
-
-    /// Enables the orchestration launch modal announcing multi-agent orchestration features.
-    OrchestrationLaunchModal,
-
-    /// Enables the launch modal announcing the Warp Agent CLI.
-    AgentCliLaunchModal,
 
     /// Updated tab styling (background colors, border, close button positioning, margins).
     NewTabStyling,
@@ -723,16 +668,6 @@ pub enum FeatureFlag {
     /// one `include_self` ancestor SSE per parent family, and a single
     /// `is_remote_child` placeholder flavor for both owner and viewer.
     OrchestrationUnifiedStack,
-
-    /// Shows a pending user query indicator during summarization when a follow-up
-    /// prompt is queued via `/fork-and-compact` or `/compact-and`.
-    PendingUserQueryIndicator,
-
-    /// Gates the `/queue` slash command, which lets users queue a follow-up prompt
-    /// while the agent is mid-response.
-    QueueSlashCommand,
-    /// Extends queued prompts to Cloud Mode setup and follow-up draining.
-    QueuedPromptsV2,
 
     /// Enables an agent tool for the CLI subagent to explicitly transfer command control to the
     /// user.
@@ -1072,13 +1007,11 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::SummarizationViaMessageReplacement,
     FeatureFlag::LocalComputerUse,
     FeatureFlag::VideoRecording,
-    FeatureFlag::OzLaunchModal,
     // These are enabled via 100% experiment on prod warp-server,
     // but we need to enable here for dogfood builds.
     FeatureFlag::CrossRepoContext,
     FeatureFlag::CodebaseIndexPersistence,
     FeatureFlag::FullSourceCodeEmbedding,
-    FeatureFlag::CodebaseIndexSpeedbump,
     // End manually enabled Code features.
     FeatureFlag::EditableMarkdownMermaid,
     FeatureFlag::CodeReviewScrollPreservation,
@@ -1205,7 +1138,6 @@ impl FeatureFlag {
             CreateEnvironmentSlashCommand => Some(
                 "Enables the /create environment slash command for setting up Warp Environments with custom configurations.",
             ),
-            GlobalSearch => Some("Enables global search in the left panel"),
             BlocklistMarkdownTableRendering => {
                 Some("Enables rendering markdown tables inline in AI block list responses.")
             }

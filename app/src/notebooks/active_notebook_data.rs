@@ -2,7 +2,6 @@ use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
 use super::{CloudNotebookModel, NotebookId};
 use crate::ai::document::ai_document_model::AIDocumentId;
-use crate::cloud_object::breadcrumbs::ContainingObject;
 use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
 use crate::cloud_object::model::view::{CloudViewModel, Editor, EditorState};
 use crate::cloud_object::{CloudObject, Owner, Space};
@@ -88,15 +87,6 @@ impl ActiveNotebookData {
                     ctx.notify();
                 }
             }
-            CloudModelEvent::ObjectMoved { type_and_id, .. } => {
-                if let Some(notebook_id) = type_and_id.as_notebook_id() {
-                    // Update breadcrumb when a notebook is moved, whether by the user or a
-                    // teammate.
-                    if self.is_active_notebook(notebook_id) {
-                        ctx.emit(ActiveNotebookDataEvent::BreadcrumbsChanged);
-                    }
-                }
-            }
             _ => (),
         }
     }
@@ -121,7 +111,6 @@ impl ActiveNotebookData {
                     self.saving_status = SavingStatus::Saved;
                     self.active_notebook =
                         ActiveNotebook::CommittedNotebook(SyncId::ServerId(notebook_id.into()));
-                    ctx.emit(ActiveNotebookDataEvent::BreadcrumbsChanged);
                     ctx.emit(ActiveNotebookDataEvent::CreatedOnServer);
                     ctx.notify();
                 }
@@ -204,12 +193,7 @@ impl ActiveNotebookData {
         self.feature_not_available = false;
     }
 
-    pub fn open_new(
-        &mut self,
-        owner: Owner,
-        initial_folder_id: Option<SyncId>,
-        ctx: &mut ModelContext<Self>,
-    ) {
+    pub fn open_new(&mut self, owner: Owner, initial_folder_id: Option<SyncId>) {
         self.reset();
 
         // create a new client id
@@ -222,13 +206,11 @@ impl ActiveNotebookData {
             initial_folder_id,
             new_id,
         )));
-        ctx.emit(ActiveNotebookDataEvent::BreadcrumbsChanged);
     }
 
-    pub fn open_existing(&mut self, notebook_id: SyncId, ctx: &mut ModelContext<Self>) {
+    pub fn open_existing(&mut self, notebook_id: SyncId) {
         self.reset();
         self.active_notebook = ActiveNotebook::CommittedNotebook(notebook_id);
-        ctx.emit(ActiveNotebookDataEvent::BreadcrumbsChanged);
     }
 
     pub fn id(&self) -> Option<SyncId> {
@@ -259,17 +241,6 @@ impl ActiveNotebookData {
             &self.active_notebook,
             ActiveNotebook::CommittedNotebook(SyncId::ServerId(_))
         )
-    }
-
-    /// Calculate the breadcrumbs for this object.
-    pub fn breadcrumbs(&self, ctx: &AppContext) -> Option<Vec<ContainingObject>> {
-        let cloud_notebook = match &self.active_notebook {
-            ActiveNotebook::None => None,
-            ActiveNotebook::CommittedNotebook(id) => CloudModel::as_ref(ctx).get_notebook(id),
-            ActiveNotebook::NewNotebook(notebook) => Some(notebook.as_ref()),
-        };
-
-        cloud_notebook.map(|notebook| notebook.containing_objects_path(ctx))
     }
 
     /// The space that the active notebook is shown in for this user.
@@ -374,8 +345,6 @@ pub enum ActiveNotebookDataEvent {
     SwitchedToEditMode,
     /// An edit to the current object was rejected.
     EditRejected,
-    /// The notebook's breadcrumbs were updated.
-    BreadcrumbsChanged,
     /// This notebook was created on the server.
     CreatedOnServer,
     /// This notebook was trashed or untrashed (used for refreshing pane overflow items)

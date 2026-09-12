@@ -17,7 +17,7 @@ use warpui::text_layout::ClipConfig;
 use warpui::{AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext};
 
 use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::blocklist::agent_view::orchestration_pill_bar::{
+use crate::ai::blocklist::agent_view::orchestration_avatar::{
     render_agent_avatar_disc, render_orchestrator_avatar_disc,
 };
 use crate::ai::blocklist::orchestration_topology::descendant_conversation_ids_in_spawn_order;

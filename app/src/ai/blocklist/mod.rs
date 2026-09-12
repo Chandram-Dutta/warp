@@ -9,15 +9,11 @@ mod controller;
 pub(crate) mod conversation_selection;
 pub(crate) mod diff_storage;
 pub(crate) mod diff_types;
-pub(crate) mod handoff;
 
-pub(crate) mod local_agent_task_sync_model;
 pub(crate) mod orchestration_child_tracker;
 pub(crate) mod orchestration_event_streamer;
 pub(crate) mod orchestration_events;
 pub(crate) mod orchestration_topology;
-mod passive_suggestions;
-pub(crate) mod queued_query;
 pub(super) use controller::RequestInput;
 pub mod history_model;
 pub mod inline_action;
@@ -29,44 +25,22 @@ pub mod prompt;
 pub mod suggested_agent_mode_workflow_modal;
 pub mod suggested_rule_modal;
 mod suggestion_chip_view;
-pub mod summarization_cancel_dialog;
 pub(crate) mod telemetry;
 pub mod usage;
 
-pub(crate) mod codebase_index_speedbump_banner;
 pub(crate) mod telemetry_banner;
 pub(crate) mod view_util;
 
-// Consumed by `tui_export` for the `warp_tui` frontend.
-#[cfg_attr(not(feature = "tui"), allow(unused_imports))]
-pub use action_model::AIActionStatus;
-pub(crate) use action_model::recording_controller::RecordingController;
-#[cfg(not(target_family = "wasm"))]
-pub(crate) use action_model::recording_finalize::{
-    FinalizeReason, finalize_recording_for_conversation,
-};
-// Consumed by `tui_export` for the `warp_tui` frontend.
-#[cfg(feature = "tui")]
 pub use action_model::{
-    AskUserQuestionExecutor, NewConversationDecision, RequestFileEditsExecutor,
-};
-pub use action_model::{
-    BlocklistAIActionEvent, BlocklistAIActionModel, ShellCommandExecutor, ShellCommandExecutorEvent,
+    AIActionStatus, BlocklistAIActionEvent, BlocklistAIActionModel, ShellCommandExecutor,
+    ShellCommandExecutorEvent,
 };
 #[cfg_attr(target_family = "wasm", allow(unused_imports))]
 pub(crate) use action_model::{
     FileReadResult, ReadFileContextResult, RequestFileEditsFormatKind, apply_edits,
     read_local_file_context,
 };
-// Consumed by `tui_export` for the `warp_tui` frontend.
-#[cfg(feature = "tui")]
-pub use action_model::{RunAgentsExecutor, RunAgentsExecutorEvent, RunAgentsSpawningSnapshot};
-// Consumed by `tui_export` for the `warp_tui` frontend's child-agent
-// materializer, in addition to the GUI pane-group dispatch.
-#[cfg_attr(
-    any(target_family = "wasm", not(feature = "tui")),
-    allow(unused_imports)
-)]
+#[cfg_attr(target_family = "wasm", allow(unused_imports))]
 pub use action_model::{
     StartAgentExecutor, StartAgentExecutorEvent, StartAgentOutcome, StartAgentRequest,
     StartAgentRequestId,
@@ -76,17 +50,7 @@ pub(crate) use block::model::testing::FakeAIBlockModel;
 pub(crate) use block::{AIBlock, AIBlockEvent, RequestedEditResolution, init, model};
 pub use block::{keyboard_navigable_buttons, toggleable_items};
 pub use child_agent_launch::inherit_child_agent_settings;
-#[cfg(not(target_family = "wasm"))]
-#[cfg_attr(not(feature = "tui"), allow(unused_imports))]
-pub use child_agent_launch::{
-    PreparedLocalOzChildLaunch, apply_child_agent_model_override, prepare_local_oz_child_launch,
-};
-#[cfg(feature = "tui")]
-pub use context_model::PendingAttachmentSummary;
-#[cfg(not(feature = "tui"))]
 pub(crate) use context_model::block_context_from_terminal_model;
-#[cfg(feature = "tui")]
-pub use context_model::block_context_from_terminal_model;
 pub use context_model::{
     AttachmentType, BlocklistAIContextEvent, BlocklistAIContextModel, PendingAttachment,
     PendingFile,
@@ -111,27 +75,17 @@ pub(crate) use history_model::{
     PRE_REWIND_PREFIX,
 };
 // The policy types are re-exported for the TUI frontend via `tui_export`.
-#[cfg_attr(not(feature = "tui"), allow(unused_imports))]
 pub use input_mode_policy::{InputModePolicy, InputModePolicyHandle, PolicyConfigUpdate};
 pub(crate) use input_model::BlocklistAIInputEvent;
 pub use input_model::{
     BlocklistAIInputModel, InputConfig, InputType, InputTypeAutoDetectionSource,
 };
-pub(crate) use passive_suggestions::{
-    LegacyPassiveSuggestionsEvent, LegacyPassiveSuggestionsModel, MaaPassiveSuggestionsEvent,
-    MaaPassiveSuggestionsModel, PassiveSuggestionsModels,
-};
 pub use permissions::{BlocklistAIPermissions, CommandExecutionPermissionAllowedReason};
+pub(crate) use persistence::PersistedAIInput;
 #[cfg_attr(target_family = "wasm", allow(unused))]
 pub(crate) use persistence::PersistedAIInputType;
 #[cfg_attr(target_family = "wasm", allow(unused))]
 pub use persistence::maybe_build_ai_query_upsert_event;
-pub(crate) use persistence::{PersistedAIInput, SerializedBlockListItem};
-pub(crate) use queued_query::{
-    AutofireAction, QueuedQuery, QueuedQueryId, QueuedQueryOrigin, is_lrc_auto_queue_active,
-};
-#[cfg_attr(not(feature = "tui"), allow(unused_imports))]
-pub use queued_query::{QueuedQueryEvent, QueuedQueryModel};
 pub use suggestion_chip_view::*;
 pub use view_util::error_color;
 pub(crate) use view_util::{

@@ -194,12 +194,8 @@ pub(crate) fn resolve_ai_query_routing(
         };
     }
 
-    // Ordinary local pane (not a cloud/ambient or transcript pane), or a sharer running locally
-    // (e.g. a local orchestration child, `/remote-control` of a local session): local behavior.
+    // Ordinary local pane (not a cloud/ambient or transcript pane): local behavior.
     if !is_ambient && !is_transcript_viewer {
-        return AIQueryRouting::Local;
-    }
-    if status.is_active_sharer() {
         return AIQueryRouting::Local;
     }
 

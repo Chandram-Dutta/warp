@@ -59,9 +59,9 @@ use crate::appearance::Appearance;
 use crate::cmd_or_ctrl_shift;
 use crate::editor::InteractionState;
 use crate::features::FeatureFlag;
+use crate::notebooks::editor::MarkdownDisplayMode;
 use crate::notebooks::editor::find_bar::FindBarAction;
 use crate::notebooks::editor::model::word_unit;
-use crate::notebooks::file::MarkdownDisplayMode;
 use crate::notebooks::link::{LinkTarget, NotebookLinks, ResolveError};
 use crate::notebooks::telemetry::{ActionEntrypoint, BlockInfo, EmbeddedObjectInfo, SelectionMode};
 use crate::server::ids::SyncId;
@@ -72,9 +72,7 @@ use crate::ui_components::icons::ICON_DIMENSIONS;
 use crate::util::bindings::CustomAction;
 #[cfg(feature = "local_fs")]
 use crate::util::link_detection::{DetectedLinkType, detect_file_paths, get_word_range_at_offset};
-use crate::util::tooltips::{
-    TooltipLink, TooltipRedaction, render_tooltip, should_show_open_in_warp_link,
-};
+use crate::util::tooltips::{TooltipLink, TooltipRedaction, render_tooltip};
 use crate::view_components::DismissibleToast;
 use crate::workspace::WorkspaceAction;
 
@@ -864,11 +862,10 @@ pub enum EditorViewAction {
     OpenEmbeddedObjectSearch,
     RemoveEmbeddingAt(CharOffset),
     MiddleClickPaste,
-    /// Open a file. If open_in_warp is true, open in Warp's code editor; otherwise use external editor.
+    /// Open a file in the preferred editor.
     OpenFile {
         path: PathBuf,
         line_and_column_num: Option<LineAndColumnArg>,
-        force_open_in_warp: bool,
     },
     /// Signal from a Mermaid toggle view that the user changed the display mode for a block.
     MermaidDisplayModeSelected {
@@ -943,7 +940,6 @@ pub enum EditorViewEvent {
     OpenFile {
         path: PathBuf,
         line_and_column_num: Option<LineAndColumnArg>,
-        force_open_in_warp: bool,
     },
     /// Emitted when the user runs a notebook workflow. The parent `NotebookView` is responsible
     /// for sending it to the active terminal.
@@ -1024,7 +1020,6 @@ struct SelectedFilePath {
 #[derive(Default)]
 struct FilePathMouseStateHandles {
     open_file_handle: MouseStateHandle,
-    open_in_warp_handle: MouseStateHandle,
 }
 
 pub struct RichTextEditorView {
@@ -1945,7 +1940,6 @@ impl RichTextEditorView {
                 ctx.emit(EditorViewEvent::OpenFile {
                     path: hovered_file_path.path.clone(),
                     line_and_column_num: hovered_file_path.line_and_column_num,
-                    force_open_in_warp: false,
                 });
             } else {
                 self.open_file_path = Some(hovered_file_path.clone());
@@ -2526,38 +2520,20 @@ impl RichTextEditorView {
             "Open file"
         }
         .to_string();
-        let show_open_in_warp = should_show_open_in_warp_link(&path, ctx);
         let path_for_primary = path.clone();
         let modifier = directly_open_link_keybinding_string();
 
-        let mut links: FilePathTooltipLinks = vec![TooltipLink {
+        let links: FilePathTooltipLinks = vec![TooltipLink {
             text: primary_text,
             on_click: Box::new(move |ctx: &mut EventContext| {
                 ctx.dispatch_typed_action(EditorViewAction::OpenFile {
                     path: path_for_primary.clone(),
                     line_and_column_num,
-                    force_open_in_warp: false,
                 });
             }),
             detail: Some(format!("[{modifier} Click]")),
             mouse_state: self.file_path_mouse_states.open_file_handle.clone(),
         }];
-
-        if show_open_in_warp {
-            let path_for_warp = path.clone();
-            links.push(TooltipLink {
-                text: "Open in Warp".to_string(),
-                on_click: Box::new(move |ctx: &mut EventContext| {
-                    ctx.dispatch_typed_action(EditorViewAction::OpenFile {
-                        path: path_for_warp.clone(),
-                        line_and_column_num,
-                        force_open_in_warp: true,
-                    });
-                }),
-                detail: None,
-                mouse_state: self.file_path_mouse_states.open_in_warp_handle.clone(),
-            });
-        }
 
         let tooltip_content = render_tooltip(links, TooltipRedaction::NoRedaction, appearance, ctx);
 
@@ -3106,12 +3082,10 @@ impl TypedActionView for RichTextEditorView {
             OpenFile {
                 path,
                 line_and_column_num,
-                force_open_in_warp,
             } => {
                 ctx.emit(EditorViewEvent::OpenFile {
                     path: path.clone(),
                     line_and_column_num: *line_and_column_num,
-                    force_open_in_warp: *force_open_in_warp,
                 });
             }
         }

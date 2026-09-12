@@ -11,10 +11,9 @@ use super::model_events::ModelEventDispatcher;
 use super::terminal_manager::BlockSpacing;
 use super::{ShellLaunchState, TerminalManager, TerminalModel, TerminalView};
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
-use crate::ai::blocklist::SerializedBlockListItem;
 use crate::context_chips::prompt_type::PromptType;
 use crate::pane_group::TerminalViewResources;
-use crate::terminal::view::ConversationRestorationInNewPaneType;
+use crate::terminal::model::block::SerializedBlock;
 
 pub struct MockTerminalManager {
     model: Arc<FairMutex<TerminalModel>>,
@@ -29,8 +28,7 @@ impl MockTerminalManager {
     pub fn create_model(
         shell_state: ShellLaunchState,
         resources: TerminalViewResources,
-        restored_blocks: Option<&Vec<SerializedBlockListItem>>,
-        conversation_restoration: Option<ConversationRestorationInNewPaneType>,
+        restored_blocks: Option<&Vec<SerializedBlock>>,
         initial_size: Vector2F,
         window_id: WindowId,
         ctx: &mut AppContext,
@@ -55,8 +53,7 @@ impl MockTerminalManager {
         let colors = model.colors();
         let model = Arc::new(FairMutex::new(model));
 
-        let sessions: ModelHandle<Sessions> =
-            ctx.add_model(|ctx| Sessions::new(executor_command_tx, ctx));
+        let sessions: ModelHandle<Sessions> = ctx.add_model(|_| Sessions::new(executor_command_tx));
         let model_events_dispatcher =
             ctx.add_model(|ctx| ModelEventDispatcher::new(events_rx, sessions.clone(), ctx));
 
@@ -76,9 +73,6 @@ impl MockTerminalManager {
                 None,
                 prompt_type,
                 None,
-                // We use conversation restoration to load a view-only cloud conversation
-                // into the web view.
-                conversation_restoration,
                 None, // inactive_pty_reads_rx
                 false,
                 ctx,
@@ -143,7 +137,6 @@ mod testing {
     use warpui::{App, Element, SingletonEntity};
 
     use super::*;
-    use crate::server::server_api::ServerApiProvider;
     use crate::terminal::ShellLaunchState;
     use crate::terminal::shell::{ShellName, ShellType};
 
@@ -172,15 +165,13 @@ mod testing {
     impl MockTerminalManager {
         pub fn create_new_terminal_view_window_for_test(
             app: &mut App,
-            restored_blocks: Option<&[SerializedBlockListItem]>,
+            restored_blocks: Option<&[SerializedBlock]>,
         ) -> ViewHandle<TerminalView> {
-            let server_api = app.read(|ctx| ServerApiProvider::as_ref(ctx).get());
             let tips_model = app.add_model(|_| Default::default());
 
             let (window_id, _) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
                 let resources = TerminalViewResources {
                     tips_completed: tips_model,
-                    server_api,
                     model_event_sender: None,
                 };
                 let terminal_init = MockTerminalManager::create_model(
@@ -191,7 +182,6 @@ mod testing {
                     },
                     resources,
                     restored_blocks.map(|blocks| blocks.to_vec()).as_ref(),
-                    None,
                     Vector2F::new(7., 10.5),
                     ctx.window_id(),
                     ctx,

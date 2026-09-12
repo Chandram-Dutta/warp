@@ -2,14 +2,12 @@ use session_sharing_protocol::common::{Role, WindowSize};
 use warpui::elements::MouseStateHandle;
 use warpui::{ViewContext, ViewHandle};
 
-use super::adapter::Participant;
 use crate::menu::{Menu, MenuItem, MenuItemFields};
 use crate::pane_group::{PaneHeaderAction, PaneHeaderCustomAction};
 use crate::terminal::view::{TerminalAction, TerminalView};
 use crate::ui_components::icons::Icon;
 
 pub struct Viewer {
-    pub sharer: Option<Participant>,
     pub is_reconnecting: bool,
     pub is_role_change_menu_open: bool,
 
@@ -19,8 +17,6 @@ pub struct Viewer {
     pub role_change_menu_button: MouseStateHandle,
     /// The handle for the "Request edit access" button for viewers.
     pub input_request_edit_access_button_handle: MouseStateHandle,
-    /// The viewer has a pending role request.
-    pub pending_role_request: bool,
 
     pub sharer_size: Option<WindowSize>,
 
@@ -40,10 +36,8 @@ impl Viewer {
             is_reconnecting: false,
             is_role_change_menu_open: false,
             role_change_menu,
-            sharer: None,
             role_change_menu_button: Default::default(),
             input_request_edit_access_button_handle: Default::default(),
-            pending_role_request: false,
             sharer_size: None,
             last_reported_natural_size: None,
         }

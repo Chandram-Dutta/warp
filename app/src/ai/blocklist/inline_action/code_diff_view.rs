@@ -20,9 +20,8 @@ use warp_core::features::FeatureFlag;
 use warp_core::platform::SessionPlatform;
 use warp_core::settings::ToggleableSetting;
 use warp_core::ui::appearance::Appearance;
-use warp_core::ui::color::CLAUDE_ORANGE;
 use warp_core::ui::theme::Fill;
-use warp_core::ui::theme::color::internal_colors::{fg_overlay_6, neutral_1, neutral_4};
+use warp_core::ui::theme::color::internal_colors::{neutral_1, neutral_4};
 use warp_editor::content::buffer::InitialBufferState;
 use warp_editor::render::element::VerticalExpansionBehavior;
 use warp_errors::report_error;
@@ -69,23 +68,12 @@ use crate::ai::blocklist::inline_action::inline_action_icons::{
     cancelled_icon, green_check_icon, icon_size, reverted_icon,
 };
 use crate::ai::blocklist::model::{AIBlockModel, AIBlockModelHelper};
-use crate::ai::blocklist::view_util::render_provider_icon_button;
-use crate::ai::mcp::{MCPProvider, mcp_provider_from_file_path};
 use crate::ai::paths::host_native_absolute_path;
-use crate::ai::predict::prompt_suggestions::ACCEPT_PROMPT_SUGGESTION_KEYBINDING;
-use crate::ai::skills::{
-    SkillManager, SkillOpenOrigin, SkillReference, SkillTelemetryEvent,
-    icon_override_for_skill_name, render_skill_button, skill_path_from_location,
-};
 use crate::code::diff_viewer::{DiffViewer, DisplayMode};
 use crate::code::editor::view::{CodeEditorEvent, CodeEditorRenderOptions, CodeEditorView};
 use crate::code::editor::{add_color, remove_color};
 use crate::code::inline_diff::{InlineDiffView, InlineDiffViewEvent};
-use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
 use crate::menu::{Event as MenuEvent, Menu, MenuItemFields, MenuVariant};
-use crate::pane_group::focus_state::PaneFocusHandle;
-use crate::pane_group::pane::{PaneId, view};
-use crate::pane_group::{BackingView, PaneEvent};
 use crate::server::telemetry::{
     AgentModeCodeFileNavigationSource, ToggleCodeSuggestionsSettingSource,
 };
@@ -209,9 +197,7 @@ struct CodeDiffViewMouseStates {
     scroll_icon_button: MouseStateHandle,
     passive_code_suggestion_checkbox: MouseStateHandle,
     ai_settings_link_highlight_index: HighlightedHyperlink,
-    skill_button_handle: MouseStateHandle,
     stats_badge_button: MouseStateHandle,
-    mcp_config_button_handle: MouseStateHandle,
 }
 
 #[derive(Debug, Clone)]
@@ -219,10 +205,6 @@ pub enum CodeDiffViewEvent {
     TryAccept,
     EnableAutoexecuteMode,
     Rejected,
-    Pane(PaneEvent),
-    EditModeChanged {
-        enabled: bool,
-    },
     ToggledEditVisibility,
     TextSelected,
     CopiedEmptyText,
@@ -235,22 +217,9 @@ pub enum CodeDiffViewEvent {
     ContinuePassiveCodeDiffWithAgent {
         accepted: bool,
     },
-    ToggleCodeReviewPane {
-        entrypoint: CodeReviewPaneEntrypoint,
-    },
     /// Emitted when candidate diffs are loaded and ready to display.
     /// Used to trigger AIBlock height recalculation for passive code diffs.
     LoadedDiffs,
-    /// Emitted when the user opens a skill file from a code diff
-    OpenSkill {
-        reference: SkillReference,
-        path: LocalOrRemotePath,
-    },
-    /// Emitted when the user opens an MCP config file from a code diff
-    OpenMCPConfig {
-        provider: MCPProvider,
-        path: PathBuf,
-    },
 }
 
 #[derive(Clone, Debug)]
@@ -310,18 +279,7 @@ pub enum CodeDiffViewAction {
     ToggleCodeSuggestions,
     OpenSettings,
     ToggleAcceptMenu,
-    OpenCodeReviewPane,
     RevertChanges,
-    OpenSkill {
-        reference: SkillReference,
-        path: LocalOrRemotePath,
-        mouse_state: MouseStateHandle,
-    },
-    OpenMCPConfig {
-        provider: MCPProvider,
-        path: PathBuf,
-        mouse_state: MouseStateHandle,
-    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -385,7 +343,6 @@ pub struct CodeDiffView {
     accept_and_autoexecute_split_button: CompactibleSplitActionButton,
     is_accept_split_button_menu_open: bool,
     accept_split_button_menu: ViewHandle<Menu<CodeDiffViewAction>>,
-    code_review_button: ViewHandle<ActionButton>,
     expansion_button_collapsed: ViewHandle<ActionButton>,
     expansion_button_expanded: ViewHandle<ActionButton>,
     state: CodeDiffState,
@@ -393,16 +350,12 @@ pub struct CodeDiffView {
     selected_tab: usize,
     display_mode: DisplayMode,
     title: Option<String>,
-    focus_handle: Option<PaneFocusHandle>,
     /// Client and server identifiers for the AI output associated with the code diffs.
     identifiers: AIIdentifiers,
     edit_format_kind: RequestFileEditsFormatKind,
     /// `False` until a user makes the first edit to one of the diffs in the view.
     #[cfg_attr(target_family = "wasm", allow(dead_code))]
     user_edited_file_contents: bool,
-    /// The ID of the pane that opened this code diff view.
-    /// Used to return to the original pane after editing.
-    original_pane_id: Option<PaneId>,
     /// A randomly-generated string prefix to ensure the [`SavePosition`]s in this view are unique.
     position_id_prefix: String,
     /// Whether this code diff is a passive code suggestion.
@@ -780,18 +733,6 @@ impl CodeDiffView {
             MenuEvent::ItemSelected | MenuEvent::ItemHovered => {}
         });
 
-        let code_review_button = ctx.add_typed_action_view(|ctx| {
-            ActionButton::new("", NakedTheme)
-                .with_icon(Icon::Diff)
-                .with_tooltip("Review changes")
-                .with_width(icon_size(ctx))
-                .with_height(icon_size(ctx))
-                .on_click(|ctx| {
-                    ctx.dispatch_typed_action(CodeDiffViewAction::OpenCodeReviewPane);
-                    ctx.notify();
-                })
-        });
-
         let expansion_button_collapsed = ctx.add_typed_action_view(|ctx| {
             ActionButton::new("", NakedTheme)
                 .with_icon(Icon::ChevronRight)
@@ -826,7 +767,6 @@ impl CodeDiffView {
             accept_and_autoexecute_split_button,
             is_accept_split_button_menu_open: false,
             accept_split_button_menu: accept_menu,
-            code_review_button,
             expansion_button_collapsed,
             expansion_button_expanded,
             state: initial_state,
@@ -834,11 +774,9 @@ impl CodeDiffView {
             selected_tab: 0,
             display_mode,
             title,
-            focus_handle: None,
             identifiers,
             edit_format_kind,
             user_edited_file_contents: false,
-            original_pane_id: None,
             scrollable_state: Default::default(),
             position_id_prefix,
             is_passive,
@@ -975,7 +913,7 @@ impl CodeDiffView {
         }
 
         if self.display_mode().is_inline_banner() {
-            self.set_embedded_display_mode(true, ctx);
+            self.set_embedded_display_mode(ctx);
         }
 
         ctx.emit(CodeDiffViewEvent::TryAccept);
@@ -1086,18 +1024,9 @@ impl CodeDiffView {
         ctx.notify();
     }
 
-    /// If this view is in full pane mode, close the pane and adjust the settings
-    /// so this view can be displayed in the blocklist.
     fn minimize(&mut self, ctx: &mut ViewContext<Self>) {
-        if self.display_mode().is_full_pane() {
-            self.set_embedded_display_mode(true, ctx);
-            if let Some(original_pane_id) = self.original_pane_id {
-                self.close_and_focus(original_pane_id, ctx);
-            } else {
-                self.close(ctx);
-            }
-        } else if self.display_mode().is_inline_banner() {
-            self.set_embedded_display_mode(true, ctx);
+        if self.display_mode().is_inline_banner() {
+            self.set_embedded_display_mode(ctx);
         }
     }
 
@@ -1109,11 +1038,10 @@ impl CodeDiffView {
         }
 
         if self.display_mode().is_inline_banner() {
-            self.set_embedded_display_mode(true, ctx);
+            self.set_embedded_display_mode(ctx);
         }
 
         ctx.emit(CodeDiffViewEvent::ViewDetails);
-        self.set_edit_mode(true, ctx);
 
         // After opening for edit, focus the embedded editor so it is active by default.
         if let Some(current) = self.pending_diffs.get(self.selected_tab) {
@@ -1121,12 +1049,6 @@ impl CodeDiffView {
                 v.editor().update(ctx, |editor, ctx| editor.focus(ctx));
             });
         }
-    }
-
-    pub fn set_edit_mode(&mut self, enabled: bool, ctx: &mut ViewContext<Self>) {
-        ctx.emit(CodeDiffViewEvent::EditModeChanged { enabled });
-        ctx.focus_self();
-        ctx.notify();
     }
 
     pub fn is_expanded(&self) -> bool {
@@ -1465,18 +1387,7 @@ impl CodeDiffView {
         if total_added > 0 || total_removed > 0 {
             let stats_badge =
                 self.render_code_header_line_stats(total_added, total_removed, appearance);
-            // Wrap the stats badge in a clickable element that opens code review.
-            let clickable_stats =
-                Hoverable::new(self.button_mouse_states.stats_badge_button.clone(), |_| {
-                    stats_badge
-                })
-                .on_click(|ctx, _, _| {
-                    ctx.dispatch_typed_action(CodeDiffViewAction::OpenCodeReviewPane);
-                })
-                .with_cursor(Cursor::PointingHand)
-                .with_defer_events_to_children()
-                .finish();
-            left_content_row.add_child(clickable_stats);
+            left_content_row.add_child(stats_badge);
         }
 
         header_row.add_child(
@@ -1488,119 +1399,9 @@ impl CodeDiffView {
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Min);
 
-        let file_locations: Vec<LocalOrRemotePath> = self
-            .pending_diffs
-            .iter()
-            .filter_map(|diff| {
-                self.location_for_standardized_path(diff.diff_view.as_ref(app).file_path()?)
-            })
-            .collect();
-
-        // Renders the 'open skill' button only if every edited file lives in the same skill directory.
-        let skill_paths = file_locations
-            .iter()
-            .map(skill_path_from_location)
-            .collect::<Option<Vec<_>>>();
-        let skill = skill_paths.and_then(|skill_paths| {
-            let first_path = skill_paths.first()?;
-            skill_paths
-                .iter()
-                .all(|path| path == first_path)
-                .then(|| SkillManager::as_ref(app).skill_by_path(first_path))
-                .flatten()
-        });
-        if let Some(skill) = skill {
-            let skill_path = skill.path.clone();
-            let skill_reference = SkillManager::handle(app)
-                .as_ref(app)
-                .reference_for_skill_path(&skill_path);
-            let skill_button_handle = self.button_mouse_states.skill_button_handle.clone();
-
-            let skill_icon_override = icon_override_for_skill_name(&skill.name);
-            let skill_button = render_skill_button(
-                format!("/{}", skill.name).as_str(),
-                skill_button_handle.clone(),
-                appearance,
-                skill.provider,
-                skill_icon_override,
-                move |ctx| {
-                    ctx.dispatch_typed_action(CodeDiffViewAction::OpenSkill {
-                        reference: skill_reference.clone(),
-                        path: skill_path.clone(),
-                        mouse_state: skill_button_handle.clone(),
-                    });
-                },
-            );
-            right_side_row.add_child(
-                Container::new(skill_button)
-                    .with_margin_right(HEADER_MARGIN)
-                    .finish(),
-            );
-        }
-
-        // Renders the 'open config' button only when every MCP config file in this diff
-        // belongs to the same provider. Mixed-provider diffs (e.g. editing both a Claude
-        // config and a Warp config at once) show no badge to avoid misleading attribution.
-        // MCP config actions currently operate on local paths only.
-        let local_file_paths: Vec<PathBuf> = file_locations
-            .iter()
-            .filter_map(|path| path.to_local_path().map(Path::to_path_buf))
-            .collect();
-        let mcp_configs: Vec<_> = local_file_paths
-            .iter()
-            .filter_map(|path| {
-                mcp_provider_from_file_path(path).map(|provider| (provider, path.to_path_buf()))
-            })
-            .collect();
-        let mcp_config = mcp_configs
-            .first()
-            .and_then(|(first_provider, first_path)| {
-                mcp_configs
-                    .iter()
-                    .all(|(p, _)| p == first_provider)
-                    .then(|| (*first_provider, first_path.clone()))
-            });
-        if let Some((provider, config_path)) = mcp_config {
-            let mcp_button_handle = self.button_mouse_states.mcp_config_button_handle.clone();
-            let icon = provider.icon();
-            let color = if provider == MCPProvider::Claude {
-                Fill::Solid(CLAUDE_ORANGE)
-            } else {
-                fg_overlay_6(appearance.theme())
-            };
-            let mcp_config_button = render_provider_icon_button(
-                "Open config",
-                mcp_button_handle.clone(),
-                appearance,
-                icon,
-                color,
-                move |ctx| {
-                    ctx.dispatch_typed_action(CodeDiffViewAction::OpenMCPConfig {
-                        provider,
-                        path: config_path.clone(),
-                        mouse_state: mcp_button_handle.clone(),
-                    });
-                },
-            );
-            right_side_row.add_child(
-                Container::new(mcp_config_button)
-                    .with_margin_right(HEADER_MARGIN)
-                    .finish(),
-            );
-        }
-
         if matches!(self.state, CodeDiffState::WaitingForUser) {
             right_side_row.add_child(action_buttons);
         } else {
-            // Don't show the code review button for viewers of shared sessions
-            if !matches!(self.state, CodeDiffState::ViewOnly { .. }) {
-                right_side_row.add_child(
-                    Container::new(ChildView::new(&self.code_review_button).finish())
-                        .with_margin_right(HEADER_MARGIN)
-                        .finish(),
-                );
-            }
-
             let expansion_button = if is_expanded {
                 &self.expansion_button_expanded
             } else {
@@ -2101,16 +1902,8 @@ impl CodeDiffView {
         ctx.notify();
     }
 
-    /// Set whether this view is being displayed in a full pane or not.
-    pub fn set_embedded_display_mode(&mut self, embedded: bool, ctx: &mut ViewContext<Self>) {
-        self.set_display_mode(
-            if embedded {
-                DisplayMode::with_embedded(MAX_EDITOR_HEIGHT)
-            } else {
-                DisplayMode::FullPane
-            },
-            ctx,
-        );
+    pub fn set_embedded_display_mode(&mut self, ctx: &mut ViewContext<Self>) {
+        self.set_display_mode(DisplayMode::with_embedded(MAX_EDITOR_HEIGHT), ctx);
     }
 
     pub fn expand_inline_banner(&mut self, ctx: &mut ViewContext<Self>) {
@@ -2254,16 +2047,6 @@ impl CodeDiffView {
                 ctx
             );
         }
-    }
-
-    pub fn set_original_pane_id(&mut self, original_pane_id: Option<PaneId>) {
-        self.original_pane_id = original_pane_id;
-    }
-
-    fn close_and_focus(&self, pane_to_focus: PaneId, ctx: &mut ViewContext<Self>) {
-        ctx.emit(CodeDiffViewEvent::Pane(PaneEvent::CloseAndFocus {
-            pane_to_focus,
-        }));
     }
 
     pub fn title(&self) -> Option<&str> {
@@ -2617,7 +2400,7 @@ impl TypedActionView for CodeDiffView {
             }
             CodeDiffViewAction::Minimize => {
                 self.minimize(ctx);
-                self.set_edit_mode(false, ctx);
+                ctx.focus_self();
                 ctx.notify();
             }
             CodeDiffViewAction::NavigateToDiffHunk(direction) => {
@@ -2656,59 +2439,8 @@ impl TypedActionView for CodeDiffView {
             CodeDiffViewAction::OpenSettings => {
                 ctx.emit(CodeDiffViewEvent::OpenSettings);
             }
-            CodeDiffViewAction::OpenCodeReviewPane => {
-                self.code_review_button.update(ctx, |_, ctx| {
-                    ctx.notify();
-                });
-                ctx.emit(CodeDiffViewEvent::ToggleCodeReviewPane {
-                    entrypoint: CodeReviewPaneEntrypoint::CodeDiffHeader,
-                });
-                ctx.notify();
-            }
             CodeDiffViewAction::RevertChanges => {
                 self.revert_changes(ctx);
-            }
-            CodeDiffViewAction::OpenSkill {
-                reference,
-                path,
-                mouse_state,
-            } => {
-                // Sends a telemetry event when a skill is opened from a code diff view
-                send_telemetry_from_ctx!(
-                    SkillTelemetryEvent::Opened {
-                        reference: reference.clone(),
-                        name: SkillManager::as_ref(ctx)
-                            .skill_by_reference(reference)
-                            .map(|skill| skill.name.clone()),
-                        origin: SkillOpenOrigin::EditFiles,
-                    },
-                    ctx
-                );
-
-                // Resets the interaction state of the skill button to avoid an immediate re-hover
-                if let Ok(mut state) = mouse_state.lock() {
-                    state.reset_interaction_state();
-                }
-
-                ctx.emit(CodeDiffViewEvent::OpenSkill {
-                    reference: reference.clone(),
-                    path: path.clone(),
-                });
-            }
-            CodeDiffViewAction::OpenMCPConfig {
-                provider,
-                path,
-                mouse_state,
-            } => {
-                // Resets the interaction state of the button to avoid an immediate re-hover
-                if let Ok(mut state) = mouse_state.lock() {
-                    state.reset_interaction_state();
-                }
-
-                ctx.emit(CodeDiffViewEvent::OpenMCPConfig {
-                    provider: *provider,
-                    path: path.clone(),
-                });
             }
         }
     }
@@ -2993,68 +2725,8 @@ impl DiffStorage for CodeDiffView {
     }
 }
 
-impl BackingView for CodeDiffView {
-    type PaneHeaderOverflowMenuAction = CodeDiffViewAction;
-    type CustomAction = ();
-    type AssociatedData = ();
-
-    fn handle_pane_header_overflow_menu_action(
-        &mut self,
-        action: &Self::PaneHeaderOverflowMenuAction,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        self.handle_action(action, ctx);
-    }
-
-    fn close(&mut self, ctx: &mut ViewContext<Self>) {
-        ctx.emit(CodeDiffViewEvent::Pane(PaneEvent::Close));
-    }
-
-    fn handle_custom_action(
-        &mut self,
-        _custom_action: &Self::CustomAction,
-        _ctx: &mut ViewContext<Self>,
-    ) {
-    }
-
-    fn focus_contents(&mut self, ctx: &mut ViewContext<Self>) {
-        ctx.focus_self();
-    }
-
-    fn render_header_content(
-        &self,
-        _ctx: &view::HeaderRenderContext<'_>,
-        _app: &AppContext,
-    ) -> view::HeaderContent {
-        // Code diffs should show "Requested Edit" as the title and hide the close button
-        // since they are closed via accept/reject actions.
-        view::HeaderContent::Standard(view::StandardHeader {
-            title: "Requested Edit".to_string(),
-            title_secondary: None,
-            title_style: None,
-            title_clip_config: warpui::text_layout::ClipConfig::start(),
-            title_max_width: None,
-            left_of_title: None,
-            right_of_title: None,
-            left_of_overflow: None,
-            options: view::StandardHeaderOptions {
-                hide_close_button: true,
-                ..Default::default()
-            },
-        })
-    }
-
-    fn set_focus_handle(&mut self, focus_handle: PaneFocusHandle, _ctx: &mut ViewContext<Self>) {
-        self.focus_handle = Some(focus_handle);
-    }
-}
-
 fn accept_keystroke_source(is_passive: bool) -> KeystrokeSource {
-    if FeatureFlag::AgentView.is_enabled() && is_passive {
-        KeystrokeSource::Binding(ACCEPT_PROMPT_SUGGESTION_KEYBINDING)
-    } else {
-        KeystrokeSource::Fixed(keystroke_for_mode(ACCEPT_KEY, is_passive))
-    }
+    KeystrokeSource::Fixed(keystroke_for_mode(ACCEPT_KEY, is_passive))
 }
 
 /// Returns a keystroke based on key, OS, and passive state.

@@ -28,7 +28,6 @@ use warp_graphql::billing::{
 use warp_graphql::queries::get_conversation_usage as gql_usage;
 use warp_graphql::queries::get_workspaces_metadata_for_user::User as GqlUser;
 use warp_graphql::subscriptions::get_warp_drive_updates::WarpDriveUpdate;
-use warp_graphql::user::DiscoverableTeamData as GqlDiscoverableTeamData;
 use warp_graphql::workspace::{
     AddonCreditsSettings as GqlAddonCreditsSettings,
     AdminEnablementSetting as GqlAdminEnablementSetting, AiAutonomyValue as GqlAiAutonomyValue,
@@ -48,7 +47,7 @@ use warp_graphql::workspace::{
     WriteToPtyAutonomyValue as GqlWriteToPtyAutonomyValue,
 };
 
-use super::team::{DiscoverableTeam, MembershipRole, Team, TeamMember, TeamVisibility};
+use super::team::{MembershipRole, Team, TeamMember, TeamVisibility};
 use super::user_workspaces::WorkspacesMetadataResponse;
 use super::workspace::{
     AIAutonomyPolicy, AddonCreditsSettings, AdminEnablementSetting, AiAutonomySettings,
@@ -1444,13 +1443,6 @@ impl From<GqlUser> for WorkspacesMetadataResponse {
             })
             .collect();
 
-        let joinable_teams = gql_user
-            .discoverable_teams
-            .clone()
-            .into_iter()
-            .map(|gql_joinable_team| gql_joinable_team.into())
-            .collect();
-
         let experiments = gql_user
             .experiments
             .and_then(|experiments| convert_to_server_experiment!(experiments));
@@ -1468,7 +1460,6 @@ impl From<GqlUser> for WorkspacesMetadataResponse {
         // TODO(skambashi) refactor to return back workspaces, and not teams
         WorkspacesMetadataResponse {
             workspaces,
-            joinable_teams,
             experiments,
             feature_model_choices,
             ai_credit_availability: Some(gql_user.ai_credit_availability.into()),
@@ -1526,16 +1517,5 @@ pub fn object_update_message_from_gql(value: WarpDriveUpdate) -> Result<ObjectUp
             })
         }
         WarpDriveUpdate::Unknown => bail!("Unexpected WarpDriveUpdate variant"),
-    }
-}
-
-impl From<GqlDiscoverableTeamData> for DiscoverableTeam {
-    fn from(gql_discoverable_team: GqlDiscoverableTeamData) -> DiscoverableTeam {
-        Self {
-            team_uid: gql_discoverable_team.team_uid.into_inner(),
-            num_members: i64::from(gql_discoverable_team.num_members),
-            name: gql_discoverable_team.name,
-            team_accepting_invites: gql_discoverable_team.team_accepting_invites,
-        }
     }
 }

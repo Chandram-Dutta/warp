@@ -9,7 +9,6 @@ pub mod block;
 pub mod block_filtering;
 pub mod clipboard;
 pub mod cloud_object;
-pub mod code_review;
 pub mod codebase_context;
 pub mod command_palette;
 pub mod command_search;
@@ -25,7 +24,6 @@ pub mod pane_group;
 pub mod persistence;
 #[cfg(target_os = "macos")]
 pub mod preview_config_migration;
-pub mod remote_server;
 pub mod rules;
 pub mod secret_redaction;
 pub mod settings;

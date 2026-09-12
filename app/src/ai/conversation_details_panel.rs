@@ -641,19 +641,7 @@ pub enum ConversationDetailsPanelAction {
     CopyInitialQuery,
     Focus,
     CopySelectedText,
-    #[cfg(not(target_family = "wasm"))]
-    ContinueLocally,
     OpenInOz,
-}
-
-#[cfg(not(target_family = "wasm"))]
-#[derive(Debug)]
-enum DetailsPanelLocalContinuationInfo {
-    Conversation(AIConversationId),
-    ThirdPartyTask {
-        task_id: AmbientAgentTaskId,
-        harness: AIAgentHarness,
-    },
 }
 
 pub fn init(app: &mut AppContext) {
@@ -678,9 +666,6 @@ pub struct ConversationDetailsPanel {
     /// Whether to show the "Open conversation" button (we don't want to show a navigate to
     /// conversation button in the transcript view, but do in the management details view).
     show_open_button: bool,
-    #[cfg(not(target_family = "wasm"))]
-    continue_locally_button: ViewHandle<ActionButton>,
-    /// Text button "View in Oz" shown next to "Continue locally".
     open_in_oz_button: ViewHandle<ActionButton>,
     /// Tracks when each copy button was last clicked (for checkmark feedback).
     copy_feedback_times: HashMap<CopyButtonKind, Instant>,
@@ -712,15 +697,6 @@ impl ConversationDetailsPanel {
         let action_buttons = ctx.add_typed_action_view(ConversationActionButtonsRow::new);
         ctx.subscribe_to_view(&action_buttons, Self::handle_action_buttons_event);
 
-        #[cfg(not(target_family = "wasm"))]
-        let continue_locally_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Continue locally", PrimaryTheme)
-                .with_tooltip("Fork this conversation locally")
-                .with_size(ButtonSize::Small)
-                .on_click(|ctx| {
-                    ctx.dispatch_typed_action(ConversationDetailsPanelAction::ContinueLocally);
-                })
-        });
         let open_in_oz_button = ctx.add_typed_action_view(|_| {
             ActionButton::new("View in Oz", SecondaryTheme)
                 .with_tooltip("View this run in the Oz web app")
@@ -742,8 +718,6 @@ impl ConversationDetailsPanel {
             artifact_buttons_row,
             action_buttons,
             show_open_button,
-            #[cfg(not(target_family = "wasm"))]
-            continue_locally_button,
             open_in_oz_button,
             resizable_state_handle: resizable_state_handle(initial_width),
             scroll_state: ClippedScrollStateHandle::default(),
@@ -841,66 +815,6 @@ impl ConversationDetailsPanel {
         match &self.data.mode {
             PanelMode::Task { display_status, .. } => display_status.clone(),
             PanelMode::Conversation { .. } => None,
-        }
-    }
-
-    #[cfg(not(target_family = "wasm"))]
-    fn local_continuation_info(
-        &self,
-        app: &AppContext,
-    ) -> Option<DetailsPanelLocalContinuationInfo> {
-        if !AISettings::as_ref(app).is_any_ai_enabled(app) {
-            return None;
-        }
-
-        match &self.data.mode {
-            PanelMode::Conversation {
-                ai_conversation_id,
-                status,
-                ..
-            } => {
-                let status = status.as_ref()?;
-                if status.is_in_progress() {
-                    return None;
-                }
-                Some(DetailsPanelLocalContinuationInfo::Conversation(
-                    *ai_conversation_id.as_ref()?,
-                ))
-            }
-            PanelMode::Task {
-                task_id,
-                display_status,
-                conversation_id,
-                ..
-            } => {
-                let status = display_status.as_ref()?;
-                if status.is_working() {
-                    return None;
-                }
-
-                match self.data.harness {
-                    Some(Harness::Claude) => {
-                        Some(DetailsPanelLocalContinuationInfo::ThirdPartyTask {
-                            task_id: *task_id.as_ref()?,
-                            harness: AIAgentHarness::ClaudeCode,
-                        })
-                    }
-                    Some(Harness::Codex) => {
-                        Some(DetailsPanelLocalContinuationInfo::ThirdPartyTask {
-                            task_id: *task_id.as_ref()?,
-                            harness: AIAgentHarness::Codex,
-                        })
-                    }
-                    Some(Harness::Oz) | None => {
-                        let server_token =
-                            ServerConversationToken::new(conversation_id.as_ref()?.clone());
-                        BlocklistAIHistoryModel::as_ref(app)
-                            .find_conversation_id_by_server_token(&server_token)
-                            .map(DetailsPanelLocalContinuationInfo::Conversation)
-                    }
-                    Some(Harness::Gemini | Harness::OpenCode | Harness::Unknown) => None,
-                }
-            }
         }
     }
 
@@ -2045,25 +1959,14 @@ impl View for ConversationDetailsPanel {
             .with_main_axis_size(MainAxisSize::Max)
             .with_main_axis_alignment(MainAxisAlignment::End)
             .with_cross_axis_alignment(CrossAxisAlignment::Center);
-        // Add continue locally button (left-aligned) and action icon buttons (right-aligned).
         let has_action_buttons = !self.action_buttons.as_ref(app).is_empty();
 
-        #[cfg(not(target_family = "wasm"))]
-        let has_local_continuation_info = self.local_continuation_info(app).is_some();
-        #[cfg(target_family = "wasm")]
-        let has_local_continuation_info = false;
         let has_oz_url = Self::oz_run_url(&self.data).is_some();
 
-        if has_local_continuation_info || has_oz_url {
+        if has_oz_url {
             let mut buttons_wrap = Wrap::row().with_spacing(8.).with_run_spacing(8.);
 
-            #[cfg(not(target_family = "wasm"))]
-            if has_local_continuation_info {
-                buttons_wrap.add_child(ChildView::new(&self.continue_locally_button).finish());
-            }
-            if has_oz_url {
-                buttons_wrap.add_child(ChildView::new(&self.open_in_oz_button).finish());
-            }
+            buttons_wrap.add_child(ChildView::new(&self.open_in_oz_button).finish());
 
             header_row.add_child(
                 Expanded::new(
@@ -2505,30 +2408,7 @@ impl TypedActionView for ConversationDetailsPanel {
                     ctx.clipboard().write(ClipboardContent::plain_text(text));
                 }
             }
-            #[cfg(not(target_family = "wasm"))]
-            ConversationDetailsPanelAction::ContinueLocally => {
-                if let Some(continuation_info) = self.local_continuation_info(ctx) {
-                    send_telemetry_from_ctx!(
-                        AgentManagementTelemetryEvent::DetailsPanelContinueLocally,
-                        ctx
-                    );
-                    match continuation_info {
-                        DetailsPanelLocalContinuationInfo::Conversation(conversation_id) => {
-                            ctx.dispatch_typed_action(
-                                &WorkspaceAction::ContinueConversationLocally { conversation_id },
-                            );
-                        }
-                        DetailsPanelLocalContinuationInfo::ThirdPartyTask { task_id, harness } => {
-                            ctx.dispatch_typed_action(
-                                &WorkspaceAction::ContinueThirdPartyConversationLocally {
-                                    task_id,
-                                    harness,
-                                },
-                            );
-                        }
-                    }
-                }
-            }
+
             ConversationDetailsPanelAction::OpenInOz => {
                 if let Some(url) = Self::oz_run_url(&self.data) {
                     ctx.open_url(&url);

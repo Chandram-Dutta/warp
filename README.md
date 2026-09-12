@@ -72,11 +72,11 @@ Once filed, a Warp maintainer reviews the issue and may apply a readiness label:
 
 ### Building the Repo Locally
 
-To build and run Warp from source:
+To build and run the local-only Warp GUI from source:
 
 ```bash
 ./script/bootstrap   # platform-specific setup
-./script/run         # build and run Warp
+./script/run         # build and run WarpLocalOnly
 ./script/presubmit   # fmt, clippy, and tests
 ```
 

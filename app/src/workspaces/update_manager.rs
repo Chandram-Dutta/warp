@@ -12,38 +12,22 @@ use warpui::{
 
 use super::team_tester::{TeamTesterStatus, TeamTesterStatusEvent};
 use super::user_workspaces::{
-    CreateTeamResponse, UserWorkspaces, WorkspacesMetadataResponse, WorkspacesMetadataWithPricing,
+    UserWorkspaces, WorkspacesMetadataResponse, WorkspacesMetadataWithPricing,
 };
 use super::workspace::WorkspaceUid;
 use crate::ai::llms::LLMPreferences;
 use crate::ai::request_usage_model::AIRequestUsageModel;
 use crate::auth::AuthStateProvider;
-use crate::cloud_object::CloudObjectEventEntrypoint;
 use crate::network::{NetworkStatus, NetworkStatusEvent, NetworkStatusKind};
 use crate::persistence::ModelEvent;
 use crate::pricing::PricingInfoModel;
-use crate::server::cloud_objects::update_manager::UpdateManager;
-use crate::server::ids::ServerId;
 use crate::server::retry_strategies::{
     OUT_OF_BAND_REQUEST_RETRY_STRATEGY, PERIODIC_POLL, PERIODIC_POLL_RETRY_STRATEGY,
 };
 use crate::server::server_api::ServerApiProvider;
 use crate::server::server_api::team::TeamClient;
 
-pub enum TeamUpdateManagerEvent {
-    LeaveSuccess,
-    LeaveError,
-    RenameTeamSuccess,
-    RenameTeamError,
-}
-
-/// TeamUpdateManager is a singleton model responsible for communicating with the server and local
-/// database regarding teams' metadata.
-/// It emits events that are later processed by UserWorkspaces model (which is an in-memory store for
-/// the workspace metadata).
-/// TeamUpdateManager is used when sending a team-related request to the server and processing the
-/// response, but also controls the periodic polling from the server (also controlled by calling
-/// `force_refresh` method).
+/// Polls and persists workspace metadata.
 pub struct TeamUpdateManager {
     team_client: Arc<dyn TeamClient>,
     model_event_sender: Option<SyncSender<ModelEvent>>,
@@ -125,7 +109,6 @@ impl TeamUpdateManager {
             Ok(WorkspacesMetadataWithPricing {
                 metadata: WorkspacesMetadataResponse {
                     workspaces: vec![],
-                    joinable_teams: vec![],
                     experiments: None,
                     feature_model_choices: None,
                     ai_credit_availability: None,
@@ -270,177 +253,6 @@ impl TeamUpdateManager {
         }
     }
 
-    pub fn create_team(
-        &mut self,
-        team_name: String,
-        entrypoint: CloudObjectEventEntrypoint,
-        discoverable: Option<bool>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let team_client = self.team_client.clone();
-        let _ = ctx.spawn(
-            async move {
-                team_client
-                    .create_team(team_name, entrypoint, discoverable)
-                    .await
-                    .context("Error creating team")
-            },
-            Self::on_team_created,
-        );
-    }
-
-    fn on_team_created(
-        &mut self,
-        create_team_response: Result<CreateTeamResponse>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        // TODO we should implement a similar mechanism to cloud objects with local team id
-        report_if_error!(create_team_response);
-        let Ok(create_team_response) = create_team_response else {
-            return;
-        };
-
-        // Update sqlite
-        self.save_to_db([ModelEvent::UpsertWorkspace {
-            workspace: Box::new(create_team_response.workspace.clone()),
-        }]);
-
-        // Update UserWorkspaces
-        UserWorkspaces::handle(ctx).update(ctx, |user_workspaces, ctx| {
-            user_workspaces.team_created(&create_team_response, ctx);
-        });
-    }
-
-    pub fn leave_team(
-        &mut self,
-        team_uid: ServerId,
-        entrypoint: CloudObjectEventEntrypoint,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        // Handle server update
-        let user_uid = AuthStateProvider::as_ref(ctx).get().user_id();
-        if let Some(user_uid) = user_uid {
-            let team_client = self.team_client.clone();
-            let _ = ctx.spawn(
-                async move {
-                    team_client
-                        .leave_team(user_uid, team_uid, entrypoint)
-                        .await
-                        .context("Error leaving team")
-                },
-                move |me, result, ctx| {
-                    me.on_team_left(team_uid, result, ctx);
-                },
-            );
-        } else {
-            log::warn!("User is not authenticated, cannot leave team");
-            ctx.emit(TeamUpdateManagerEvent::LeaveError);
-        }
-    }
-
-    fn on_team_left(
-        &mut self,
-        left_team_uid: ServerId,
-        result: Result<WorkspacesMetadataWithPricing>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Ok(response) => {
-                if let Some(pricing_info) = response.pricing_info {
-                    PricingInfoModel::handle(ctx).update(ctx, |model, ctx| {
-                        model.update_pricing_info(pricing_info, ctx);
-                    });
-                }
-
-                if let Some(availability) = response.metadata.ai_credit_availability {
-                    AIRequestUsageModel::handle(ctx).update(ctx, |usage_model, ctx| {
-                        usage_model.apply_server_availability(Ok(availability), ctx);
-                    });
-                }
-
-                let workspaces = response.metadata.workspaces;
-                let joinable_teams = response.metadata.joinable_teams;
-                let user_purchase_policy = response.metadata.user_purchase_policy;
-
-                UserWorkspaces::handle(ctx).update(ctx, |user_workspaces, ctx| {
-                    user_workspaces.set_user_purchase_policy(user_purchase_policy);
-                    user_workspaces.update_workspaces(workspaces.clone(), ctx);
-                    user_workspaces.update_joinable_teams(joinable_teams, ctx);
-                });
-
-                // Check if the current workspace is still in the list of workspaces.
-                // If it's not, then set the current workspace to the first workspace in the list.
-                if let Some(current_workspace) = UserWorkspaces::as_ref(ctx).current_workspace() {
-                    if !workspaces.iter().any(|w| w.uid == current_workspace.uid)
-                        && let Some(workspace_uid) = workspaces.first().map(|w| w.uid)
-                    {
-                        self.set_current_workspace_uid(workspace_uid, ctx);
-                    };
-                } else if let Some(workspace_uid) = workspaces.first().map(|w| w.uid) {
-                    self.set_current_workspace_uid(workspace_uid, ctx);
-                }
-
-                // Update sqlite
-                self.save_to_db([ModelEvent::UpsertWorkspaces { workspaces }]);
-
-                // Remove objects owned by the team that was left.
-                UpdateManager::handle(ctx).update(ctx, |update_manager, ctx| {
-                    // We first remove team objects from local state so that they're not shown to the user.
-                    // Then, refresh all objects to fetch any that were independently shared.
-                    update_manager.remove_team_objects(left_team_uid, ctx);
-                    update_manager.refresh_updated_objects(ctx);
-                });
-
-                ctx.emit(TeamUpdateManagerEvent::LeaveSuccess);
-            }
-            Err(e) => {
-                report_error!(e);
-
-                ctx.emit(TeamUpdateManagerEvent::LeaveError);
-            }
-        }
-    }
-
-    pub fn rename_team(
-        &mut self,
-        new_name: String,
-        team_uid: ServerId,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let team_client = self.team_client.clone();
-        let _ = ctx.spawn(
-            async move { team_client.rename_team(new_name, team_uid).await },
-            Self::on_team_renamed,
-        );
-    }
-
-    fn on_team_renamed(
-        &mut self,
-        result: Result<WorkspacesMetadataWithPricing>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        match result {
-            Err(_) => ctx.emit(TeamUpdateManagerEvent::RenameTeamError),
-            Ok(response) => {
-                if let Some(pricing_info) = response.pricing_info.clone() {
-                    PricingInfoModel::handle(ctx).update(ctx, |model, ctx| {
-                        model.update_pricing_info(pricing_info, ctx);
-                    });
-                }
-
-                self.on_workspaces_updated(Ok(response.metadata.clone()), ctx);
-
-                // Update sqlite
-                self.save_to_db([ModelEvent::UpsertWorkspaces {
-                    workspaces: response.metadata.workspaces,
-                }]);
-
-                ctx.emit(TeamUpdateManagerEvent::RenameTeamSuccess);
-            }
-        };
-        ctx.notify();
-    }
-
     fn handle_workspace_metadata_with_request_state(
         &mut self,
         request_state: RequestState<WorkspacesMetadataWithPricing>,
@@ -454,8 +266,6 @@ impl TeamUpdateManager {
                     });
                 }
 
-                // Right now, this function is coupled with how we handle leaving a team.
-                // TODO(zheng) refactor so we can separate these two cases and have clearer logic.
                 self.on_workspaces_updated(Ok(response.metadata), ctx);
             }
             RequestState::RequestFailedRetryPending(err) => {
@@ -479,7 +289,6 @@ impl TeamUpdateManager {
         match result {
             Ok(user_workspaces_access) => {
                 let workspaces = user_workspaces_access.workspaces;
-                let joinable_teams = user_workspaces_access.joinable_teams;
                 let experiments = user_workspaces_access.experiments;
                 let user_purchase_policy = user_workspaces_access.user_purchase_policy;
 
@@ -492,7 +301,6 @@ impl TeamUpdateManager {
                 UserWorkspaces::handle(ctx).update(ctx, |user_workspaces, ctx| {
                     user_workspaces.set_user_purchase_policy(user_purchase_policy);
                     user_workspaces.update_workspaces(workspaces.clone(), ctx);
-                    user_workspaces.update_joinable_teams(joinable_teams.clone(), ctx);
                 });
 
                 // Check if the current workspace is still in the list of workspaces.
@@ -544,7 +352,7 @@ impl TeamUpdateManager {
 }
 
 impl Entity for TeamUpdateManager {
-    type Event = TeamUpdateManagerEvent;
+    type Event = ();
 }
 
 impl SingletonEntity for TeamUpdateManager {}

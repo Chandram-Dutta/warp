@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::future::Future;
 #[cfg(feature = "local_fs")]
 use std::path::PathBuf;
@@ -11,7 +12,42 @@ pub use warp_server_client::HttpStatusError;
 
 #[cfg(feature = "local_fs")]
 use super::ai::FileArtifactUploadTargetInfo;
-use super::harness_support::{UploadFieldValue, UploadTarget};
+
+/// A presigned upload target returned by the server.
+#[serde_with::serde_as]
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct UploadTarget {
+    pub url: String,
+    pub method: String,
+    #[serde(default)]
+    #[serde_as(deserialize_as = "serde_with::DefaultOnNull")]
+    pub headers: HashMap<String, String>,
+    /// Ordered multipart form fields for POST uploads.
+    #[serde(default)]
+    #[serde_as(deserialize_as = "serde_with::DefaultOnNull")]
+    pub fields: Vec<UploadField>,
+}
+
+/// A single multipart form field on a POST upload target.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct UploadField {
+    pub name: String,
+    pub value: UploadFieldValue,
+}
+
+/// Descriptor for a field value when uploading to an [`UploadTarget`].
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum UploadFieldValue {
+    /// Literal string value known at URL-generation time.
+    Static { value: String },
+    /// Client should compute CRC32C of the upload, base64-encode the 4-byte
+    /// big-endian result, and send it as this field's value.
+    #[serde(rename = "content_crc32c")]
+    ContentCrc32C,
+    /// Client should use the raw upload bytes as this field's value.
+    ContentData,
+}
 
 #[cfg(not(target_family = "wasm"))]
 pub(crate) static CRC32C: Crc<u32> = Crc::<u32>::new(&CRC_32_ISCSI);

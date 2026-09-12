@@ -157,14 +157,25 @@ fn malformed_and_removed_action_names_are_not_deserialized() {
         "drive.object.insert",
         "drive.object.share_to_team",
         "drive.workflow.run",
+        "surface.global_search.open",
+        "surface.ai_assistant.toggle",
+        "surface.warp_drive.open",
+        "surface.warp_drive.toggle",
+        "surface.project_explorer.open",
+        "surface.conversation_list.open",
+        "surface.left_panel.toggle",
+        "surface.code_review.open",
+        "surface.code_review.toggle",
+        "surface.right_panel.toggle",
+        "surface.agent_management.open",
     ] {
         assert!(serde_json::from_value::<ActionKind>(serde_json::json!(action)).is_err());
     }
 }
 
 #[test]
-fn catalog_has_exactly_84_retained_actions() {
-    assert_eq!(ActionKind::ALL.len(), 84);
+fn catalog_has_exactly_73_retained_actions() {
+    assert_eq!(ActionKind::ALL.len(), 73);
 }
 
 #[test]
@@ -179,28 +190,8 @@ fn direct_surface_actions_have_stable_names() {
         "surface.keybindings.open"
     );
     assert_eq!(
-        ActionKind::SurfaceCodeReviewOpen.as_str(),
-        "surface.code_review.open"
-    );
-    assert_eq!(
-        ActionKind::SurfaceProjectExplorerOpen.as_str(),
-        "surface.project_explorer.open"
-    );
-    assert_eq!(
-        ActionKind::SurfaceGlobalSearchOpen.as_str(),
-        "surface.global_search.open"
-    );
-    assert_eq!(
-        ActionKind::SurfaceConversationListOpen.as_str(),
-        "surface.conversation_list.open"
-    );
-    assert_eq!(
         ActionKind::SurfaceVerticalTabsOpen.as_str(),
         "surface.vertical_tabs.open"
-    );
-    assert_eq!(
-        ActionKind::SurfaceAgentManagementOpen.as_str(),
-        "surface.agent_management.open"
     );
 }
 

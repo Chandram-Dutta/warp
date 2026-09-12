@@ -55,61 +55,11 @@ pub(super) fn run_surface_command(
         SurfaceCommand::Keybindings(command) => {
             run_surface_open_command(command, ActionKind::SurfaceKeybindingsOpen, output_format)
         }
-        SurfaceCommand::WarpDrive(command) => match command {
-            SurfaceOpenToggleCommand::Open(args) => run_action_with_params(
-                args,
-                ActionKind::SurfaceWarpDriveOpen,
-                EmptyParams {},
-                output_format,
-            ),
-            SurfaceOpenToggleCommand::Toggle(args) => run_action_with_params(
-                args,
-                ActionKind::SurfaceWarpDriveToggle,
-                EmptyParams {},
-                output_format,
-            ),
-        },
         SurfaceCommand::ResourceCenter(command) => run_surface_toggle_command(
             command,
             ActionKind::SurfaceResourceCenterToggle,
             output_format,
         ),
-        SurfaceCommand::AiAssistant(command) => {
-            run_surface_toggle_command(command, ActionKind::SurfaceAiAssistantToggle, output_format)
-        }
-        SurfaceCommand::CodeReview(command) => match command {
-            SurfaceOpenToggleCommand::Open(args) => run_action_with_params(
-                args,
-                ActionKind::SurfaceCodeReviewOpen,
-                EmptyParams {},
-                output_format,
-            ),
-            SurfaceOpenToggleCommand::Toggle(args) => run_action_with_params(
-                args,
-                ActionKind::SurfaceCodeReviewToggle,
-                EmptyParams {},
-                output_format,
-            ),
-        },
-        SurfaceCommand::ProjectExplorer(command) => run_surface_open_command(
-            command,
-            ActionKind::SurfaceProjectExplorerOpen,
-            output_format,
-        ),
-        SurfaceCommand::GlobalSearch(command) => {
-            run_surface_open_command(command, ActionKind::SurfaceGlobalSearchOpen, output_format)
-        }
-        SurfaceCommand::ConversationList(command) => run_surface_open_command(
-            command,
-            ActionKind::SurfaceConversationListOpen,
-            output_format,
-        ),
-        SurfaceCommand::LeftPanel(command) => {
-            run_surface_toggle_command(command, ActionKind::SurfaceLeftPanelToggle, output_format)
-        }
-        SurfaceCommand::RightPanel(command) => {
-            run_surface_toggle_command(command, ActionKind::SurfaceRightPanelToggle, output_format)
-        }
         SurfaceCommand::VerticalTabs(command) => match command {
             SurfaceOpenToggleCommand::Open(args) => run_action_with_params(
                 args,
@@ -124,11 +74,6 @@ pub(super) fn run_surface_command(
                 output_format,
             ),
         },
-        SurfaceCommand::AgentManagement(command) => run_surface_open_command(
-            command,
-            ActionKind::SurfaceAgentManagementOpen,
-            output_format,
-        ),
     }
 }
 
@@ -689,7 +634,6 @@ pub(super) fn run_file_command(
                 path: args.path,
                 line: args.line,
                 column: args.column,
-                new_tab: args.new_tab,
             },
             output_format,
         ),

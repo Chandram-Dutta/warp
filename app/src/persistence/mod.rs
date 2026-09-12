@@ -27,7 +27,6 @@ use ai::project_context::model::ProjectRulePath;
 use ai::workspace::WorkspaceMetadata as CodeWorkspaceMetadata;
 use chrono::{DateTime, Local, Utc};
 use instant::Instant;
-use lsp::supported_servers::LSPServerType;
 #[cfg(any(feature = "local_fs", feature = "integration_tests"))]
 pub use sqlite::database_file_path_for_current_scope;
 // Only re-exported for integration tests (via `integration_testing::persistence`);
@@ -47,7 +46,6 @@ use warpui::{AppContext, Entity, SingletonEntity};
 use self::model::{AgentConversation, AgentConversationData, Project};
 use crate::ai::blocklist::PersistedAIInput;
 use crate::ai::mcp::TemplatableMCPServerInstallation;
-use crate::ai::persisted_workspace::EnablementState;
 use crate::app_state::AppState;
 use crate::auth::auth_manager::PersistedCurrentUserInformation;
 use crate::cloud_object::model::actions::ObjectAction;
@@ -71,13 +69,6 @@ use crate::workspaces::workspace::{Workspace as WorkspaceMetadata, WorkspaceUid}
 pub enum PersistenceScope {
     /// The GUI app (and other launch modes that share its database).
     App,
-    /// The `warp-tui` front-end, which keeps its own database so GUI/TUI
-    /// version skew can never migrate a shared database out from under the
-    /// older binary. Cloud sync is the cross-front-end sharing mechanism.
-    Tui,
-    RemoteServerDaemon {
-        identity_key: String,
-    },
 }
 
 /// The [`PersistenceScope`] this process's persistence was initialized with.
@@ -109,12 +100,6 @@ pub enum PersistedDataScope {
     /// The GUI app: everything, including window/tab/block session
     /// restoration and command history.
     Full,
-    /// The `warp-tui` front-end: command history, cloud objects, user profiles,
-    /// and agent/conversation state, but no GUI session restoration or pending
-    /// object actions.
-    TuiFrontend,
-    /// The remote server daemon: only codebase index metadata.
-    CodebaseIndicesOnly,
     /// The local-only terminal: local windows, panes, blocks, command history,
     /// and ignored shell suggestions. Cloud, Agent, MCP, and IDE rows remain
     /// untouched in the database but are not loaded.
@@ -130,19 +115,20 @@ impl PersistedDataScope {
         )
     }
 
-    /// Shell-command history consumed by both interactive front-ends.
+    /// Shell-command history.
     fn command_history(self) -> bool {
         matches!(
             self,
-            PersistedDataScope::Full
-                | PersistedDataScope::TuiFrontend
-                | PersistedDataScope::TerminalLocal
+            PersistedDataScope::Full | PersistedDataScope::TerminalLocal
         )
     }
 
-    /// User profiles used to identify cloud-object creators in both interactive frontends.
+    /// User profiles used to identify cloud-object creators.
     fn user_profiles(self) -> bool {
-        self != PersistedDataScope::CodebaseIndicesOnly
+        matches!(
+            self,
+            PersistedDataScope::Full | PersistedDataScope::TerminalLocal
+        )
     }
 
     /// Pending object actions, which only the GUI consumes.
@@ -151,10 +137,7 @@ impl PersistedDataScope {
     }
 
     fn agent_data(self) -> bool {
-        matches!(
-            self,
-            PersistedDataScope::Full | PersistedDataScope::TuiFrontend
-        )
+        matches!(self, PersistedDataScope::Full)
     }
 }
 
@@ -344,7 +327,6 @@ pub struct AgentPersistedData {
 #[derive(Default)]
 pub struct IdePersistedData {
     pub codebase_indices: Vec<CodeWorkspaceMetadata>,
-    pub workspace_language_servers: HashMap<PathBuf, HashMap<LSPServerType, EnablementState>>,
 }
 
 #[derive(Clone, Debug)]
@@ -432,9 +414,6 @@ pub enum ModelEvent {
     },
     DeleteObjects {
         ids: Vec<(SyncId, ObjectIdType)>,
-    },
-    UpsertWorkspace {
-        workspace: Box<WorkspaceMetadata>,
     },
     UpsertWorkspaces {
         workspaces: Vec<WorkspaceMetadata>,
@@ -526,11 +505,6 @@ pub enum ModelEvent {
     UpdateMCPInstallationRunning {
         installation_uuid: Uuid,
         running: bool,
-    },
-    UpsertWorkspaceLanguageServer {
-        workspace_path: PathBuf,
-        lsp_type: LSPServerType,
-        enabled: EnablementState,
     },
     UpdateBlockAgentViewVisibility {
         block_id: String,

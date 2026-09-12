@@ -7,7 +7,7 @@ use futures::future::{Either, ready};
 use virtual_fs::{Stub, VirtualFS};
 use warp_util::host_id::HostId;
 use warp_util::local_or_remote_path::LocalOrRemotePath;
-use warp_util::remote_path::{RemoteNavigationResult, RemotePath};
+use warp_util::remote_path::RemotePath;
 use warp_util::standardized_path::StandardizedPath;
 #[cfg(test)]
 use warpui_core::r#async::FutureId;
@@ -45,46 +45,6 @@ pub struct DetectedRepositories {
 }
 
 impl DetectedRepositories {
-    /// Detects the git repository root for the given working directory.
-    ///
-    /// For **local sessions**, pass `None` for `remote_detect` — this delegates
-    /// to the local filesystem detection path.
-    ///
-    /// For **remote sessions**, pass `Some(future)` where the future resolves
-    /// with `(RemotePath, is_git)` from the remote server. The future is
-    /// typically obtained from `RemoteServerManager::navigate_to_directory`.
-    /// When `is_git` is true, the result is `Some(LocalOrRemotePath::Remote(...))`.
-    ///
-    /// This design avoids a circular dependency between `repo_metadata` and
-    /// `remote_server` — the caller in `app/` constructs the remote future
-    /// and injects it here.
-    pub fn detect_possible_git_repo<
-        F: Future<Output = Option<RemoteNavigationResult>> + 'static,
-    >(
-        &mut self,
-        active_directory: &str,
-        source: RepoDetectionSource,
-        remote_detect: Option<F>,
-        ctx: &mut ModelContext<Self>,
-    ) -> impl Future<Output = Option<LocalOrRemotePath>> + use<F> {
-        match remote_detect {
-            None => {
-                // Local detection path.
-                let fut = self.detect_possible_local_git_repo(active_directory, source, ctx);
-                Either::Left(async move { fut.await.map(LocalOrRemotePath::Local) })
-            }
-            Some(remote_fut) => Either::Right(async move {
-                match remote_fut.await {
-                    Some(RemoteNavigationResult {
-                        remote_path,
-                        is_git: true,
-                    }) => Some(LocalOrRemotePath::Remote(remote_path)),
-                    _ => None,
-                }
-            }),
-        }
-    }
-
     /// Given the active directory pwd, kick off a background job to detect the git project root and emit an event
     /// to interested listeners.
     #[cfg_attr(not(feature = "local_fs"), allow(unused_variables))]

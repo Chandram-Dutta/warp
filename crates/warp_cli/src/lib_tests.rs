@@ -14,6 +14,13 @@ use crate::secret::{CodexMethod, CreateProvider, SecretCommand};
 use crate::task::{MessageCommand, TaskCommand};
 
 #[test]
+fn hosted_api_key_management_is_not_a_subcommand() {
+    for operation in ["list", "create", "expire"] {
+        assert!(Args::try_parse_from(["warp", "api-key", operation]).is_err());
+    }
+}
+
+#[test]
 fn identifies_worker_subcommands() {
     assert!(is_worker_invocation("minidump-server"));
     #[cfg(unix)]

@@ -1,41 +1,11 @@
-mod auth_secret_ftux_dropdown;
-mod auth_secret_ftux_view;
-pub(crate) mod auth_secret_selector;
 mod block;
-mod delete_auth_secret_confirmation_dialog;
-mod first_time_setup;
-mod footer;
-mod harness_selector;
-mod host_selector;
-mod loading_screen;
 mod model;
-mod model_selector;
 mod progress;
-mod progress_ui_state;
-mod tips;
 mod view_impl;
 
-pub use auth_secret_ftux_view::{
-    AuthSecretFtuxAction, AuthSecretFtuxView, AuthSecretFtuxViewEvent,
-};
-pub use auth_secret_selector::{
-    AuthSecretSelector, AuthSecretSelectorAction, AuthSecretSelectorEvent,
-};
 pub use block::*;
-pub use first_time_setup::{FirstTimeCloudAgentSetupView, FirstTimeCloudAgentSetupViewEvent};
-pub use footer::{render_error_footer, render_loading_footer};
-pub use harness_selector::{HarnessSelector, HarnessSelectorAction, HarnessSelectorEvent};
-pub use host_selector::{
-    Host, HostSelector, HostSelectorAction, HostSelectorEvent, NakedHeaderButtonTheme,
-};
-pub use loading_screen::{render_cloud_mode_error_screen, render_cloud_mode_loading_screen};
 pub use model::{AgentProgress, AmbientAgentViewModel, AmbientAgentViewModelEvent, Status};
-pub use model_selector::{
-    HarnessSelection, ModelSelection, ModelSelector, ModelSelectorAction, ModelSelectorEvent,
-};
 pub use progress::{ProgressProps, ProgressStep, ProgressStepState, render_progress};
-pub use progress_ui_state::AmbientAgentProgressUIState;
-pub use tips::{CloudModeTip, get_cloud_mode_tips};
 use warp_core::features::FeatureFlag;
 use warpui::geometry::vector::Vector2F;
 use warpui::{AppContext, ModelHandle, ViewHandle, WindowId};
@@ -105,7 +75,7 @@ pub fn wire_ambient_agent_session_events(
 ) {
     let view_model = view_model.clone();
     terminal_manager.update(ctx, |_, ctx| {
-        ctx.subscribe_to_model(&view_model, move |manager, view_model, event, ctx| {
+        ctx.subscribe_to_model(&view_model, move |manager, _, event, ctx| {
             let Some(manager) = manager
                 .as_any_mut()
                 .downcast_mut::<shared_session::viewer::TerminalManager>()
@@ -114,13 +84,7 @@ pub fn wire_ambient_agent_session_events(
             };
             match event {
                 AmbientAgentViewModelEvent::SessionReady { session_id } => {
-                    // Local-to-cloud handoff panes pre-populate the forked
-                    // conversation on chip click. Use append-mode scrollback
-                    // + replay suppression so the cloud agent's replay doesn't
-                    // duplicate the blocks we already have.
-                    let append_followup_scrollback =
-                        view_model.as_ref(ctx).is_local_to_cloud_handoff();
-                    if manager.connect_to_session(*session_id, append_followup_scrollback, ctx) {
+                    if manager.connect_to_session(*session_id, false, ctx) {
                         manager.start_cloud_mode_setup_command_tracking();
                     }
                 }
@@ -150,8 +114,6 @@ pub fn wire_ambient_agent_session_events(
                 | AmbientAgentViewModelEvent::HostSelected
                 | AmbientAgentViewModelEvent::HarnessModelSelected
                 | AmbientAgentViewModelEvent::HarnessCommandStarted { .. }
-                | AmbientAgentViewModelEvent::PendingHandoffChanged
-                | AmbientAgentViewModelEvent::HandoffSnapshotUploadFailed { .. }
                 | AmbientAgentViewModelEvent::UpdatedSetupCommandVisibility
                 | AmbientAgentViewModelEvent::AuthSecretSelected
                 | AmbientAgentViewModelEvent::RunLifecycleChanged => {}
@@ -192,17 +154,11 @@ pub fn is_cloud_agent_pre_first_exchange(
         return false;
     };
 
-    // Handoff panes enter agent view with `RestoreExistingConversation` because they restore the
-    // forked conversation, not `CloudAgent`. The `is_local_to_cloud_handoff` flag is the
-    // authoritative "this is a cloud agent pane" signal for that path. Shared-session viewers of
-    // an ambient run (raw link join / attach-to-running) enter agent view via
+    // Shared-session viewers of an ambient run (raw link join / attach-to-running) enter agent view via
     // `SharedSessionSelection` / `ThirdPartyCloudAgent`, so `is_shared_ambient_agent_session()` is
     // the authoritative signal for that path — e.g. a post-death cloud follow-up spinning up a new
     // VM must still count as pre-first-exchange so the setup progress + prompt-queuing UI render.
-    if !origin.is_cloud_agent()
-        && !view_model.is_local_to_cloud_handoff()
-        && !terminal_model.is_shared_ambient_agent_session()
-    {
+    if !origin.is_cloud_agent() && !terminal_model.is_shared_ambient_agent_session() {
         return false;
     }
 

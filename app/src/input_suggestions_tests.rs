@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use chrono::Local;
 use warp_completer::completer::{
     EngineFileType, Match, MatchStrategy, MatchedSuggestion, Priority, Suggestion,
@@ -11,7 +9,6 @@ use warpui::App;
 use warpui::platform::WindowStyle;
 
 use super::{HistoryInputSuggestion, InputSuggestions, TabCompletionsPreselectOption};
-use crate::ai::blocklist::AIQueryHistory;
 use crate::input_suggestions::{HistoryOrder, filter_tab_suggestions};
 use crate::terminal::HistoryEntry;
 use crate::terminal::model::session::SessionId;
@@ -318,15 +315,11 @@ fn test_unchanged_preselect_option() {
 
 #[test]
 fn test_history_order() {
-    let mut live_sessions = HashSet::new();
     let current_session_id = SessionId::from(3);
-    live_sessions.insert(SessionId::from(1));
-    live_sessions.insert(SessionId::from(2));
-    live_sessions.insert(current_session_id);
     let now = Local::now();
 
     // Commands in current session
-    let current_session_cmd = HistoryInputSuggestion::Command {
+    let current_session_cmd = HistoryInputSuggestion {
         entry: &HistoryEntry::command_at_time(
             "echo current session".to_string(),
             now,
@@ -335,12 +328,12 @@ fn test_history_order() {
         ),
     };
     assert_eq!(
-        current_session_cmd.history_order(Some(current_session_id), &live_sessions,),
+        current_session_cmd.history_order(Some(current_session_id)),
         HistoryOrder::CurrentSession
     );
 
     // Commands in different live session
-    let different_session_cmd = HistoryInputSuggestion::Command {
+    let different_session_cmd = HistoryInputSuggestion {
         entry: &HistoryEntry::command_at_time(
             "echo different session".to_string(),
             now,
@@ -349,21 +342,21 @@ fn test_history_order() {
         ),
     };
     assert_eq!(
-        different_session_cmd.history_order(Some(current_session_id), &live_sessions,),
+        different_session_cmd.history_order(Some(current_session_id)),
         HistoryOrder::DifferentSession
     );
 
     // Restored commands in current session are treated as CurrentSession
-    let restored_cmd = HistoryInputSuggestion::Command {
+    let restored_cmd = HistoryInputSuggestion {
         entry: &HistoryEntry::command_at_time("echo restored".to_string(), now, None, true),
     };
     assert_eq!(
-        restored_cmd.history_order(Some(current_session_id), &live_sessions,),
+        restored_cmd.history_order(Some(current_session_id)),
         HistoryOrder::CurrentSession
     );
 
     // Commands with no session are treated as DifferentSession
-    let no_session_cmd = HistoryInputSuggestion::Command {
+    let no_session_cmd = HistoryInputSuggestion {
         entry: &HistoryEntry::command_at_time(
             "echo no session".to_string(),
             now - chrono::Duration::seconds(10),
@@ -372,33 +365,7 @@ fn test_history_order() {
         ),
     };
     assert_eq!(
-        no_session_cmd.history_order(Some(current_session_id), &live_sessions,),
-        HistoryOrder::DifferentSession
-    );
-
-    // AI queries from current session
-    let ai_query_current = HistoryInputSuggestion::AIQuery {
-        entry: AIQueryHistory::new_for_test(
-            "ai query current session",
-            now,
-            HistoryOrder::CurrentSession,
-        ),
-    };
-    assert_eq!(
-        ai_query_current.history_order(Some(current_session_id), &live_sessions,),
-        HistoryOrder::CurrentSession
-    );
-
-    // AI queries from different session
-    let ai_query_different = HistoryInputSuggestion::AIQuery {
-        entry: AIQueryHistory::new_for_test(
-            "ai query different session",
-            now,
-            HistoryOrder::DifferentSession,
-        ),
-    };
-    assert_eq!(
-        ai_query_different.history_order(Some(current_session_id), &live_sessions,),
+        no_session_cmd.history_order(Some(current_session_id)),
         HistoryOrder::DifferentSession
     );
 }

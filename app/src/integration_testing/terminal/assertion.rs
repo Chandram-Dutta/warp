@@ -368,7 +368,7 @@ pub fn assert_bootstrapping_result(
     let terminal_view = terminal_view(app, window_id, tab_index, pane_index);
     let bootstrapped = terminal_view.read(app, |view, ctx| {
         let model = view.model.lock();
-        let input_visible = view.is_input_box_visible(&model, ctx);
+        let input_visible = model.is_input_box_visible();
         let history_bootstrapped = model
             .block_list()
             .active_block()

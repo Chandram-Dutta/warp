@@ -2,8 +2,6 @@ use serde::{Deserialize, Deserializer, Serialize};
 use settings::macros::define_settings_group;
 use settings::{RespectUserSyncSetting, SupportedPlatforms, SyncToCloud};
 
-pub use crate::util::openable_file_type::EditorLayout;
-
 #[derive(
     Debug,
     Clone,
@@ -20,7 +18,6 @@ pub use crate::util::openable_file_type::EditorLayout;
 )]
 pub enum EditorChoice {
     SystemDefault,
-    Warp,
     EnvEditor,
     #[schemars(description = "A specific external code editor.")]
     ExternalEditor(super::Editor),
@@ -53,7 +50,7 @@ impl<'de> Deserialize<'de> for EditorChoice {
         match EditorChoiceCompat::deserialize(deserializer)? {
             EditorChoiceCompat::New(inner) => match inner {
                 EditorChoiceInner::SystemDefault => Ok(EditorChoice::SystemDefault),
-                EditorChoiceInner::Warp => Ok(EditorChoice::Warp),
+                EditorChoiceInner::Warp => Ok(EditorChoice::SystemDefault),
                 EditorChoiceInner::EnvEditor => Ok(EditorChoice::EnvEditor),
                 EditorChoiceInner::ExternalEditor(editor) => {
                     Ok(EditorChoice::ExternalEditor(editor))
@@ -81,7 +78,7 @@ define_settings_group!(EditorSettings, settings: [
     },
     open_code_panels_file_editor: OpenCodePanelsFileEditor {
         type: EditorChoice,
-        default: EditorChoice::Warp,
+        default: EditorChoice::SystemDefault,
         supported_platforms: SupportedPlatforms::ALL,
         sync_to_cloud: SyncToCloud::Never,
         surface: settings::SettingSurfaces::GUI,
@@ -89,36 +86,6 @@ define_settings_group!(EditorSettings, settings: [
         toml_path: "code.editor.open_code_panels_file_editor",
         max_table_depth: 0,
         description: "The editor used to open files from code panels.",
-    },
-    open_file_layout: OpenFileLayout {
-        type: EditorLayout,
-        default: EditorLayout::SplitPane,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-        surface: settings::SettingSurfaces::GUI,
-        private: false,
-        toml_path: "code.editor.open_file_layout",
-        description: "The layout used when opening files in the editor.",
-    },
-    prefer_markdown_viewer: PreferMarkdownViewer {
-        type: bool,
-        default: true,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-        surface: settings::SettingSurfaces::GUI,
-        private: false,
-        toml_path: "code.editor.prefer_markdown_viewer",
-        description: "Whether to use the Markdown viewer when opening Markdown files.",
-    },
-    prefer_tabbed_editor_view: PreferTabbedEditorView {
-        type: bool,
-        default: true,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-        surface: settings::SettingSurfaces::GUI,
-        private: false,
-        toml_path: "code.editor.prefer_tabbed_editor_view",
-        description: "Whether to prefer opening files in a tabbed editor view.",
     },
     open_conversation_layout_preference: OpenConversationLayoutPreference {
         type: OpenConversationPreference,

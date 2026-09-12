@@ -11,11 +11,6 @@
 //! load a transcript) is handled downstream by M2's `PaneGroup` hydration
 //! path, which is independent of this tracker.
 //!
-//! `FamilyDrainMode` captures the one behavioral axis between orchestrator
-//! and shared-session observer: who pushes the server cursor and who receives
-//! the parent's own inbox events. It says nothing about authenticated
-//! ownership, permissions, or pane capability.
-//!
 //! Pill-bar broadcasts (`ChildSpawned` / `ChildStatusChanged`) are emitted
 //! via the `ctx` so downstream views can react without polling.
 //!

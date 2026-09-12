@@ -400,7 +400,6 @@ impl CloudSetupGuideView {
             code,
             highlights.into_iter(),
             CodeBlockOptions {
-                on_open: None,
                 on_execute: Some(Box::new(move |_code, ctx| {
                     ctx.dispatch_typed_action(CloudSetupGuideAction::RunWorkflow {
                         workflow: Box::new(workflow.clone()),

@@ -43,7 +43,6 @@ use super::session::{Sessions, command_executor};
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent::redaction::redact_secrets;
 use crate::context_chips::prompt_snapshot::PromptSnapshot;
-use crate::server::block::DisplaySetting;
 use crate::server::ids::SyncId;
 use crate::terminal::block_filter::BlockFilterQuery;
 use crate::terminal::block_list_element::GridType;
@@ -417,9 +416,6 @@ pub struct Block {
     /// alter the row numbers for [`Self::goto`] and [`Self::goto_line`] when ConPTY is involved. We
     /// track the count of discarded newlines here in order to correct the row number.
     leading_linefeeds_ignored: usize,
-
-    /// `true` if client-side telemetry for user-generated AI data is enabled.
-    pub(super) is_ai_ugc_telemetry_enabled: bool,
 
     /// Only set on restored blocks. Indicates whether the block was local or from a remote session.
     restored_block_was_local: Option<bool>,
@@ -936,7 +932,6 @@ impl Block {
         block_index: BlockIndex,
         honor_ps1: bool,
         should_scan_for_secrets: ObfuscateSecrets,
-        is_ai_ugc_telemetry_enabled: bool,
         conversation_id: Option<AIConversationId>,
     ) -> Self {
         let perform_reset_grid_checks = if cfg!(windows) && bootstrap_stage.is_done() {
@@ -1015,7 +1010,6 @@ impl Block {
             should_hide_output_grid: false,
             should_hide_command_grid: false,
             leading_linefeeds_ignored: 0,
-            is_ai_ugc_telemetry_enabled,
             restored_block_was_local: None,
             agent_view_visibility: match conversation_id {
                 Some(id) => AgentViewVisibility::new_from_conversation(id),
@@ -1539,28 +1533,6 @@ impl Block {
         self.honor_ps1()
     }
 
-    /// Used for determining the height of the block with `DisplaySettings` used when sharing a block.
-    pub fn full_content_height_with_display_options(
-        &self,
-        display_setting: &DisplaySetting,
-        show_prompt: bool,
-    ) -> Lines {
-        let mut height = self.padding_top();
-        if show_prompt && !self.render_prompt_on_same_line() {
-            height += self.prompt_height() + self.command_padding_top();
-        }
-
-        let command_height = self.prompt_and_command_height();
-
-        height += match display_setting {
-            DisplaySetting::Command => command_height,
-            DisplaySetting::Output => self.output_grid_full_content_height(),
-            _ => command_height + self.padding_middle() + self.output_grid_full_content_height(),
-        };
-        height += self.padding_bottom();
-        height
-    }
-
     /// The last part of the lifecycle for the block. After this, its contents
     /// are immutable.
     pub fn finish(&mut self, exit_code: impl Into<ExitCode>) {
@@ -1798,28 +1770,16 @@ impl Block {
     }
 
     fn compute_output_truncated(&self) -> String {
-        if self.is_ai_ugc_telemetry_enabled {
-            // If telemetry is enabled, we collect the full output but are limiting it to
-            // the first and last 2500 lines in case the block is very large.
-            self.output_grid().content_summary(2500, 2500, false)
-        } else {
-            self.output_grid()
-                .contents_to_string(false, Some(MAX_SERIALIZED_OUTPUT_LINES))
-        }
+        self.output_grid()
+            .contents_to_string(false, Some(MAX_SERIALIZED_OUTPUT_LINES))
     }
 
     /// Computes [`UserBlockCompleted::output_truncated_with_obfuscated_secrets`] lazily from the live
     /// block.
     fn compute_output_truncated_with_obfuscated_secrets(&self) -> String {
-        let mut output = if self.is_ai_ugc_telemetry_enabled {
-            self.output_grid().content_summary(2500, 2500, true)
-        } else {
-            self.output_grid()
-                .contents_to_string_force_secrets_obfuscated(
-                    false,
-                    Some(MAX_SERIALIZED_OUTPUT_LINES),
-                )
-        };
+        let mut output = self
+            .output_grid()
+            .contents_to_string_force_secrets_obfuscated(false, Some(MAX_SERIALIZED_OUTPUT_LINES));
         // If secret redaction is disabled, we manually scan for secrets and redact them.
         if matches!(
             self.output_grid().should_scan_for_secrets,

@@ -17,12 +17,11 @@ use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent::{
     AIAgentActionType, AIAgentAttachment, AIAgentContext, AIAgentExchangeId, AIAgentInput,
     AIAgentPtyWriteMode, AskUserQuestionItem, FileLocations, PassiveSuggestionResultType,
-    ReadFilesRequest, RequestComputerUseRequest, SearchCodebaseRequest, UseComputerRequest,
-    UserQueryMode,
+    ReadFilesRequest, SearchCodebaseRequest, UserQueryMode,
 };
 use crate::ai::llms::LLMId;
 use crate::persistence::ModelEvent;
-use crate::terminal::model::block::{BlockId, SerializedBlock};
+use crate::terminal::model::block::BlockId;
 
 /// Data we persist for each [`AIAgentExchange`] for use in history. Does not contain output data.
 #[derive(Debug, Deserialize, Clone)]
@@ -281,16 +280,6 @@ pub(crate) enum PersistedAIAgentActionType {
     SuggestPrompt,
     OpenCodeReview,
     InitProject,
-    UseComputer {
-        action_summary: String,
-        #[serde(deserialize_with = "deserialize_targeted_actions")]
-        actions: Vec<computer_use::TargetedAction>,
-        screenshot_params: Option<computer_use::ScreenshotParams>,
-    },
-    RequestComputerUse {
-        task_summary: String,
-        screenshot_params: Option<computer_use::ScreenshotParams>,
-    },
     AskUserQuestion {
         questions: Vec<AskUserQuestionItem>,
     },
@@ -301,45 +290,6 @@ pub(crate) enum PersistedAIAgentActionType {
 
     /// Actions that don't need data persisted (since they're restored from conversation tasks) can be mapped to this.
     NotPersisted,
-}
-
-/// Deserializes the persisted `UseComputer` actions, accepting both the current `{ action, target }`
-/// shape and the legacy bare-`Action` shape.
-///
-/// Conversations persisted before `actions` became `Vec<TargetedAction>` stored each element as a
-/// bare [`computer_use::Action`]; those decode with the target defaulting to `Target::Screen`. New
-/// data round-trips unchanged, and serialization still emits the `{ action, target }` shape via the
-/// derived `Serialize` impl.
-fn deserialize_targeted_actions<'de, D>(
-    deserializer: D,
-) -> Result<Vec<computer_use::TargetedAction>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    // Accepts either the new `{ action, target }` wrapper (with `target` optional) or a bare legacy
-    // `Action` value. `Action`'s variant names never collide with the `action`/`target` keys, so
-    // the untagged match is unambiguous.
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum TargetedActionCompat {
-        Targeted {
-            action: computer_use::Action,
-            #[serde(default)]
-            target: computer_use::Target,
-        },
-        Bare(computer_use::Action),
-    }
-
-    let actions = Vec::<TargetedActionCompat>::deserialize(deserializer)?;
-    Ok(actions
-        .into_iter()
-        .map(|compat| match compat {
-            TargetedActionCompat::Targeted { action, target } => {
-                computer_use::TargetedAction { action, target }
-            }
-            TargetedActionCompat::Bare(action) => computer_use::TargetedAction::screen(action),
-        })
-        .collect())
 }
 
 impl From<&AIAgentActionType> for PersistedAIAgentActionType {
@@ -414,7 +364,6 @@ impl From<&AIAgentActionType> for PersistedAIAgentActionType {
                     message_id: message_id.clone(),
                 }
             }
-            AIAgentActionType::SuggestPrompt { .. } => Self::SuggestPrompt,
             AIAgentActionType::OpenCodeReview => Self::OpenCodeReview,
             AIAgentActionType::InsertCodeReviewComments { .. } => Self::NotPersisted,
             AIAgentActionType::InitProject => Self::InitProject,
@@ -423,17 +372,8 @@ impl From<&AIAgentActionType> for PersistedAIAgentActionType {
             | AIAgentActionType::CreateDocuments(_)
             | AIAgentActionType::ReadShellCommandOutput { .. }
             | AIAgentActionType::ReadSkill(_)
-            | AIAgentActionType::UploadArtifact(_)
             | AIAgentActionType::TransferShellCommandControlToUser { .. } => Self::NotPersisted,
-            AIAgentActionType::UseComputer(req) => Self::UseComputer {
-                action_summary: req.action_summary.clone(),
-                actions: req.actions.clone(),
-                screenshot_params: req.screenshot_params,
-            },
-            AIAgentActionType::RequestComputerUse(req) => Self::RequestComputerUse {
-                task_summary: req.task_summary.clone(),
-                screenshot_params: req.screenshot_params,
-            },
+
             AIAgentActionType::AskUserQuestion { questions } => Self::AskUserQuestion {
                 questions: questions.clone(),
             },
@@ -450,9 +390,6 @@ impl From<&AIAgentActionType> for PersistedAIAgentActionType {
             AIAgentActionType::WaitForEvents { .. } => Self::NotPersisted,
             // Recordings are tied to a live capture process that cannot survive
             // a restart, so there is nothing useful to persist.
-            AIAgentActionType::StartRecording { .. } | AIAgentActionType::StopRecording { .. } => {
-                Self::NotPersisted
-            }
         }
     }
 }
@@ -550,22 +487,7 @@ impl TryFrom<PersistedAIAgentActionType> for AIAgentActionType {
             }
             PersistedAIAgentActionType::OpenCodeReview => Ok(Self::OpenCodeReview),
             PersistedAIAgentActionType::InitProject => Ok(Self::InitProject),
-            PersistedAIAgentActionType::UseComputer {
-                action_summary,
-                actions,
-                screenshot_params,
-            } => Ok(Self::UseComputer(UseComputerRequest {
-                action_summary,
-                actions,
-                screenshot_params,
-            })),
-            PersistedAIAgentActionType::RequestComputerUse {
-                task_summary,
-                screenshot_params,
-            } => Ok(Self::RequestComputerUse(RequestComputerUseRequest {
-                task_summary,
-                screenshot_params,
-            })),
+
             PersistedAIAgentActionType::AskUserQuestion { questions } => {
                 Ok(Self::AskUserQuestion { questions })
             }
@@ -575,39 +497,6 @@ impl TryFrom<PersistedAIAgentActionType> for AIAgentActionType {
             PersistedAIAgentActionType::NotPersisted => Err(anyhow!(
                 "Restoration is handled through conversation tasks, not persisted blocks."
             )),
-        }
-    }
-}
-
-/// The types of "blocks" we can store in our SQLite database for session restoration. Only command
-/// blocks are true [`crate::terminal::model::block::Block`]s.
-///
-/// TODO(roland): now that there is no AI serialized block, consider removing this enum wrapper
-#[derive(Debug, Clone, PartialEq)]
-pub enum SerializedBlockListItem {
-    Command { block: Box<SerializedBlock> },
-}
-
-impl SerializedBlockListItem {
-    pub(crate) fn start_ts(&self) -> Option<DateTime<Local>> {
-        match self {
-            Self::Command { block } => block.start_ts,
-        }
-    }
-}
-
-impl From<crate::persistence::model::Block> for SerializedBlockListItem {
-    fn from(value: crate::persistence::model::Block) -> Self {
-        Self::Command {
-            block: Box::new(SerializedBlock::from(value)),
-        }
-    }
-}
-
-impl From<SerializedBlock> for SerializedBlockListItem {
-    fn from(value: SerializedBlock) -> Self {
-        Self::Command {
-            block: Box::new(value),
         }
     }
 }

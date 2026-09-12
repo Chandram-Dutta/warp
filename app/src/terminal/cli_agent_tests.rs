@@ -1,26 +1,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use chrono::Local;
 use pathfinder_color::ColorU;
 use smol_str::SmolStr;
-use warp_editor::render::model::LineCount;
 use warp_util::path::EscapeChar;
 use warpui::App;
 
-use super::{
-    CLIAgent, CLIAgentRuntimeExt as _, UBER_TEAM_UID, build_diff_hunk_prompt, build_review_prompt,
-    build_selection_line_range_prompt, build_selection_substring_prompt,
-};
-use crate::ai::agent::{AgentReviewCommentBatch, DiffSetHunk};
-use crate::code::buffer_location::LocalOrRemotePath;
-use crate::code::editor::line::EditorLineLocation;
-use crate::code_review::comments::{
-    AttachedReviewComment, AttachedReviewCommentTarget, CommentOrigin, LineDiffContent,
-};
+use super::{CLIAgent, CLIAgentRuntimeExt as _, UBER_TEAM_UID};
 use crate::server::ids::ServerId;
-use crate::server::server_api::team::MockTeamClient;
-use crate::server::server_api::workspace::MockWorkspaceClient;
 use crate::ui_components::icons::Icon;
 use crate::workspaces::team::Team;
 use crate::workspaces::user_workspaces::UserWorkspaces;
@@ -32,223 +19,6 @@ fn aliases(pairs: &[(&str, &str)]) -> HashMap<SmolStr, String> {
         .iter()
         .map(|(k, v)| (SmolStr::new(k), v.to_string()))
         .collect()
-}
-
-// ---------------------------------------------------------------------------
-// Helpers for prompt-building tests
-// ---------------------------------------------------------------------------
-
-fn make_comment(
-    content: &str,
-    target: AttachedReviewCommentTarget,
-    outdated: bool,
-) -> AttachedReviewComment {
-    AttachedReviewComment {
-        id: Default::default(),
-        content: content.to_string(),
-        target,
-        last_update_time: Local::now(),
-        base: None,
-        head: None,
-        outdated,
-        origin: CommentOrigin::Native,
-    }
-}
-
-fn batch(comments: Vec<AttachedReviewComment>) -> AgentReviewCommentBatch {
-    AgentReviewCommentBatch {
-        comments,
-        diff_set: HashMap::new(),
-    }
-}
-
-fn local_path(path: &str) -> LocalOrRemotePath {
-    LocalOrRemotePath::Local(path.into())
-}
-
-// ---------------------------------------------------------------------------
-// build_review_prompt tests
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_build_review_prompt_current_line_is_1_indexed() {
-    // LineCount 0 (0-indexed) should appear as L1 in the prompt.
-    let comment = make_comment(
-        "fix this",
-        AttachedReviewCommentTarget::Line {
-            absolute_file_path: local_path("/repo/src/main.rs"),
-            line: EditorLineLocation::Current {
-                line_number: LineCount::from(0),
-                line_range: LineCount::from(0)..LineCount::from(1),
-            },
-            content: LineDiffContent::default(),
-        },
-        false,
-    );
-    let prompt = build_review_prompt(&batch(vec![comment]));
-    assert!(
-        prompt.contains("/repo/src/main.rs L1"),
-        "expected 1-indexed L1, got: {prompt}",
-    );
-    assert!(prompt.contains("fix this"));
-}
-
-#[test]
-fn test_build_review_prompt_removed_line_is_1_indexed() {
-    let comment = make_comment(
-        "why was this deleted?",
-        AttachedReviewCommentTarget::Line {
-            absolute_file_path: local_path("/repo/old.rs"),
-            line: EditorLineLocation::Removed {
-                line_number: LineCount::from(9),
-                line_range: LineCount::from(9)..LineCount::from(10),
-                index: 0,
-            },
-            content: LineDiffContent::default(),
-        },
-        false,
-    );
-    let prompt = build_review_prompt(&batch(vec![comment]));
-    assert!(
-        prompt.contains("(deleted, was L10"),
-        "expected 1-indexed L10, got: {prompt}",
-    );
-}
-
-#[test]
-fn test_build_review_prompt_collapsed_range_is_1_indexed_start() {
-    let comment = make_comment(
-        "check this hunk",
-        AttachedReviewCommentTarget::Line {
-            absolute_file_path: local_path("/repo/lib.rs"),
-            line: EditorLineLocation::Collapsed {
-                line_range: LineCount::from(4)..LineCount::from(10),
-            },
-            content: LineDiffContent::default(),
-        },
-        false,
-    );
-    let prompt = build_review_prompt(&batch(vec![comment]));
-    // line_range is [4, 10) 0-indexed -> L5-L10 (1-indexed, both ends inclusive)
-    assert!(prompt.contains("L5-L10"), "expected L5-L10, got: {prompt}",);
-}
-
-#[test]
-fn test_build_review_prompt_file_level_comment() {
-    let comment = make_comment(
-        "needs refactoring",
-        AttachedReviewCommentTarget::File {
-            absolute_file_path: local_path("/repo/src/utils.rs"),
-        },
-        false,
-    );
-    let prompt = build_review_prompt(&batch(vec![comment]));
-    assert!(prompt.contains("/repo/src/utils.rs: needs refactoring"));
-    // Not a deleted file (empty diff_set), so no "deleted file" text.
-    assert!(!prompt.contains("deleted file"));
-}
-
-#[test]
-fn test_build_review_prompt_deleted_file_comment() {
-    let comment = make_comment(
-        "why remove this?",
-        AttachedReviewCommentTarget::File {
-            absolute_file_path: local_path("/repo/src/old.rs"),
-        },
-        false,
-    );
-    let mut review = batch(vec![comment]);
-    review.diff_set.insert(
-        "src/old.rs".to_string(),
-        vec![DiffSetHunk {
-            line_range: LineCount::from(0)..LineCount::from(5),
-            diff_content: String::new(),
-            lines_added: 0,
-            lines_removed: 5,
-        }],
-    );
-    let prompt = build_review_prompt(&review);
-    assert!(
-        prompt.contains("(deleted file"),
-        "expected deleted file annotation, got: {prompt}",
-    );
-}
-
-#[test]
-fn test_build_review_prompt_general_comment() {
-    let comment = make_comment(
-        "overall looks good",
-        AttachedReviewCommentTarget::General,
-        false,
-    );
-    let prompt = build_review_prompt(&batch(vec![comment]));
-    assert!(prompt.contains("General: overall looks good"));
-}
-
-#[test]
-fn test_build_review_prompt_skips_outdated_comments() {
-    let active = make_comment("keep me", AttachedReviewCommentTarget::General, false);
-    let outdated = make_comment("skip me", AttachedReviewCommentTarget::General, true);
-    let prompt = build_review_prompt(&batch(vec![active, outdated]));
-    assert!(prompt.contains("keep me"));
-    assert!(!prompt.contains("skip me"));
-}
-
-#[test]
-fn test_build_review_prompt_multiple_comments() {
-    let c1 = make_comment(
-        "first",
-        AttachedReviewCommentTarget::Line {
-            absolute_file_path: local_path("/repo/a.rs"),
-            line: EditorLineLocation::Current {
-                line_number: LineCount::from(4),
-                line_range: LineCount::from(4)..LineCount::from(5),
-            },
-            content: LineDiffContent::default(),
-        },
-        false,
-    );
-    let c2 = make_comment("second", AttachedReviewCommentTarget::General, false);
-    let prompt = build_review_prompt(&batch(vec![c1, c2]));
-    assert!(prompt.contains("/repo/a.rs L5: first"));
-    assert!(prompt.contains("General: second"));
-}
-
-#[test]
-fn test_build_review_prompt_exports_internal_markdown_without_punctuation_escapes() {
-    let comment = make_comment("Fix this\\.", AttachedReviewCommentTarget::General, false);
-    let prompt = build_review_prompt(&batch(vec![comment]));
-    assert!(prompt.contains("General: Fix this."));
-    assert!(!prompt.contains("Fix this\\."));
-}
-
-// ---------------------------------------------------------------------------
-// build_diff_hunk_prompt tests
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_build_diff_hunk_prompt_format() {
-    let prompt = build_diff_hunk_prompt("/repo/src/main.rs", 10, 20, 3, 2);
-    assert_eq!(
-        prompt,
-        "/repo/src/main.rs L10-L20 (+3 -2) -- run `git diff` to see the full context.",
-    );
-}
-
-// ---------------------------------------------------------------------------
-// build_selection_line_range_prompt tests
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_build_selection_line_range_prompt_format() {
-    let result = build_selection_line_range_prompt("src/foo.rs", 5, 10);
-    assert_eq!(result, "src/foo.rs L5-L10");
-}
-
-#[test]
-fn test_build_selection_substring_prompt_format() {
-    let result = build_selection_substring_prompt("src/foo.rs", 5, "let x = 42;");
-    assert_eq!(result, "src/foo.rs L5: let x = 42;");
 }
 
 #[test]
@@ -462,14 +232,7 @@ fn workspace_with_team_uid(uid: &str) -> Workspace {
 fn test_detect_aifx_agent_run_claude_on_uber_team() {
     App::test((), |mut app| async move {
         let uber_workspace = workspace_with_team_uid(UBER_TEAM_UID);
-        app.add_singleton_model(|ctx| {
-            UserWorkspaces::mock(
-                Arc::new(MockTeamClient::new()),
-                Arc::new(MockWorkspaceClient::new()),
-                vec![uber_workspace],
-                ctx,
-            )
-        });
+        app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![uber_workspace], ctx));
 
         app.update(|ctx| {
             assert_eq!(
@@ -489,14 +252,7 @@ fn test_detect_aifx_agent_run_claude_on_uber_team() {
 fn test_detect_aifx_agent_run_claude_via_alias_on_uber_team() {
     App::test((), |mut app| async move {
         let uber_workspace = workspace_with_team_uid(UBER_TEAM_UID);
-        app.add_singleton_model(|ctx| {
-            UserWorkspaces::mock(
-                Arc::new(MockTeamClient::new()),
-                Arc::new(MockWorkspaceClient::new()),
-                vec![uber_workspace],
-                ctx,
-            )
-        });
+        app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![uber_workspace], ctx));
 
         app.update(|ctx| {
             let map = aliases(&[("ai", "aifx agent run claude")]);
@@ -557,14 +313,7 @@ fn test_from_serialized_name_falls_back_to_unknown() {
 fn test_detect_aifx_agent_run_claude_wrong_team() {
     App::test((), |mut app| async move {
         let other_workspace = workspace_with_team_uid("some-other-team-uid-01");
-        app.add_singleton_model(|ctx| {
-            UserWorkspaces::mock(
-                Arc::new(MockTeamClient::new()),
-                Arc::new(MockWorkspaceClient::new()),
-                vec![other_workspace],
-                ctx,
-            )
-        });
+        app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![other_workspace], ctx));
 
         app.update(|ctx| {
             assert_eq!(

@@ -685,9 +685,7 @@ impl Network {
             DownstreamMessage::ParticipantPresenceUpdated(update) => {
                 ctx.emit(NetworkEvent::ParticipantPresenceUpdated(update));
             }
-            DownstreamMessage::RoleRequestInFlight(role_request_id) => {
-                ctx.emit(NetworkEvent::RoleRequestInFlight(role_request_id));
-            }
+            DownstreamMessage::RoleRequestInFlight(_) => {}
             DownstreamMessage::RoleRequestResponse(role_request_response) => {
                 ctx.emit(NetworkEvent::RoleRequestResponse(role_request_response));
             }
@@ -957,16 +955,6 @@ impl Network {
         self.send_message_to_server(UpstreamMessage::SendAgentPrompt(request));
     }
 
-    pub fn send_cancel_control_action(
-        &mut self,
-        server_conversation_token: ServerConversationToken,
-    ) {
-        let action = ControlAction::CancelConversation {
-            server_conversation_token,
-        };
-        self.send_message_to_server(UpstreamMessage::SendControlAction(action));
-    }
-
     pub fn send_link_permission_update(&mut self, role: Option<Role>) {
         self.send_message_to_server(UpstreamMessage::UpdateLinkAccessLevel { role });
     }
@@ -1213,7 +1201,6 @@ pub enum NetworkEvent {
         block_id: BlockId,
         operations: Vec<CrdtOperation>,
     },
-    RoleRequestInFlight(RoleRequestId),
     RoleRequestResponse(RoleRequestResponse),
     CommandExecutionRequestFailed {
         reason: CommandExecutionFailureReason,

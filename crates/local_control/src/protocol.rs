@@ -89,7 +89,7 @@ pub struct DirectionParams {
     pub direction: Direction,
 }
 
-/// Parameters for opening a file in Warp's app/editor state.
+/// Parameters for opening a file in the configured external application.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FileOpenParams {
@@ -98,8 +98,6 @@ pub struct FileOpenParams {
     pub line: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub column: Option<u32>,
-    #[serde(default)]
-    pub new_tab: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -17,6 +17,24 @@ fn initialize_app(app: &mut App) {
 }
 
 #[test]
+fn retired_agent_chip_preserves_local_prompt_configuration() {
+    let config = PromptConfiguration::from_chips(
+        [ContextChipKind::Ssh, ContextChipKind::WorkingDirectory],
+        true,
+        WarpPromptSeparator::None,
+    );
+    let mut serialized = serde_json::to_value(&config).expect("serialize prompt config");
+    let chips = serialized["chips"].as_array_mut().expect("prompt chips");
+    let mut retired_chip = chips[0].clone();
+    retired_chip["chip"] = Value::String("AgentPlanAndTodoList".into());
+    chips.insert(1, retired_chip);
+
+    let restored: PromptConfiguration =
+        serde_json::from_value(serialized).expect("restore local prompt config");
+    assert_eq!(restored, config);
+}
+
+#[test]
 // Legacy prompt configs do not have git diff stats, so it should be added after normalization.
 // `did_separate_git_diff_stats` is set to `false`.
 fn test_prompt_config_adds_git_diff_stats_for_legacy_config() {

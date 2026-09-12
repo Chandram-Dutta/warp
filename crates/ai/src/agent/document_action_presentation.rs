@@ -101,7 +101,6 @@ impl DocumentActionPresentation {
                 AIAgentActionType::RequestCommandOutput { .. }
                 | AIAgentActionType::WriteToLongRunningShellCommand { .. }
                 | AIAgentActionType::ReadFiles(_)
-                | AIAgentActionType::UploadArtifact(_)
                 | AIAgentActionType::SearchCodebase(_)
                 | AIAgentActionType::RequestFileEdits { .. }
                 | AIAgentActionType::Grep { .. }
@@ -110,16 +109,11 @@ impl DocumentActionPresentation {
                 | AIAgentActionType::ReadMCPResource { .. }
                 | AIAgentActionType::CallMCPTool { .. }
                 | AIAgentActionType::SuggestNewConversation { .. }
-                | AIAgentActionType::SuggestPrompt(_)
                 | AIAgentActionType::InitProject
                 | AIAgentActionType::OpenCodeReview
                 | AIAgentActionType::ReadDocuments(_)
                 | AIAgentActionType::ReadShellCommandOutput { .. }
-                | AIAgentActionType::UseComputer(_)
                 | AIAgentActionType::InsertCodeReviewComments { .. }
-                | AIAgentActionType::RequestComputerUse(_)
-                | AIAgentActionType::StartRecording { .. }
-                | AIAgentActionType::StopRecording { .. }
                 | AIAgentActionType::ReadSkill(_)
                 | AIAgentActionType::FetchConversation { .. }
                 | AIAgentActionType::SendMessageToAgent { .. }

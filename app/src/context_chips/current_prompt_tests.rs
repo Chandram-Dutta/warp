@@ -13,20 +13,16 @@ use warp_core::command::ExitCode;
 use warpui::{App, SingletonEntity};
 use warpui_extras::user_preferences;
 
-use super::{ActiveChipSurfaces, ChipUpdateStatus, CurrentPrompt, PromptContext};
-use crate::CLIAgentSessionsModel;
-use crate::ai::blocklist::agent_view::toolbar_item::AgentToolbarItemKind;
+use super::{ChipUpdateStatus, CurrentPrompt, PromptContext};
 use crate::auth::AuthStateProvider;
 use crate::auth::auth_manager::AuthManager;
-#[cfg(feature = "local_fs")]
-use crate::code_review::diff_state::DiffStats;
-#[cfg(feature = "local_fs")]
-use crate::code_review::git_repo_model::{GitRepoStatusModel, GitStatusMetadata};
-#[cfg(feature = "local_fs")]
-use crate::code_review::github_repo_model::GitHubRepoModel;
 use crate::context_chips::context_chip::{Environment, PromptGenerator};
 #[cfg(feature = "local_fs")]
 use crate::context_chips::display_chip::GitBranchTrackingStatus;
+#[cfg(feature = "local_fs")]
+use crate::context_chips::git_repo_model::{GitRepoStatusModel, GitStatusMetadata};
+#[cfg(feature = "local_fs")]
+use crate::context_chips::github_repo_model::GitHubRepoModel;
 use crate::context_chips::prompt::Prompt;
 use crate::context_chips::{ChipAvailability, ChipDisabledReason, ContextChipKind};
 use crate::features::FeatureFlag;
@@ -36,21 +32,18 @@ use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
 use crate::settings::WarpPromptSeparator;
 #[cfg(windows)]
 use crate::system::SystemInfo;
-use crate::terminal::cli_agent_sessions::{
-    CLIAgentInputState, CLIAgentSession, CLIAgentSessionContext, CLIAgentSessionStatus,
-};
+use crate::terminal::History;
 use crate::terminal::model::block::BlockMetadata;
 use crate::terminal::model::session::{
     CommandExecutor, ExecuteCommandOptions, SessionId, SessionInfo, Sessions,
 };
-use crate::terminal::session_settings::{
-    AgentToolbarChipSelection, CLIAgentToolbarChipSelection, SessionSettings, ToolbarChipSelection,
-};
+use crate::terminal::session_settings::SessionSettings;
 use crate::terminal::shell::Shell;
 use crate::terminal::view::PromptPosition;
-use crate::terminal::{CLIAgent, History};
 #[cfg(feature = "local_fs")]
 use crate::util::git::PrInfo;
+#[cfg(feature = "local_fs")]
+use crate::util::git_status::DiffStats;
 
 #[cfg(feature = "local_fs")]
 fn git_status_metadata(branch: &str) -> GitStatusMetadata {
@@ -505,186 +498,7 @@ fn test_disabling_chips() {
 }
 
 #[test]
-fn test_chips_to_run_only_includes_active_surface_configurations() {
-    App::test((), |mut app| async move {
-        app.add_singleton_model(|_| {
-            Prompt::mock_with(
-                [ContextChipKind::Username],
-                false,
-                WarpPromptSeparator::None,
-            )
-        });
-        app.add_singleton_model(SessionSettings::new_with_defaults);
-        app.add_singleton_model(|_ctx| {
-            settings::PublicPreferences::new(
-                Box::<user_preferences::in_memory::InMemoryPreferences>::default(),
-            )
-        });
-        app.add_singleton_model(|_| {
-            settings::PrivatePreferences::new(
-                Box::<user_preferences::in_memory::InMemoryPreferences>::default(),
-            )
-        });
-        app.update(|ctx| {
-            SessionSettings::handle(ctx).update(ctx, |settings, ctx| {
-                settings
-                    .agent_footer_chip_selection
-                    .set_value(
-                        AgentToolbarChipSelection::Custom {
-                            left: vec![AgentToolbarItemKind::ContextChip(
-                                ContextChipKind::WorkingDirectory,
-                            )],
-                            right: vec![],
-                        },
-                        ctx,
-                    )
-                    .unwrap();
-                settings
-                    .cli_agent_footer_chip_selection
-                    .set_value(
-                        CLIAgentToolbarChipSelection::Custom {
-                            left: vec![AgentToolbarItemKind::ContextChip(
-                                ContextChipKind::ShellGitBranch,
-                            )],
-                            right: vec![],
-                        },
-                        ctx,
-                    )
-                    .unwrap();
-            });
-        });
-
-        let sessions = app.add_model(|_| Sessions::new_for_test());
-        let current_prompt = app.add_model(move |ctx| CurrentPrompt::new(sessions, ctx));
-
-        app.read(|ctx| {
-            let current_prompt = current_prompt.as_ref(ctx);
-            let chips_for = |surfaces| current_prompt.chips_to_run_for_surfaces(surfaces, ctx);
-
-            assert!(chips_for(ActiveChipSurfaces::default()).is_empty());
-            assert_eq!(
-                chips_for(ActiveChipSurfaces {
-                    prompt: true,
-                    ..Default::default()
-                }),
-                vec![ContextChipKind::Username]
-            );
-            assert_eq!(
-                chips_for(ActiveChipSurfaces {
-                    agent_footer: true,
-                    ..Default::default()
-                }),
-                vec![ContextChipKind::WorkingDirectory]
-            );
-            assert_eq!(
-                chips_for(ActiveChipSurfaces {
-                    cli_agent_footer: true,
-                    ..Default::default()
-                }),
-                vec![ContextChipKind::ShellGitBranch]
-            );
-            assert_eq!(
-                chips_for(ActiveChipSurfaces {
-                    prompt: true,
-                    agent_footer: true,
-                    cli_agent_footer: true,
-                }),
-                vec![
-                    ContextChipKind::Username,
-                    ContextChipKind::WorkingDirectory,
-                    ContextChipKind::ShellGitBranch,
-                ]
-            );
-        });
-    });
-}
-
-#[test]
-fn test_cli_agent_footer_chips_require_a_visible_supported_footer() {
-    App::test((), |mut app| async move {
-        app.add_singleton_model(|_| Prompt::mock());
-        app.add_singleton_model(SessionSettings::new_with_defaults);
-        app.add_singleton_model(|_| History::new(vec![]));
-        app.add_singleton_model(|_ctx| {
-            settings::PublicPreferences::new(
-                Box::<user_preferences::in_memory::InMemoryPreferences>::default(),
-            )
-        });
-        app.add_singleton_model(|_| {
-            settings::PrivatePreferences::new(
-                Box::<user_preferences::in_memory::InMemoryPreferences>::default(),
-            )
-        });
-        app.add_singleton_model(|_| ServerApiProvider::new_for_test());
-        app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-        app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
-        app.add_singleton_model(AuthManager::new_for_test);
-        app.add_singleton_model(|_| crate::settings::manager::SettingsManager::default());
-        crate::settings::InputSettings::register(&mut app);
-        app.update(crate::settings::AISettings::register_and_subscribe_to_events);
-        app.add_singleton_model(crate::workspaces::user_workspaces::UserWorkspaces::default_mock);
-        app.add_singleton_model(|_| CLIAgentSessionsModel::new());
-        #[cfg(windows)]
-        app.add_singleton_model(SystemInfo::new);
-
-        let sessions = app.add_model(|_| Sessions::new_for_test());
-        let current_prompt = app.add_model(move |ctx| CurrentPrompt::new(sessions, ctx));
-        let terminal_view_id = current_prompt.id();
-        current_prompt.update(&mut app, |current_prompt, _| {
-            current_prompt.terminal_view_id = Some(terminal_view_id);
-        });
-
-        let cli_footer_chips =
-            |app: &App| app.read(|ctx| current_prompt.as_ref(ctx).chips_to_run(ctx));
-        assert!(cli_footer_chips(&app).is_empty());
-
-        let session_for = |agent| CLIAgentSession {
-            agent,
-            status: CLIAgentSessionStatus::InProgress,
-            session_context: CLIAgentSessionContext::default(),
-            input_state: CLIAgentInputState::Closed,
-            should_auto_toggle_input: false,
-            listener: None,
-            plugin_version: None,
-            remote_host: None,
-            draft_text: None,
-            custom_command_prefix: None,
-            received_rich_notification: false,
-        };
-
-        CLIAgentSessionsModel::handle(&app).update(&mut app, |sessions, ctx| {
-            sessions.set_session(terminal_view_id, session_for(CLIAgent::Claude), ctx);
-        });
-        assert_eq!(
-            cli_footer_chips(&app),
-            app.read(|ctx| {
-                SessionSettings::as_ref(ctx)
-                    .cli_agent_footer_chip_selection
-                    .all_chips()
-            })
-        );
-
-        CLIAgentSessionsModel::handle(&app).update(&mut app, |sessions, ctx| {
-            sessions.set_session(terminal_view_id, session_for(CLIAgent::WarpTui), ctx);
-        });
-        assert!(cli_footer_chips(&app).is_empty());
-
-        CLIAgentSessionsModel::handle(&app).update(&mut app, |sessions, ctx| {
-            sessions.set_session(terminal_view_id, session_for(CLIAgent::Claude), ctx);
-        });
-        crate::settings::AISettings::handle(&app).update(&mut app, |settings, ctx| {
-            settings
-                .should_render_cli_agent_footer
-                .set_value(false, ctx)
-                .unwrap();
-        });
-        assert!(cli_footer_chips(&app).is_empty());
-    });
-}
-
-#[test]
-fn test_ps1_without_active_agent_surface_runs_no_footer_generators() {
-    let _flag_guard = FeatureFlag::AgentView.override_enabled(true);
+fn test_ps1_runs_no_prompt_generators() {
     App::test((), |mut app| async move {
         let session_id = SessionId::from(321);
         app.add_singleton_model(|_| Prompt::mock());
@@ -783,8 +597,8 @@ fn test_externally_driven_chip_skips_periodic_timer() {
                 )
                 .unwrap()
         });
-        let git_status = app
-            .add_model(move |ctx| GitRepoStatusModel::new_local_for_test(repo_handle, None, ctx));
+        let git_status =
+            app.add_model(move |_| GitRepoStatusModel::new_for_test(repo_handle, None));
 
         let sessions = app.add_model(|_| Sessions::new_for_test());
         let current_prompt = app.add_model(move |ctx| CurrentPrompt::new(sessions, ctx));
@@ -846,8 +660,8 @@ fn test_git_status_change_updates_chip_value() {
         });
 
         let initial_metadata = git_status_metadata("main");
-        let git_status = app.add_model(move |ctx| {
-            GitRepoStatusModel::new_local_for_test(repo_handle, Some(initial_metadata), ctx)
+        let git_status = app.add_model(move |_| {
+            GitRepoStatusModel::new_for_test(repo_handle, Some(initial_metadata))
         });
 
         let sessions = app.add_model(|_| Sessions::new_for_test());
@@ -916,8 +730,8 @@ fn test_git_status_change_updates_branch_status_chip_value() {
                 .unwrap()
         });
 
-        let git_status = app
-            .add_model(move |ctx| GitRepoStatusModel::new_local_for_test(repo_handle, None, ctx));
+        let git_status =
+            app.add_model(move |_| GitRepoStatusModel::new_for_test(repo_handle, None));
         let sessions = app.add_model(|_| Sessions::new_for_test());
         let current_prompt = app.add_model(move |ctx| CurrentPrompt::new(sessions, ctx));
 
@@ -997,16 +811,12 @@ fn test_git_status_pr_info_updates_github_pr_chip_value() {
                 .unwrap()
         });
 
-        let git_status = app.add_model(move |ctx| {
-            GitRepoStatusModel::new_local_for_test(
-                repo_handle,
-                Some(git_status_metadata("feature-a")),
-                ctx,
-            )
+        let git_status = app.add_model(move |_| {
+            GitRepoStatusModel::new_for_test(repo_handle, Some(git_status_metadata("feature-a")))
         });
         let github_repo_model = {
             let git_status = git_status.clone();
-            app.add_model(move |ctx| GitHubRepoModel::new_local_for_test(git_status, ctx))
+            app.add_model(move |_| GitHubRepoModel::new_for_test(git_status))
         };
 
         let sessions = app.add_model(|_| Sessions::new_for_test());

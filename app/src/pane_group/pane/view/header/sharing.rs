@@ -111,7 +111,6 @@ impl<P: BackingView> PaneHeader<P> {
         let dialog_opened = match self.open_overlay {
             OpenOverlay::OverflowMenu => {
                 self.open_overlay = OpenOverlay::SharingDialog;
-                ctx.emit(Event::PaneHeaderOverflowMenuToggled(false));
                 ctx.focus(&self.shared_content.sharing_dialog);
                 true
             }
@@ -149,9 +148,6 @@ impl<P: BackingView> PaneHeader<P> {
         }
 
         let dialog_was_closed = self.open_overlay != OpenOverlay::SharingDialog;
-        if self.open_overlay == OpenOverlay::OverflowMenu {
-            ctx.emit(Event::PaneHeaderOverflowMenuToggled(false));
-        }
         self.open_overlay = OpenOverlay::SharingDialog;
         ctx.focus(&self.shared_content.sharing_dialog);
         self.sharing_dialog().update(ctx, |dialog, ctx| {

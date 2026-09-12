@@ -21,7 +21,6 @@ fn test_only_first_override_is_applied() {
             is_rollback: None,
             version_for_new_users: None,
             cli_version: None,
-            tui_version: None,
         },
         overrides: vec![
             VersionOverride {
@@ -34,7 +33,6 @@ fn test_only_first_override_is_applied() {
                     is_rollback: None,
                     version_for_new_users: None,
                     cli_version: None,
-                    tui_version: None,
                 },
             },
             VersionOverride {
@@ -49,7 +47,6 @@ fn test_only_first_override_is_applied() {
                     is_rollback: None,
                     version_for_new_users: None,
                     cli_version: None,
-                    tui_version: None,
                 },
             },
         ],
@@ -146,7 +143,6 @@ fn test_cli_version_override_is_applied() {
             is_rollback: None,
             version_for_new_users: None,
             cli_version: Some("base_cli_version".to_string()),
-            tui_version: None,
         },
         overrides: vec![VersionOverride {
             predicate,
@@ -158,7 +154,6 @@ fn test_cli_version_override_is_applied() {
                 is_rollback: None,
                 version_for_new_users: None,
                 cli_version: Some("override_cli_version".to_string()),
-                tui_version: None,
             },
         }],
     };
@@ -192,7 +187,6 @@ fn test_cli_version_preserved_when_override_omits_it() {
             is_rollback: None,
             version_for_new_users: None,
             cli_version: Some("base_cli_version".to_string()),
-            tui_version: None,
         },
         overrides: vec![VersionOverride {
             predicate,
@@ -204,7 +198,6 @@ fn test_cli_version_preserved_when_override_omits_it() {
                 is_rollback: None,
                 version_for_new_users: None,
                 cli_version: None,
-                tui_version: None,
             },
         }],
     };
@@ -229,76 +222,15 @@ fn test_cli_version_falls_back_to_version() {
 }
 
 #[test]
-fn test_tui_version_override_is_applied() {
-    #[cfg(target_os = "macos")]
-    let predicate = OverridePredicate::TargetOS(TargetOS::MacOS);
-    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-    let predicate = OverridePredicate::TargetOS(TargetOS::Linux);
-    #[cfg(target_os = "windows")]
-    let predicate = OverridePredicate::TargetOS(TargetOS::Windows);
-
-    let mut version_info = VersionInfo::new("base_version".to_string());
-    version_info.tui_version = Some("base_tui_version".to_string());
-    let mut override_version_info = VersionInfo::new("override_version".to_string());
-    override_version_info.tui_version = Some("override_tui_version".to_string());
-    let version = ChannelVersion {
-        version_info,
-        overrides: vec![VersionOverride {
-            predicate,
-            version_info: override_version_info,
-        }],
-    };
-
-    let version_info_with_overrides = version.version_info();
-    assert_eq!(
-        version_info_with_overrides.tui_version(),
-        "override_tui_version"
-    );
-}
-
-#[test]
-fn test_tui_version_preserved_when_override_omits_it() {
-    #[cfg(target_os = "macos")]
-    let predicate = OverridePredicate::TargetOS(TargetOS::MacOS);
-    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-    let predicate = OverridePredicate::TargetOS(TargetOS::Linux);
-    #[cfg(target_os = "windows")]
-    let predicate = OverridePredicate::TargetOS(TargetOS::Windows);
-
-    let mut version_info = VersionInfo::new("base_version".to_string());
-    version_info.tui_version = Some("base_tui_version".to_string());
-    let version = ChannelVersion {
-        version_info,
-        overrides: vec![VersionOverride {
-            predicate,
-            version_info: VersionInfo::new("override_version".to_string()),
-        }],
-    };
-
-    assert_eq!(version.version_info().tui_version(), "base_tui_version");
-}
-
-#[test]
-fn test_tui_version_falls_back_to_effective_version() {
-    #[cfg(target_os = "macos")]
-    let predicate = OverridePredicate::TargetOS(TargetOS::MacOS);
-    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-    let predicate = OverridePredicate::TargetOS(TargetOS::Linux);
-    #[cfg(target_os = "windows")]
-    let predicate = OverridePredicate::TargetOS(TargetOS::Windows);
-
-    let version = ChannelVersion {
-        version_info: VersionInfo::new("base_version".to_string()),
-        overrides: vec![VersionOverride {
-            predicate,
-            version_info: VersionInfo::new("override_version".to_string()),
-        }],
-    };
-
-    let version_info_with_overrides = version.version_info();
-    assert_eq!(version_info_with_overrides.tui_version, None);
-    assert_eq!(
-        version_info_with_overrides.tui_version(),
-        "override_version"
+fn obsolete_tui_metadata_does_not_change_gui_version() {
+    let info: VersionInfo =
+        serde_json::from_str(r#"{"version":"gui_version","tui_version":"obsolete_version"}"#)
+            .unwrap();
+    assert_eq!(info.version, "gui_version");
+    assert!(
+        serde_json::to_value(info)
+            .unwrap()
+            .get("tui_version")
+            .is_none()
     );
 }

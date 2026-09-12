@@ -10,7 +10,6 @@ use warpui_extras::user_preferences;
 
 use super::app_icon::AppIconSettings;
 use super::app_installation_detection::UserAppInstallDetectionSettings;
-use super::cloud_preferences::CloudPreferencesSettings;
 use super::initializer::SettingsInitializer;
 use super::native_preference::NativePreferenceSettings;
 use super::{
@@ -19,7 +18,6 @@ use super::{
     FontSettings, FontSettingsChangedEvent, GPUSettings, InputBoxType, InputModeSettings,
     InputSettings, LocalControlSettings, PaneSettings, SameLinePromptBlockSettings, ScrollSettings,
     SelectionSettings, SharedObjectLimitBannerSettings, SshSettings, ThemeSettings,
-    TuiAutoupdateSettings, TuiThemeSettings, TuiVoiceSettings, TuiZeroStateSettings,
     VimBannerSettings, WarpDrivePrivacySettings,
 };
 use crate::ai::cloud_agent_settings::CloudAgentSettings;
@@ -38,7 +36,6 @@ use crate::terminal::ligature_settings::LigatureSettings;
 use crate::terminal::safe_mode_settings::SafeModeSettings;
 use crate::terminal::session_settings::{SessionSettings, SessionSettingsChangedEvent};
 use crate::terminal::settings::TerminalSettings;
-use crate::terminal::shared_session::settings::SharedSessionSettings;
 use crate::terminal::warpify::settings::WarpifySettings;
 use crate::undo_close::UndoCloseSettings;
 use crate::window_settings::WindowSettings;
@@ -82,13 +79,8 @@ pub fn register_all_settings(ctx: &mut AppContext) {
     SelectionSettings::register(ctx);
     InputModeSettings::register(ctx);
     ThemeSettings::register(ctx);
-    TuiAutoupdateSettings::register(ctx);
-    TuiThemeSettings::register(ctx);
-    TuiVoiceSettings::register(ctx);
-    TuiZeroStateSettings::register(ctx);
     AccessibilitySettings::register(ctx);
     NativePreferenceSettings::register(ctx);
-    CloudPreferencesSettings::register(ctx);
     WarpDrivePrivacySettings::register(ctx);
     UserAppInstallDetectionSettings::register(ctx);
     AppIconSettings::register(ctx);
@@ -100,7 +92,6 @@ pub fn register_all_settings(ctx: &mut AppContext) {
     SshSettings::register(ctx);
     VimBannerSettings::register(ctx);
     SharedObjectLimitBannerSettings::register(ctx);
-    SharedSessionSettings::register(ctx);
     WarpDriveSettings::register(ctx);
     WorkflowAliases::register(ctx);
     EmacsBindingsSettings::register(ctx);
@@ -366,13 +357,6 @@ pub fn init_public_user_preferences() -> (user_preferences::Model, Option<user_p
 /// 3. The migration-complete marker is absent from the native store
 ///    (handles the case where a user deletes `settings.toml` to reset).
 fn needs_settings_file_migration(ctx: &AppContext) -> bool {
-    // Migration only applies to the GUI surface, which is the one with legacy
-    // native-store settings to move into its TOML file. Other surfaces (e.g.
-    // the TUI) have nothing to migrate and must never run migration or touch
-    // the shared migration-complete marker.
-    if !settings::settings_mode().should_migrate_native_settings() {
-        return false;
-    }
     needs_settings_file_migration_for_path(ctx, &super::user_preferences_toml_file_path())
 }
 
@@ -462,7 +446,7 @@ fn migrate_native_settings_to_settings_file(ctx: &mut AppContext) {
     );
 }
 
-#[cfg(any(test, all(feature = "tui", feature = "test-util")))]
+#[cfg(test)]
 pub fn init_and_register_user_preferences(ctx: &mut AppContext) {
     let public_prefs = Box::<user_preferences::in_memory::InMemoryPreferences>::default();
     let private_prefs = settings::PrivatePreferences::new(Box::<

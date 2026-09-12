@@ -3,12 +3,7 @@ use super::{AppExecutionMode, ExecutionMode};
 #[test]
 #[cfg(feature = "local_only")]
 fn local_only_profile_disables_cloud_and_agent_capabilities_in_every_execution_mode() {
-    for mode in [
-        ExecutionMode::App,
-        ExecutionMode::Tui,
-        ExecutionMode::Sdk,
-        ExecutionMode::RemoteServerDaemon,
-    ] {
+    for mode in [ExecutionMode::App, ExecutionMode::Sdk] {
         let execution_mode = AppExecutionMode {
             mode,
             is_sandboxed: false,

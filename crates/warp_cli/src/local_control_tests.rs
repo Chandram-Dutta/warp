@@ -94,6 +94,10 @@ fn rejects_excluded_command_routes() {
         vec!["warpctrl", "file", "list"],
         vec!["warpctrl", "drive", "list"],
         vec!["warpctrl", "auth", "status"],
+        vec!["warpctrl", "surface", "code-review", "open"],
+        vec!["warpctrl", "surface", "code-review", "toggle"],
+        vec!["warpctrl", "surface", "right-panel", "toggle"],
+        vec!["warpctrl", "surface", "agent-management", "open"],
     ] {
         assert!(ControlArgs::try_parse_from(args).is_err());
     }
@@ -259,7 +263,13 @@ fn generated_bash_completions_include_mutating_command_groups() {
         generate_completion_string(Shell::Bash).expect("bash completions render to UTF-8");
     assert!(completions.contains("surface"));
     assert!(completions.contains("command-palette"));
-    assert!(completions.contains("warp-drive"));
+    assert!(!completions.contains("warp-drive"));
+    assert!(!completions.contains("project-explorer"));
+    assert!(!completions.contains("conversation-list"));
+    assert!(!completions.contains("left-panel"));
+    assert!(!completions.contains("code-review"));
+    assert!(!completions.contains("right-panel"));
+    assert!(!completions.contains("agent-management"));
     assert!(completions.contains("resource-center"));
     assert!(completions.contains("activate"));
     assert!(completions.contains("split"));
@@ -522,48 +532,8 @@ fn retained_action_examples() -> Vec<(ActionKind, Vec<&'static str>)> {
             vec!["warpctrl", "surface", "keybindings", "open"],
         ),
         (
-            ActionKind::SurfaceWarpDriveOpen,
-            vec!["warpctrl", "surface", "warp-drive", "open"],
-        ),
-        (
-            ActionKind::SurfaceWarpDriveToggle,
-            vec!["warpctrl", "surface", "warp-drive", "toggle"],
-        ),
-        (
             ActionKind::SurfaceResourceCenterToggle,
             vec!["warpctrl", "surface", "resource-center", "toggle"],
-        ),
-        (
-            ActionKind::SurfaceAiAssistantToggle,
-            vec!["warpctrl", "surface", "ai-assistant", "toggle"],
-        ),
-        (
-            ActionKind::SurfaceCodeReviewOpen,
-            vec!["warpctrl", "surface", "code-review", "open"],
-        ),
-        (
-            ActionKind::SurfaceCodeReviewToggle,
-            vec!["warpctrl", "surface", "code-review", "toggle"],
-        ),
-        (
-            ActionKind::SurfaceProjectExplorerOpen,
-            vec!["warpctrl", "surface", "project-explorer", "open"],
-        ),
-        (
-            ActionKind::SurfaceGlobalSearchOpen,
-            vec!["warpctrl", "surface", "global-search", "open"],
-        ),
-        (
-            ActionKind::SurfaceConversationListOpen,
-            vec!["warpctrl", "surface", "conversation-list", "open"],
-        ),
-        (
-            ActionKind::SurfaceLeftPanelToggle,
-            vec!["warpctrl", "surface", "left-panel", "toggle"],
-        ),
-        (
-            ActionKind::SurfaceRightPanelToggle,
-            vec!["warpctrl", "surface", "right-panel", "toggle"],
         ),
         (
             ActionKind::SurfaceVerticalTabsOpen,
@@ -572,10 +542,6 @@ fn retained_action_examples() -> Vec<(ActionKind, Vec<&'static str>)> {
         (
             ActionKind::SurfaceVerticalTabsToggle,
             vec!["warpctrl", "surface", "vertical-tabs", "toggle"],
-        ),
-        (
-            ActionKind::SurfaceAgentManagementOpen,
-            vec!["warpctrl", "surface", "agent-management", "open"],
         ),
         (
             ActionKind::FileOpen,
@@ -697,41 +663,12 @@ fn parsed_action_kind(command: &ControlCommand) -> Option<ActionKind> {
             SurfaceCommand::Keybindings(command) => match command {
                 SurfaceOpenCommand::Open(_) => Some(ActionKind::SurfaceKeybindingsOpen),
             },
-            SurfaceCommand::WarpDrive(command) => match command {
-                SurfaceOpenToggleCommand::Open(_) => Some(ActionKind::SurfaceWarpDriveOpen),
-                SurfaceOpenToggleCommand::Toggle(_) => Some(ActionKind::SurfaceWarpDriveToggle),
-            },
             SurfaceCommand::ResourceCenter(command) => match command {
                 SurfaceToggleCommand::Toggle(_) => Some(ActionKind::SurfaceResourceCenterToggle),
-            },
-            SurfaceCommand::AiAssistant(command) => match command {
-                SurfaceToggleCommand::Toggle(_) => Some(ActionKind::SurfaceAiAssistantToggle),
-            },
-            SurfaceCommand::CodeReview(command) => match command {
-                SurfaceOpenToggleCommand::Open(_) => Some(ActionKind::SurfaceCodeReviewOpen),
-                SurfaceOpenToggleCommand::Toggle(_) => Some(ActionKind::SurfaceCodeReviewToggle),
-            },
-            SurfaceCommand::ProjectExplorer(command) => match command {
-                SurfaceOpenCommand::Open(_) => Some(ActionKind::SurfaceProjectExplorerOpen),
-            },
-            SurfaceCommand::GlobalSearch(command) => match command {
-                SurfaceOpenCommand::Open(_) => Some(ActionKind::SurfaceGlobalSearchOpen),
-            },
-            SurfaceCommand::ConversationList(command) => match command {
-                SurfaceOpenCommand::Open(_) => Some(ActionKind::SurfaceConversationListOpen),
-            },
-            SurfaceCommand::LeftPanel(command) => match command {
-                SurfaceToggleCommand::Toggle(_) => Some(ActionKind::SurfaceLeftPanelToggle),
-            },
-            SurfaceCommand::RightPanel(command) => match command {
-                SurfaceToggleCommand::Toggle(_) => Some(ActionKind::SurfaceRightPanelToggle),
             },
             SurfaceCommand::VerticalTabs(command) => match command {
                 SurfaceOpenToggleCommand::Open(_) => Some(ActionKind::SurfaceVerticalTabsOpen),
                 SurfaceOpenToggleCommand::Toggle(_) => Some(ActionKind::SurfaceVerticalTabsToggle),
-            },
-            SurfaceCommand::AgentManagement(command) => match command {
-                SurfaceOpenCommand::Open(_) => Some(ActionKind::SurfaceAgentManagementOpen),
             },
         },
         ControlCommand::Completions { .. } => None,

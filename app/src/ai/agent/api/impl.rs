@@ -84,7 +84,6 @@ pub async fn generate_multi_agent_output(
             supports_todos_ui: true,
             supports_linked_code_blocks: FeatureFlag::LinkedCodeBlocks.is_enabled(),
             supports_started_child_task_message: true,
-            supports_suggest_prompt: true,
             supports_read_image_files: FeatureFlag::ReadImageFiles.is_enabled(),
             supports_reasoning_message: true,
             api_keys,
@@ -103,8 +102,7 @@ pub async fn generate_multi_agent_output(
             supports_orchestration_v2: supports_orchestration_v2(params.orchestration_enabled),
             supports_orchestration_runners: params.orchestration_enabled
                 && FeatureFlag::CloudAgentRunners.is_enabled(),
-            supports_background_computer_use: FeatureFlag::BackgroundComputerUse.is_enabled()
-                && computer_use::background_supported(),
+            supports_background_computer_use: false,
             custom_model_providers: params.custom_model_providers,
             custom_model_routers: params.custom_model_routers,
         }),
@@ -219,7 +217,6 @@ fn get_supported_tools(params: &RequestParams) -> Vec<api::ToolType> {
         api::ToolType::ReadDocuments,
         api::ToolType::CreateDocuments,
         api::ToolType::EditDocuments,
-        api::ToolType::SuggestPrompt,
     ];
 
     if FeatureFlag::ConversationsAsContext.is_enabled() {
@@ -233,33 +230,8 @@ fn get_supported_tools(params: &RequestParams) -> Vec<api::ToolType> {
                 api::ToolType::ApplyFileDiffs,
                 api::ToolType::SearchCodebase,
             ]);
-
-            if FeatureFlag::ArtifactCommand.is_enabled() {
-                supported_tools.push(api::ToolType::UploadFileArtifact);
-            }
         }
-        Some(SessionType::WarpifiedRemote { host_id: Some(_) }) => {
-            // Remote session with a known host — enable tools that route
-            // through RemoteServerClient. The host_id is only populated
-            // after a successful connection handshake, so its presence is a
-            // sufficient proxy for client availability.
-            supported_tools.extend(&[api::ToolType::ReadFiles, api::ToolType::ApplyFileDiffs]);
-            if FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
-                supported_tools.push(api::ToolType::SearchCodebase);
-            }
-        }
-        Some(SessionType::WarpifiedRemote { host_id: None }) => {
-            // Feature flag off or not yet connected — no remote tools.
-        }
-    }
-
-    if FeatureFlag::AgentModeComputerUse.is_enabled() && params.computer_use_enabled {
-        supported_tools.extend(&[api::ToolType::UseComputer]);
-        supported_tools.extend(&[api::ToolType::RequestComputerUse]);
-
-        if FeatureFlag::VideoRecording.is_enabled() {
-            supported_tools.extend(&[api::ToolType::StartRecording, api::ToolType::StopRecording]);
-        }
+        Some(SessionType::WarpifiedRemote) => {}
     }
 
     supported_tools.push(api::ToolType::InsertReviewComments);
@@ -300,13 +272,7 @@ fn get_supported_cli_agent_tools(params: &RequestParams) -> Vec<api::ToolType> {
             supported_cli_agent_tools
                 .extend(&[api::ToolType::ReadFiles, api::ToolType::SearchCodebase]);
         }
-        Some(SessionType::WarpifiedRemote { host_id: Some(_) }) => {
-            supported_cli_agent_tools.push(api::ToolType::ReadFiles);
-            if FeatureFlag::RemoteCodebaseIndexing.is_enabled() {
-                supported_cli_agent_tools.push(api::ToolType::SearchCodebase);
-            }
-        }
-        Some(SessionType::WarpifiedRemote { host_id: None }) => {}
+        Some(SessionType::WarpifiedRemote) => {}
     }
 
     supported_cli_agent_tools

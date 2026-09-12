@@ -1,20 +1,14 @@
 pub mod ai;
 pub mod auth;
-pub mod block;
 #[cfg(not(target_family = "wasm"))]
 pub(crate) mod download;
 pub mod factory;
-pub mod harness_support;
 pub mod integrations;
 pub mod managed_mcp;
 pub mod managed_secrets;
 pub mod object;
 pub(crate) mod presigned_upload;
-pub mod referral;
 pub mod team;
-#[cfg(feature = "tui")]
-pub mod tui_onboarding;
-pub mod workspace;
 
 use std::ops::Deref;
 use std::path::Path;
@@ -25,7 +19,6 @@ use ::http::header::CONTENT_LENGTH;
 use ai::AIClient;
 use anyhow::{Context, Result, anyhow};
 use auth::AuthClient;
-use block::BlockClient;
 use channel_versions::ChannelVersions;
 use chrono::{DateTime, FixedOffset};
 use factory::FactoryClient;
@@ -33,14 +26,10 @@ use instant::Instant;
 use managed_mcp::ManagedMcpClient;
 use object::ObjectClient;
 use parking_lot::Mutex;
-use referral::ReferralsClient;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use team::TeamClient;
-#[cfg(feature = "tui")]
-use tui_onboarding::TuiOnboardingClient;
 use url::Url;
-use warp_core::context_flag::ContextFlag;
 use warp_core::telemetry::TelemetryEvent;
 use warp_errors::{AnyhowErrorExt, ErrorExt, register_error, report_error};
 use warp_managed_secrets::client::ManagedSecretsClient;
@@ -50,24 +39,18 @@ use warp_server_client::base_client::{
     AmbientHeaderPolicy, AuthenticatedGraphqlConfig, BaseClient, GraphqlRoutingConfig,
 };
 use warp_server_client::iap::{IapManager, IapState};
-use warp_server_client::network_logging::NetworkLogModel;
 use warpui::r#async::BoxFuture;
 use warpui::{Entity, ModelContext, SingletonEntity};
-use workspace::WorkspaceClient;
 
 use super::experiments::{ServerExperiment, ServerExperiments};
+use crate::ChannelState;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::get_relevant_files::api::{GetRelevantFiles, GetRelevantFilesResponse};
-use crate::ai::predict::generate_ai_input_suggestions::GenerateAIInputSuggestionsRequest;
-use crate::ai::predict::generate_am_query_suggestions::GenerateAMQuerySuggestionsRequest;
-use crate::ai::predict::predict_am_queries::{PredictAMQueriesRequest, PredictAMQueriesResponse};
-use crate::ai::predict::{generate_ai_input_suggestions, generate_am_query_suggestions};
 use crate::ai::voice::transcribe::{TranscribeRequest, TranscribeResponse};
 use crate::auth::auth_manager::AuthManager;
 use crate::auth::auth_state::AuthState;
 use crate::server::telemetry::TelemetryApi;
 use crate::settings::PrivacySettingsSnapshot;
-use crate::{ChannelState, settings_view};
 
 pub const FETCH_CHANNEL_VERSIONS_TIMEOUT: std::time::Duration = Duration::from_secs(60);
 #[derive(Serialize)]
@@ -442,12 +425,81 @@ pub struct ServerApi {
 }
 
 impl ServerApi {
+    pub(crate) async fn get_public_api_response_for_task(
+        &self,
+        task_id: &AmbientAgentTaskId,
+        path: &str,
+    ) -> Result<http_client::Response> {
+        let auth_token = self
+            .get_or_refresh_access_token()
+            .await
+            .context("Failed to get access token for API request")?;
+
+        let url = format!("{}/api/v1/{}", crate::ChannelState::server_root_url(), path);
+
+        let mut request = self.base_client.http_client().get(&url);
+        if let Some(token) = auth_token.as_bearer_token() {
+            request = request.bearer_auth(token);
+        }
+
+        for (name, value) in self.ambient_agent_headers_for_task(task_id).await? {
+            request = request.header(name, value);
+        }
+
+        let response = request
+            .send()
+            .await
+            .with_context(|| format!("Failed to send API request to {url}"))?;
+
+        if response.status().is_success() {
+            Ok(response)
+        } else {
+            Err(Self::error_from_response(response).await)
+        }
+    }
+
+    pub(crate) async fn post_public_api_response_for_task<B>(
+        &self,
+        task_id: &AmbientAgentTaskId,
+        path: &str,
+        body: &B,
+    ) -> Result<http_client::Response>
+    where
+        B: serde::Serialize,
+    {
+        let auth_token = self
+            .get_or_refresh_access_token()
+            .await
+            .context("Failed to get access token for API request")?;
+
+        let url = format!("{}/api/v1/{}", crate::ChannelState::server_root_url(), path);
+
+        let mut request = self.base_client.http_client().post(&url).json(body);
+        if let Some(token) = auth_token.as_bearer_token() {
+            request = request.bearer_auth(token);
+        }
+
+        for (name, value) in self.ambient_agent_headers_for_task(task_id).await? {
+            request = request.header(name, value);
+        }
+
+        let response = request
+            .send()
+            .await
+            .with_context(|| format!("Failed to send API request to {url}"))?;
+
+        if response.status().is_success() {
+            Ok(response)
+        } else {
+            Err(Self::error_from_response(response).await)
+        }
+    }
+
     fn new(
         auth_state: Arc<AuthState>,
         event_sender: async_channel::Sender<AuthEvent>,
         agent_source: Option<ai::AgentSource>,
         iap_state: Option<Arc<IapState>>,
-        ctx: &mut ModelContext<ServerApiProvider>,
     ) -> Self {
         #[cfg(all(feature = "local_only", not(target_family = "wasm")))]
         let mut client = http_client::Client::new_without_system_tls_or_proxy();
@@ -457,12 +509,7 @@ impl ServerApi {
             client.set_iap_token_provider(state.clone());
             state as Arc<dyn http_client::iap::IapTokenProvider>
         });
-        let mut telemetry_api = TelemetryApi::new();
-        if ContextFlag::NetworkLogConsole.is_enabled() {
-            NetworkLogModel::handle(ctx).update(ctx, |model, model_ctx| {
-                model.install_on_clients([&mut client, &mut telemetry_api.client], model_ctx);
-            });
-        }
+        let telemetry_api = TelemetryApi::new();
         Self::new_with_parts(
             Arc::new(client),
             auth_state,
@@ -505,7 +552,7 @@ impl ServerApi {
         }
     }
 
-    #[cfg(any(test, all(feature = "tui", feature = "test-util")))]
+    #[cfg(test)]
     fn new_for_test() -> Self {
         let (tx, _) = async_channel::unbounded();
         let auth_state = Arc::new(AuthState::new_for_test());
@@ -1033,44 +1080,6 @@ impl ServerApi {
             .flush_and_persist_events(max_event_count, settings_snapshot)
     }
 
-    /// Hits the /ai/generate_input_suggestions endpoint to get the predicted next action, based on past context.
-    pub async fn generate_ai_input_suggestions(
-        &self,
-        request: &GenerateAIInputSuggestionsRequest,
-    ) -> Result<generate_ai_input_suggestions::GenerateAIInputSuggestionsResponseV2, AIApiError>
-    {
-        #[cfg(feature = "local_only")]
-        {
-            let _ = request;
-            return Err(AIApiError::Other(anyhow!(
-                "Direct Next Command provider is not configured"
-            )));
-        }
-
-        #[cfg(not(feature = "local_only"))]
-        {
-            let auth_token = self.get_or_refresh_access_token().await?;
-
-            let request_builder = self.base_client.http_client().post(format!(
-                "{}/ai/generate_input_suggestions",
-                ChannelState::server_root_url()
-            ));
-            let response = if let Some(token) = auth_token.as_bearer_token() {
-                request_builder.bearer_auth(token)
-            } else {
-                request_builder
-            }
-            .json(request)
-            .send()
-            .await?
-            .error_for_status_with_body()
-            .await?
-            .json()
-            .await?;
-            Ok(response)
-        }
-    }
-
     pub async fn get_relevant_files(
         &self,
         request: &GetRelevantFiles,
@@ -1094,67 +1103,6 @@ impl ServerApi {
         .json()
         .await?;
 
-        Ok(response)
-    }
-
-    /// Hits the /ai/generate_am_query_suggestions endpoint to get the predicted next query.
-    pub async fn generate_am_query_suggestions(
-        &self,
-        request: &GenerateAMQuerySuggestionsRequest,
-    ) -> Result<generate_am_query_suggestions::GenerateAMQuerySuggestionsResponse, AIApiError> {
-        let auth_token = self.get_or_refresh_access_token().await?;
-
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "agent_mode_evals")] {
-                let url = format!(
-                    "{}/agent-mode-evals/generate_am_query_suggestions",
-                    ChannelState::server_root_url()
-                );
-            } else {
-                let url = format!(
-                    "{}/ai/generate_am_query_suggestions",
-                    ChannelState::server_root_url()
-                );
-            }
-        }
-
-        let request_builder = self.base_client.http_client().post(url);
-        let response = if let Some(token) = auth_token.as_bearer_token() {
-            request_builder.bearer_auth(token)
-        } else {
-            request_builder
-        }
-        .json(request)
-        .send()
-        .await?
-        .error_for_status_with_body()
-        .await?
-        .json()
-        .await?;
-        Ok(response)
-    }
-
-    pub async fn predict_am_queries(
-        &self,
-        request: &PredictAMQueriesRequest,
-    ) -> Result<PredictAMQueriesResponse, AIApiError> {
-        let auth_token = self.get_or_refresh_access_token().await?;
-        let request_builder = self.base_client.http_client().post(format!(
-            "{}/ai/predict_am_queries",
-            ChannelState::server_root_url()
-        ));
-        let response = if let Some(token) = auth_token.as_bearer_token() {
-            request_builder.bearer_auth(token)
-        } else {
-            request_builder
-        }
-        .json(request)
-        .send()
-        .await?
-        .error_for_status_with_body()
-        .await?
-        .json()
-        .await?;
         Ok(response)
     }
 
@@ -1337,13 +1285,7 @@ impl ServerApiProvider {
     ) -> Self {
         let (event_sender, event_receiver) = async_channel::bounded(10);
 
-        let server_api = ServerApi::new(
-            auth_state.clone(),
-            event_sender,
-            agent_source,
-            iap_state,
-            ctx,
-        );
+        let server_api = ServerApi::new(auth_state.clone(), event_sender, agent_source, iap_state);
 
         ctx.spawn_stream_local(
             event_receiver,
@@ -1394,12 +1336,10 @@ impl ServerApiProvider {
         ServerExperiments::handle(ctx).update(ctx, |state, ctx| {
             state.apply_latest_state(experiments, ctx);
         });
-
-        settings_view::handle_experiment_change(ctx);
     }
 
     /// Constructs a new SeverApiProvider for tests.
-    #[cfg(any(test, all(feature = "tui", feature = "test-util")))]
+    #[cfg(test)]
     pub fn new_for_test() -> Self {
         let server_api = Arc::new(ServerApi::new_for_test());
         let auth_client = Arc::new(AuthClientImpl::new(server_api.base_client.clone()));
@@ -1419,23 +1359,7 @@ impl ServerApiProvider {
         self.auth_client.clone()
     }
 
-    pub fn get_referrals_client(&self) -> Arc<dyn ReferralsClient> {
-        self.server_api.clone()
-    }
-
-    pub fn get_block_client(&self) -> Arc<dyn BlockClient> {
-        self.server_api.clone()
-    }
-
-    pub fn get_workspace_client(&self) -> Arc<dyn WorkspaceClient> {
-        self.server_api.clone()
-    }
-
     pub fn get_team_client(&self) -> Arc<dyn TeamClient> {
-        self.server_api.clone()
-    }
-    #[cfg(feature = "tui")]
-    pub fn get_tui_onboarding_client(&self) -> Arc<dyn TuiOnboardingClient> {
         self.server_api.clone()
     }
 
@@ -1468,11 +1392,6 @@ impl ServerApiProvider {
     /// and includes standard Warp request headers.
     pub fn get_http_client(&self) -> Arc<http_client::Client> {
         self.server_api.owned_http_client()
-    }
-
-    #[cfg_attr(target_family = "wasm", expect(dead_code))]
-    pub fn get_harness_support_client(&self) -> Arc<dyn harness_support::HarnessSupportClient> {
-        self.server_api.clone()
     }
 }
 

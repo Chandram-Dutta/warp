@@ -1,44 +1,25 @@
 pub mod auth_manager;
-mod auth_override_warning_body;
-pub mod auth_override_warning_modal;
-mod auth_view_body;
-pub mod auth_view_modal;
-mod auth_view_shared_helpers;
-mod login_error_modal;
-mod login_failure_notification;
-pub mod login_slide;
-pub mod needs_sso_link_view;
-pub mod paste_auth_token_modal;
 mod user_properties;
-pub use warp_server_auth::{auth_state, credentials, user, user_uid};
-#[cfg(target_family = "wasm")]
-pub mod web_handoff;
-
-use ::settings::{Setting, SettingsManager, ToggleableSetting};
+use ::settings::{Setting, ToggleableSetting};
 use ai::index::full_source_code_embedding::manager::CodebaseIndexManager;
 pub use auth_manager::AuthManager;
 pub use auth_state::AuthStateProvider;
 use itertools::Itertools;
-pub use login_failure_notification::LoginFailureReason;
-#[cfg(feature = "tui")]
-use url::Url;
 pub use user_uid::UserUid;
 use warp_core::channel::ChannelState;
 use warp_core::user_preferences::GetUserPreferences as _;
 use warp_errors::{report_error, report_if_error};
+pub use warp_server_auth::{auth_state, credentials, user, user_uid};
 use warpui::modals::{AlertDialogWithCallbacks, ModalButton};
 use warpui::{AppContext, SingletonEntity};
 
 use crate::ai::agent_conversations_model::AgentConversationsModel;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
-use crate::ai::blocklist::agent_view::orchestration_pill_bar_model::OrchestrationPillBarModel;
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 #[cfg(not(target_family = "wasm"))]
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::ai::request_usage_model::AIRequestUsageModel;
-use crate::ai_assistant::requests::REQUEST_LIMIT_INFO_CACHE_KEY;
 use crate::cloud_object::model::persistence::CloudModel;
-use crate::code::editor_management::{CodeEditorStatus, CodeEditorSummary};
 use crate::env_vars::manager::EnvVarCollectionManager;
 use crate::notebooks::manager::NotebookManager;
 use crate::palette::PaletteMode;
@@ -48,7 +29,7 @@ use crate::server::sync_queue::SyncQueue;
 use crate::server::telemetry::{PaletteSource, TelemetryEvent};
 use crate::session_management::{RunningSessionSummary, SessionNavigationData};
 use crate::settings::{
-    AISettings, CRASH_REPORTING_ENABLED_DEFAULTS_KEY, CloudPreferencesSettings, PrivacySettings,
+    AISettings, CRASH_REPORTING_ENABLED_DEFAULTS_KEY, PrivacySettings,
     TELEMETRY_ENABLED_DEFAULTS_KEY,
 };
 use crate::terminal::general_settings::GeneralSettings;
@@ -61,14 +42,6 @@ use crate::{
     send_telemetry_sync_from_app_ctx,
 };
 
-pub fn init(app: &mut AppContext) {
-    auth_view_modal::init(app);
-    auth_view_body::init(app);
-    auth_override_warning_body::init(app);
-    login_slide::init(app);
-    paste_auth_token_modal::init(app);
-}
-
 /// Returns the configured Warp web logout URL.
 ///
 /// Keep this derived from the channel's server root so local and non-production
@@ -80,37 +53,6 @@ pub fn web_logout_url() -> String {
     )
 }
 
-/// Returns the configured Warp web logout URL with a validated browser continuation.
-///
-/// TUI logout only continues to the same Warp web origin's device page. This
-/// keeps the logout endpoint from becoming an open redirect if an unexpected
-/// device-authorization response reaches the client.
-#[cfg(feature = "tui")]
-pub fn web_logout_url_with_continue(continue_url: &str) -> Option<String> {
-    let mut logout_url =
-        Url::parse(&web_logout_url()).expect("configured Warp web logout URL must be valid");
-    let continue_url = Url::parse(continue_url).ok()?;
-    let has_required_query = continue_url
-        .query_pairs()
-        .any(|(key, value)| key == "user_code" && !value.is_empty())
-        && continue_url
-            .query_pairs()
-            .any(|(key, value)| key == "source" && value == "warp-agent-cli");
-    if continue_url.origin() != logout_url.origin()
-        || continue_url.path() != "/device"
-        || !continue_url.username().is_empty()
-        || continue_url.password().is_some()
-        || continue_url.fragment().is_some()
-        || !has_required_query
-    {
-        return None;
-    }
-    logout_url
-        .query_pairs_mut()
-        .append_pair("continue", continue_url.as_str());
-    Some(logout_url.into())
-}
-
 /// If the app has running processes or dirty objects, we'll show a confirmation modal before logging out.
 /// If the user aborts, the user will not be logged out.
 pub fn maybe_log_out(app: &mut AppContext) {
@@ -120,24 +62,13 @@ pub fn maybe_log_out(app: &mut AppContext) {
     let num_long_running_commands = RunningSessionSummary::new(&sessions)
         .long_running_cmds
         .len();
-    let num_shared_sessions = crate::session_management::num_shared_sessions(app);
     let num_unsaved_objects =
         CloudModel::as_ref(app).num_unsaved_objects_to_warn_about_before_quitting();
-
-    let code_editors = CodeEditorStatus::all_editors(app).collect_vec();
-    let code_editor_summary = CodeEditorSummary::new(&code_editors);
-
-    let num_unsaved_files = code_editor_summary.unsaved_changes.len();
 
     let show_warning_before_log_out = *GeneralSettings::as_ref(app)
         .show_warning_before_quitting
         .value();
-    if show_warning_before_log_out
-        && (num_long_running_commands > 0
-            || num_shared_sessions > 0
-            || num_unsaved_objects > 0
-            || num_unsaved_files > 0)
-    {
+    if show_warning_before_log_out && (num_long_running_commands > 0 || num_unsaved_objects > 0) {
         send_telemetry_sync_from_app_ctx!(TelemetryEvent::LogOutModalShown, app);
         let mut button_data = vec![ModalButton::for_app("Yes, log out", |ctx| {
             log_out_and_open_web(ctx);
@@ -186,15 +117,6 @@ pub fn maybe_log_out(app: &mut AppContext) {
             }))
         }
 
-        if num_shared_sessions > 0 {
-            let plural = if num_shared_sessions > 1 {
-                "sessions"
-            } else {
-                "session"
-            };
-            info_text_vec.push(format!("You have {num_shared_sessions} shared {plural}."));
-        }
-
         if num_unsaved_objects > 0 {
             let plural = if num_unsaved_objects > 1 {
                 "objects"
@@ -203,18 +125,6 @@ pub fn maybe_log_out(app: &mut AppContext) {
             };
             info_text_vec.push(format!(
                 "You have {num_unsaved_objects} unsynced Warp Drive {plural}. \
-            Logging out will cause you to lose the {plural}."
-            ));
-        }
-
-        if num_unsaved_files > 0 {
-            let plural = if num_unsaved_files > 1 {
-                "files"
-            } else {
-                "file"
-            };
-            info_text_vec.push(format!(
-                "You have {num_unsaved_files} unsaved {plural}. \
             Logging out will cause you to lose the {plural}."
             ));
         }
@@ -295,9 +205,6 @@ pub fn log_out(app: &mut AppContext) {
     BlocklistAIHistoryModel::handle(app).update(app, |history_model, _| {
         history_model.reset();
     });
-    OrchestrationPillBarModel::handle(app).update(app, |pill_bar_model, _| {
-        pill_bar_model.reset();
-    });
     AgentConversationsModel::handle(app).update(app, |agent_conversations_model, _| {
         agent_conversations_model.reset();
     });
@@ -329,9 +236,8 @@ pub fn log_out(app: &mut AppContext) {
     EnvVarCollectionManager::handle(app).update(app, |manager, _| manager.reset());
     WorkflowManager::handle(app).update(app, |manager, _| manager.reset());
 
-    // Stop and leave all shared sessions
-    SharedSessionManager::handle(app).update(app, |manager, ctx| {
-        manager.stop_all_shared_sessions(ctx);
+    // Leave all shared sessions
+    SharedSessionManager::handle(app).update(app, |manager, _| {
         manager.clear_joined();
     });
 
@@ -362,18 +268,6 @@ pub fn log_out(app: &mut AppContext) {
 // This is so they do not experience the old settings when they log in with a different account.
 // Partial deletion of user defaults is a stopgap for Logout v0. The correct solution is:
 fn remove_cloud_persisted_settings(app: &mut AppContext) {
-    let is_settings_sync_enabled = *CloudPreferencesSettings::as_ref(app).settings_sync_enabled;
-    if is_settings_sync_enabled {
-        SettingsManager::handle(app).update(app, |settings_manager, ctx| {
-            let errors = settings_manager.clear_cloud_settings_local_state(ctx);
-            for e in errors {
-                report_error!(
-                    e.context("Failed to remove cloud synced setting from user defaults")
-                );
-            }
-        });
-    }
-
     if let Err(e) = app
         .private_user_preferences()
         .remove_value(TELEMETRY_ENABLED_DEFAULTS_KEY)
@@ -392,16 +286,6 @@ fn remove_cloud_persisted_settings(app: &mut AppContext) {
             anyhow::Error::new(e).context(
                 "Failed to remove Crash Reporting Enabled Defaults Key from user defaults"
             )
-        );
-    }
-
-    if let Err(e) = app
-        .private_user_preferences()
-        .remove_value(REQUEST_LIMIT_INFO_CACHE_KEY)
-    {
-        report_error!(
-            anyhow::Error::new(e)
-                .context("Failed to remove Request Limit Defaults Key from user defaults")
         );
     }
 

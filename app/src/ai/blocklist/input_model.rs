@@ -83,8 +83,6 @@ pub enum InputTypeAutoDetectionSource {
     ClassicModeReset,
     /// Toggling voice input forced AI mode.
     VoiceInputToggle,
-    /// Inserting from the AI `@` context menu forced AI mode.
-    AtContextMenuInsert,
 }
 
 impl From<InputClassifierDecisionSource> for InputTypeAutoDetectionSource {
@@ -102,9 +100,6 @@ use super::input_mode_policy::{InputModePolicyHandle, PolicyConfigUpdate};
 use super::telemetry_banner::should_collect_ai_ugc_telemetry;
 use crate::input_classifier::InputClassifierModel;
 use crate::settings::{AISettings, AISettingsChangedEvent, InputBoxType, InputSettings};
-use crate::terminal::cli_agent_sessions::{
-    CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
-};
 use crate::terminal::input::decorations::ParsedTokensSnapshot;
 use crate::terminal::model::rich_content::RichContentType;
 use crate::terminal::model::session::SessionId;
@@ -241,41 +236,8 @@ impl BlocklistAIInputModel {
         conversation_selection: ConversationSelectionHandle,
         ai_context_model: ModelHandle<BlocklistAIContextModel>,
         policy: InputModePolicyHandle,
-        terminal_surface_id: EntityId,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
-        // Reactively restore input config when CLI agent rich input closes.
-        ctx.subscribe_to_model(
-            &CLIAgentSessionsModel::handle(ctx),
-            move |me, _, event, ctx| {
-                let CLIAgentSessionsModelEvent::InputSessionChanged {
-                    terminal_view_id: event_view_id,
-                    previous_input_state,
-                    ..
-                } = event
-                else {
-                    return;
-                };
-                // CLI agent sessions are keyed by terminal view id; GUI surfaces use the
-                // view id as their surface id, so this filters events to our surface.
-                if *event_view_id != terminal_surface_id {
-                    return;
-                }
-                if let CLIAgentInputState::Open {
-                    previous_input_config,
-                    previous_was_lock_set_with_empty_buffer,
-                    ..
-                } = previous_input_state
-                {
-                    me.restore_input_config(
-                        *previous_input_config,
-                        *previous_was_lock_set_with_empty_buffer,
-                        ctx,
-                    );
-                }
-            },
-        );
-
         ctx.subscribe_to_model(&AISettings::handle(ctx), move |me, _, event, ctx| {
             // Computing the guarded autodetection state takes the terminal-model
             // lock, so only compute it for the one event whose handling can need

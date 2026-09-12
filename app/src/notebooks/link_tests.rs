@@ -7,16 +7,17 @@ use parking_lot::Mutex;
 use settings::Setting as _;
 use tempfile::tempdir;
 use url::Url;
+use warp_util::file_type::is_markdown_file;
 use warp_util::path::LineAndColumnArg;
 use warpui::{App, ModelHandle, SingletonEntity, WindowId};
 
 use super::{LinkTarget, NotebookLinks, ResolveError, SessionSource};
-use crate::notebooks::file::is_markdown_file;
 use crate::notebooks::link::LinkEvent;
 use crate::terminal::model::session::Session;
 use crate::terminal::shell::ShellType;
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::util::file::external_editor::EditorSettings;
+use crate::util::file::external_editor::settings::EditorChoice;
 use crate::util::openable_file_type::FileTarget;
 use crate::workspace::ActiveSession;
 
@@ -397,7 +398,7 @@ fn test_resolve_file_with_line() {
 }
 
 #[test]
-fn test_open_markdown_file_uses_viewer_when_preferred() {
+fn test_open_markdown_file_uses_external_editor() {
     let mut root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     if !root.join("README.md").exists() {
         root = root.parent().unwrap().to_path_buf();
@@ -405,6 +406,13 @@ fn test_open_markdown_file_uses_viewer_when_preferred() {
 
     App::test((), |mut app| async move {
         let links = init_link_model(&mut app, Some(&root));
+
+        EditorSettings::handle(&app).update(&mut app, |settings, ctx| {
+            settings
+                .open_file_editor
+                .set_value(EditorChoice::EnvEditor, ctx)
+                .unwrap();
+        });
 
         let events = Arc::new(Mutex::new(vec![]));
         {
@@ -428,19 +436,23 @@ fn test_open_markdown_file_uses_viewer_when_preferred() {
         let events = events.lock();
         assert_eq!(events.len(), 1);
         match events.first() {
-            Some(LinkEvent::OpenFileNotebook { path, session }) => {
+            Some(LinkEvent::OpenFileWithTarget {
+                path,
+                target,
+                line_col,
+            }) => {
                 assert_eq!(path, &root.join("README.md"));
-                assert!(Arc::ptr_eq(&TEST_SESSION, session));
+                assert_eq!(target, &FileTarget::EnvEditor);
+                assert_eq!(line_col, &None);
             }
-            other => panic!("Expected OpenFileNotebook event, got {other:?}"),
+            other => panic!("Expected external file target event, got {other:?}"),
         }
     });
 }
 
 #[test]
-fn test_open_markdown_file_respects_disabled_viewer_preference() {
-    // With `prefer_markdown_viewer = false`, the markdown file would otherwise
-    // resolve to `FileTarget::SystemDefault`. The security fix in #25353 routes
+fn test_open_markdown_file_system_default_reveals_in_explorer() {
+    // The security fix in #25353 routes
     // both `SystemDefault` and `SystemGeneric` through
     // `open_file_path_in_explorer`, so no `OpenFileWithTarget` event is emitted
     // — the file is revealed in Finder / Explorer instead.
@@ -451,13 +463,6 @@ fn test_open_markdown_file_respects_disabled_viewer_preference() {
 
     App::test((), |mut app| async move {
         let links = init_link_model(&mut app, Some(&root));
-
-        EditorSettings::handle(&app).update(&mut app, |settings, ctx| {
-            settings
-                .prefer_markdown_viewer
-                .set_value(false, ctx)
-                .unwrap();
-        });
 
         let events = Arc::new(Mutex::new(vec![]));
         {
@@ -479,7 +484,7 @@ fn test_open_markdown_file_respects_disabled_viewer_preference() {
         let events = events.lock();
         assert!(
             events.is_empty(),
-            "Expected no LinkEvent when markdown viewer is disabled (file is \
+            "Expected no LinkEvent for the system default target (file is \
              revealed in explorer instead), but got: {events:?}"
         );
     });

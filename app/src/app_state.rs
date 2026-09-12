@@ -10,8 +10,7 @@ use warpui::{AppContext, SingletonEntity as _};
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent_conversations_model::AgentManagementFilters;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::ai::blocklist::{InputConfig, SerializedBlockListItem};
-use crate::code::editor_management::CodeSource;
+use crate::ai::blocklist::InputConfig;
 use crate::drive::OpenWarpDriveObjectSettings;
 use crate::root_view::quake_mode_window_id;
 use crate::server::ids::{ServerId, SyncId};
@@ -19,16 +18,16 @@ use crate::settings_view::SettingsSection;
 use crate::settings_view::environments_page::EnvironmentsPage;
 use crate::tab::SelectedTabColor;
 use crate::terminal::ShellLaunchData;
+use crate::terminal::model::block::SerializedBlock;
 use crate::themes::theme::AnsiColorIdentifier;
 use crate::workspace::WorkspaceRegistry;
 use crate::workspace::tab_group::TabGroupId;
-use crate::workspace::view::left_panel::ToolPanelView;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AppState {
     pub windows: Vec<WindowSnapshot>,
     pub active_window_index: Option<usize>,
-    pub block_lists: Arc<HashMap<PaneUuid, Vec<SerializedBlockListItem>>>,
+    pub block_lists: Arc<HashMap<PaneUuid, Vec<SerializedBlock>>>,
     pub running_mcp_servers: Vec<uuid::Uuid>,
 }
 
@@ -50,13 +49,8 @@ pub struct WindowSnapshot {
     pub fullscreen_state: FullscreenState,
     pub quake_mode: bool,
     pub universal_search_width: Option<f32>,
-    pub warp_ai_width: Option<f32>,
     pub voltron_width: Option<f32>,
-    pub warp_drive_index_width: Option<f32>,
-    pub left_panel_open: bool,
     pub vertical_tabs_panel_open: bool,
-    pub left_panel_width: Option<f32>,
-    pub right_panel_width: Option<f32>,
     pub agent_management_filters: Option<PersistedAgentManagementFilters>,
     /// Tab groups defined in this window. Group order is implicit from
     /// member tabs' positions, so no explicit ordering is persisted.
@@ -78,8 +72,6 @@ pub struct TabSnapshot {
     pub root: PaneNodeSnapshot,
     pub default_directory_color: Option<AnsiColorIdentifier>,
     pub selected_color: SelectedTabColor,
-    pub left_panel: Option<LeftPanelSnapshot>,
-    pub right_panel: Option<RightPanelSnapshot>,
     /// Tab group this tab belongs to, if any.
     pub group_id: Option<TabGroupId>,
     /// True when this tab is pinned to the front of the tab list.
@@ -190,7 +182,6 @@ pub enum LeafContents {
     Terminal(TerminalPaneSnapshot),
     Notebook(NotebookPaneSnapshot),
     AIDocument(AIDocumentPaneSnapshot),
-    Code(CodePaneSnapShot),
     EnvVarCollection(EnvVarCollectionPaneSnapshot),
     EnvironmentManagement(EnvironmentManagementPaneSnapshot),
     Workflow(WorkflowPaneSnapshot),
@@ -203,8 +194,6 @@ pub enum LeafContents {
     /// The in-app network log pane. Not persisted across restarts because the
     /// backing log is an in-memory ring buffer that starts empty on launch.
     NetworkLog,
-    /// A new first-time user experience which prioritizes choosing a coding repository.
-    GetStarted,
 }
 
 impl LeafContents {
@@ -244,7 +233,6 @@ impl LeafContents {
             LeafContents::Terminal(_)
             | LeafContents::Notebook(_)
             | LeafContents::AIDocument(_)
-            | LeafContents::Code(_)
             | LeafContents::EnvVarCollection(_)
             | LeafContents::Workflow(_)
             | LeafContents::Settings(_)
@@ -252,8 +240,7 @@ impl LeafContents {
             | LeafContents::CustomRouterEditor
             | LeafContents::ExecutionProfileEditor
             | LeafContents::CodeReview(_)
-            | LeafContents::AmbientAgent(_)
-            | LeafContents::GetStarted => true,
+            | LeafContents::AmbientAgent(_) => true,
         }
     }
 }
@@ -316,21 +303,6 @@ pub enum AIDocumentPaneSnapshot {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct CodePaneTabSnapshot {
-    pub path: Option<PathBuf>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum CodePaneSnapShot {
-    Local {
-        tabs: Vec<CodePaneTabSnapshot>,
-        active_tab_index: usize,
-        /// The full `CodeSource` for this pane, serialized as JSON in the DB.
-        source: Option<CodeSource>,
-    },
-}
-
-#[derive(Clone, Debug, PartialEq)]
 pub enum WorkflowPaneSnapshot {
     CloudWorkflow {
         workflow_id: Option<SyncId>,
@@ -372,39 +344,6 @@ pub enum CodeReviewPaneSnapshot {
         terminal_uuid: Vec<u8>,
         repo_path: PathBuf,
     },
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum LeftPanelDisplayedTab {
-    FileTree,
-    GlobalSearch,
-    WarpDrive,
-    ConversationListView,
-}
-
-impl From<ToolPanelView> for LeftPanelDisplayedTab {
-    fn from(view: ToolPanelView) -> Self {
-        match view {
-            ToolPanelView::ProjectExplorer => LeftPanelDisplayedTab::FileTree,
-            ToolPanelView::GlobalSearch { .. } => LeftPanelDisplayedTab::GlobalSearch,
-            ToolPanelView::WarpDrive => LeftPanelDisplayedTab::WarpDrive,
-            ToolPanelView::ConversationListView => LeftPanelDisplayedTab::ConversationListView,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct LeftPanelSnapshot {
-    pub left_panel_displayed_tab: LeftPanelDisplayedTab,
-    pub pane_group_id: String,
-    pub width: usize,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct RightPanelSnapshot {
-    pub pane_group_id: String,
-    pub width: usize,
-    pub is_maximized: bool,
 }
 
 /// Copied from pane group model, which should be private to pane group.

@@ -1417,15 +1417,6 @@ impl LLMPreferences {
         self.fallback_llm_info(&self.models_by_feature.coding, app)
     }
 
-    /// Returns the preferred Codex model, if set by the server.
-    pub fn get_preferred_codex_model(&self) -> Option<&LLMInfo> {
-        self.models_by_feature
-            .agent_mode
-            .preferred_codex_model_id
-            .as_ref()
-            .and_then(|id| self.models_by_feature.agent_mode.info_for_id(id))
-    }
-
     /// Returns `true` when the most recent authed agent-mode model-list fetch
     /// failed, so the server-provided model list is currently unavailable.
     pub fn agent_mode_models_unavailable(&self) -> bool {

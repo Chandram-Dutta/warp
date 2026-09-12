@@ -1,9 +1,7 @@
-mod entry;
 mod harness_session_header;
 mod setup_command;
 mod setup_command_text;
 
-pub use entry::*;
 pub use harness_session_header::*;
 pub use setup_command::*;
 pub use setup_command_text::*;

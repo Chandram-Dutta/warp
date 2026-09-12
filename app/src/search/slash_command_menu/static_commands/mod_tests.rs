@@ -238,33 +238,13 @@ fn ai_enabled_requirement_not_satisfied_when_ai_off() {
 
 #[test]
 fn commands_without_ai_enabled_remain_available_when_ai_off() {
-    // Commands like `/open-file`, `/rename-tab`, `/changelog` only set session-context bits.
+    // Commands like `/rename-tab` and `/changelog` only set session-context bits.
     // With AI off, `session_context` has no `AI_ENABLED` bit, but these should still match.
     let command_local = Availability::LOCAL;
     let command_always = Availability::ALWAYS;
     let session_ai_off = Availability::TERMINAL_VIEW | Availability::LOCAL;
     assert!(session_ai_off.contains(command_local));
     assert!(session_ai_off.contains(command_always));
-}
-
-#[test]
-fn index_command_requires_repo_and_codebase_context() {
-    let command = Availability::REPOSITORY | Availability::CODEBASE_CONTEXT;
-
-    // Both present → available
-    let session = Availability::AGENT_VIEW
-        | Availability::LOCAL
-        | Availability::REPOSITORY
-        | Availability::CODEBASE_CONTEXT;
-    assert!(session.contains(command));
-
-    // Missing CODEBASE_CONTEXT → not available
-    let session = Availability::AGENT_VIEW | Availability::LOCAL | Availability::REPOSITORY;
-    assert!(!session.contains(command));
-
-    // Missing REPOSITORY → not available
-    let session = Availability::AGENT_VIEW | Availability::LOCAL | Availability::CODEBASE_CONTEXT;
-    assert!(!session.contains(command));
 }
 
 // --- Combined flag tests ---

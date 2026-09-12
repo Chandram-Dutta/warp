@@ -25,7 +25,6 @@ use self::model::persistence::CloudModel;
 use crate::appearance::Appearance;
 use crate::auth::UserUid;
 use crate::channel::ChannelState;
-use crate::drive::items::WarpDriveItem;
 use crate::drive::{CloudObjectTypeAndId, OpenWarpDriveObjectArgs, OpenWarpDriveObjectSettings};
 use crate::persistence::ModelEvent;
 use crate::server::cloud_objects::update_manager::InitiatedBy;
@@ -40,7 +39,6 @@ use crate::workspaces::user_workspaces::UserWorkspaces;
 pub mod breadcrumbs;
 pub mod grab_edit_access_modal;
 pub mod model;
-pub mod toast_message;
 
 pub use cloud_objects::cloud_object::*;
 
@@ -158,10 +156,6 @@ pub trait CloudObject: Debug {
     fn should_show_activity_toasts(&self) -> bool {
         true
     }
-
-    /// Creates a new Warp Drive item for this object.  Returns None if this
-    /// object is not rendered in Warp Drive.
-    fn to_warp_drive_item(&self, appearance: &Appearance) -> Option<Box<dyn WarpDriveItem>>;
 
     /// Returns the web link of this object. Will return none if we do not support web links
     /// for this particular object (i.e. if it's not yet sync'd to the server, or if we don't
@@ -449,15 +443,6 @@ pub trait CloudModelType: Debug + Clone + Send + Sync {
     fn warn_if_unsaved_at_quit(&self) -> bool {
         true
     }
-
-    /// Creates a new warp drive item for this model type. Returns None
-    /// if this object does not render in Warp Drive.
-    fn to_warp_drive_item(
-        &self,
-        id: SyncId,
-        appearance: &Appearance,
-        object: &Self::CloudObjectType,
-    ) -> Option<Box<dyn WarpDriveItem>>;
 
     /// Returns the display name for this model (e.g. to show in the Warp Drive index)
     fn display_name(&self) -> String;
@@ -776,10 +761,6 @@ where
 
     fn renders_in_warp_drive(&self) -> bool {
         self.model().renders_in_warp_drive()
-    }
-
-    fn to_warp_drive_item(&self, appearance: &Appearance) -> Option<Box<dyn WarpDriveItem>> {
-        self.model().to_warp_drive_item(self.id, appearance, self)
     }
 
     fn can_export(&self) -> bool {

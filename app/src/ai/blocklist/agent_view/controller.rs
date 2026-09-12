@@ -11,9 +11,6 @@ use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonE
 use super::{DismissalStrategy, EphemeralMessage, EphemeralMessageModel};
 use crate::BlocklistAIHistoryModel;
 use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::blocklist::orchestration_topology::{
-    OrchestrationNavigationDirection, adjacent_orchestration_child_conversation_id,
-};
 use crate::features::FeatureFlag;
 use crate::terminal::TerminalModel;
 use crate::terminal::input::message_bar::{Message, MessageItem};
@@ -151,8 +148,6 @@ pub enum AgentViewEntryOrigin {
     Keybinding(Keystroke),
     /// Entered agent view by attaching context from the code review panel.
     CodeReviewContext,
-    /// Entered agent view from codex integration modal.
-    CodexModal,
     /// Entered agent view by selecting a conversation from the inline history menu.
     InlineHistoryMenu,
     InlineConversationMenu,
@@ -170,16 +165,8 @@ pub enum AgentViewEntryOrigin {
     /// Entered agent view because a parent agent started this child agent via StartAgent.
     ChildAgent,
 
-    /// Entered agent view by clicking a pill / breadcrumb in the orchestration
-    /// pill bar (or breadcrumb row) to navigate the current pane to a sibling
-    /// or parent conversation in the same orchestration tree.
-    OrchestrationPillBar,
-
     /// Entered agent view after opening project from OS directory picker.
     ProjectEntry,
-
-    /// Entered agent view via a Linear "work on issue" deeplink.
-    LinearDeepLink,
 
     /// Entered agent view by clearing the buffer (Cmd+K) while already in agent view.
     ClearBuffer,
@@ -207,8 +194,6 @@ pub enum AutoTriggerBehavior {
     Always,
     /// Auto-submit only when the user was already in agent view before this entry.
     InAgentView,
-    /// Never auto-submit. The prompt is placed into the input buffer as a draft.
-    Never,
 }
 
 impl AgentViewEntryOrigin {
@@ -226,7 +211,6 @@ impl AgentViewEntryOrigin {
             }
             AgentViewEntryOrigin::Cli => AutoTriggerBehavior::Always,
             AgentViewEntryOrigin::AcceptedPromptSuggestion => AutoTriggerBehavior::Always,
-            AgentViewEntryOrigin::LinearDeepLink => AutoTriggerBehavior::Never,
             _ => AutoTriggerBehavior::InAgentView,
         }
     }
@@ -424,21 +408,6 @@ impl AgentViewController {
 
     pub fn agent_view_state(&self) -> &AgentViewState {
         &self.agent_view_state
-    }
-
-    /// Resolves the conversation adjacent to the active agent-view conversation
-    /// in the canonical orchestration pill order.
-    pub fn adjacent_orchestration_conversation_id(
-        &self,
-        direction: OrchestrationNavigationDirection,
-        app: &AppContext,
-    ) -> Option<AIConversationId> {
-        let active_conversation_id = self.agent_view_state.active_conversation_id()?;
-        adjacent_orchestration_child_conversation_id(
-            BlocklistAIHistoryModel::as_ref(app),
-            active_conversation_id,
-            direction,
-        )
     }
 
     /// Returns whether the user is allowed to exit agent view.

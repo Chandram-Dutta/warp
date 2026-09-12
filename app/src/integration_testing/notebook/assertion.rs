@@ -8,7 +8,7 @@ use crate::cloud_object::model::generic_string_model::GenericStringObjectId;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::integration_testing::cloud_object::assert_metadata_revision;
 use crate::integration_testing::terminal::util::ExpectedOutput;
-use crate::integration_testing::view_getters::{notebook_view, terminal_view};
+use crate::integration_testing::view_getters::notebook_view;
 use crate::notebooks::notebook::NotebookView;
 use crate::notebooks::{CloudNotebookModel, NotebookId};
 use crate::pane_group::PaneGroup;
@@ -144,18 +144,6 @@ fn notebook_views(app: &App, id: SyncId) -> impl Iterator<Item = ViewHandle<Note
         .flat_map(|window_id| app.views_of_type::<NotebookView>(window_id))
         .flatten()
         .filter(move |view| view.read(app, |view, ctx| view.notebook_id(ctx)) == Some(id))
-}
-
-pub fn assert_open_in_warp_banner_open(tab_index: usize, pane_index: usize) -> AssertionCallback {
-    Box::new(move |app, window_id| {
-        let terminal = terminal_view(app, window_id, tab_index, pane_index);
-        terminal.read(app, |view, _ctx| {
-            async_assert!(
-                view.is_open_in_warp_banner_open(),
-                "Expected the 'Open in Warp' banner to be open"
-            )
-        })
-    })
 }
 
 pub fn assert_notebook_renders_mermaid_diagram(

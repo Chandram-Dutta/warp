@@ -16,15 +16,8 @@ fn local_only_product_rejects_cloud_agent_and_ide_custom_actions() {
     assert!(CustomAction::ShowSettings.is_available_in_product());
     assert!(CustomAction::ToggleBookmarkBlock.is_available_in_product());
 
-    assert!(!CustomAction::ShowAccount.is_available_in_product());
-    assert!(!CustomAction::ToggleWarpDrive.is_available_in_product());
-    assert!(!CustomAction::CreateBlockPermalink.is_available_in_product());
-    assert!(!CustomAction::ViewSharedBlocks.is_available_in_product());
-    assert!(!CustomAction::ShareCurrentSession.is_available_in_product());
     assert!(!CustomAction::NewAgentModePane.is_available_in_product());
-    assert!(!CustomAction::OpenMCPServerCollection.is_available_in_product());
     assert!(!CustomAction::OpenRepository.is_available_in_product());
-    assert!(!CustomAction::ToggleProjectExplorer.is_available_in_product());
 }
 
 #[test]
@@ -157,6 +150,20 @@ fn test_toggle_maximize_pane_binding_is_editable() {
                 keybinding_name_to_display_string(TOGGLE_MAXIMIZE_PANE_BINDING_NAME, ctx)
                     .as_deref()
             );
+        });
+    });
+}
+
+#[test]
+fn hosted_sharing_commands_are_not_registered() {
+    App::test((), |mut app| async move {
+        app.update(terminal::init);
+
+        app.read(|ctx| {
+            assert!(!ctx.editable_bindings().any(|binding| matches!(
+                binding.name,
+                "terminal:share_current_session" | "terminal:open_share_block_modal"
+            )));
         });
     });
 }

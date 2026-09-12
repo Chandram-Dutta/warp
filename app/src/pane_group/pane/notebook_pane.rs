@@ -11,9 +11,7 @@ use super::{
     ShareableLinkError,
 };
 use crate::app_state::{LeafContents, NotebookPaneSnapshot};
-use crate::cloud_object::Space;
-use crate::drive::items::WarpDriveItemId;
-use crate::drive::{CloudObjectTypeAndId, OpenWarpDriveObjectSettings};
+use crate::drive::OpenWarpDriveObjectSettings;
 use crate::notebooks::link::{LinkEvent, NotebookLinks};
 use crate::notebooks::manager::{NotebookManager, NotebookSource};
 use crate::notebooks::notebook::{NotebookEvent, NotebookView};
@@ -172,18 +170,6 @@ pub(super) fn subscribe_to_link_model(
     ctx: &mut ViewContext<PaneGroup>,
 ) {
     ctx.subscribe_to_model(handle, move |pane_group, _, event, ctx| match event {
-        LinkEvent::OpenFileNotebook { path, session } => {
-            // Opening local files is delegated to the parent workspace.
-            ctx.emit(crate::pane_group::Event::OpenFileInWarp {
-                path: crate::code::buffer_location::LocalOrRemotePath::Local(path.clone()),
-                session: session.clone(),
-            })
-        }
-        LinkEvent::OpenWarpDriveLink {
-            open_warp_drive_args,
-        } => ctx.emit(crate::pane_group::Event::OpenWarpDriveLink {
-            open_warp_drive_args: open_warp_drive_args.clone(),
-        }),
         LinkEvent::StartLocalSession { path } => {
             pane_group.add_session_in_directory(
                 Direction::Right,
@@ -226,21 +212,7 @@ fn handle_notebook_event(
         NotebookEvent::EditWorkflow(id) => {
             ctx.emit(crate::pane_group::Event::OpenCloudWorkflowForEdit(*id))
         }
-        NotebookEvent::ViewInWarpDrive(id) => view_in_warp_drive(*id, ctx),
-        NotebookEvent::MoveToSpace {
-            cloud_object_type_and_id,
-            new_space,
-        } => move_to_space(*cloud_object_type_and_id, *new_space, ctx),
         NotebookEvent::Pane(pane_event) => group.handle_pane_event(pane_id, pane_event, ctx),
-        NotebookEvent::OpenDriveObjectShareDialog {
-            cloud_object_type_and_id,
-            invitee_email,
-            source,
-        } => ctx.emit(crate::pane_group::Event::OpenDriveObjectShareDialog {
-            source: *source,
-            cloud_object_type_and_id: *cloud_object_type_and_id,
-            invitee_email: invitee_email.clone(),
-        }),
         NotebookEvent::AttachPlanAsContext(ai_document_id) => {
             ctx.emit(crate::pane_group::Event::AttachPlanAsContext {
                 ai_document_id: *ai_document_id,
@@ -263,20 +235,5 @@ fn run_notebook_workflow(
         workflow_source,
         workflow_selection_source: WorkflowSelectionSource::Notebook,
         argument_override: None,
-    });
-}
-
-fn view_in_warp_drive(id: WarpDriveItemId, ctx: &mut ViewContext<PaneGroup>) {
-    ctx.emit(crate::pane_group::Event::ViewInWarpDrive(id))
-}
-
-fn move_to_space(
-    cloud_object_type_and_id: CloudObjectTypeAndId,
-    space: Space,
-    ctx: &mut ViewContext<PaneGroup>,
-) {
-    ctx.emit(crate::pane_group::Event::MoveToSpace {
-        cloud_object_type_and_id,
-        space,
     });
 }

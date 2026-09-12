@@ -4,8 +4,7 @@ use std::time::Duration;
 use warpui::r#async::SpawnedFutureHandle;
 use warpui::{Entity, ModelContext};
 
-use super::agent_message_bar::AgentMessageArgs;
-use crate::terminal::input::message_bar::{Message, MessageProvider};
+use crate::terminal::input::message_bar::Message;
 
 const DEFAULT_MESSAGE_DURATION: Duration = Duration::from_millis(1500);
 
@@ -143,11 +142,4 @@ impl EphemeralMessageModel {
 
 impl Entity for EphemeralMessageModel {
     type Event = EphemeralMessageModelEvent;
-}
-
-impl MessageProvider<AgentMessageArgs<'_>> for EphemeralMessageModel {
-    fn produce_message(&self, _args: AgentMessageArgs<'_>) -> Option<Message> {
-        self.current_message()
-            .map(|ephemeral_message| ephemeral_message.message.clone())
-    }
 }

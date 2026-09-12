@@ -507,48 +507,6 @@ pub fn assert_exchange_has_trigger_suggest_prompt(exchange_index: usize) -> Asse
     })
 }
 
-pub fn assert_exchange_action_is_suggested_prompt(exchange_index: usize) -> AssertionCallback {
-    assert_exchange_action(ConversationTarget::Only, exchange_index, move |action| {
-        let AIAgentActionType::SuggestPrompt { .. } = action else {
-            return false;
-        };
-        true
-    })
-}
-
-/// Asserts that no exchange that finished successfully contains the SuggestPrompt action.
-pub fn assert_no_suggested_prompt() -> AssertionCallback {
-    Box::new(move |app, window_id| {
-        let terminal_view = terminal_view(app, window_id, 0, 0);
-        BlocklistAIHistoryModel::handle(app).update(app, |history_model, _| {
-            let mut exchanges =
-                history_model.all_live_root_task_exchanges_for_terminal_surface(terminal_view.id());
-
-            if exchanges.any(|exchange| {
-                let AIAgentOutputStatus::Finished { finished_output } = &exchange.output_status
-                else {
-                    return false;
-                };
-                let FinishedAIAgentOutput::Success { output } = finished_output else {
-                    return false;
-                };
-                output.get().actions().any(|action| {
-                    let AIAgentActionType::SuggestPrompt { .. } = &action.action else {
-                        return false;
-                    };
-                    true
-                })
-            }) {
-                AssertionOutcome::immediate_failure(
-                    "Suggested prompt found in conversation".to_owned(),
-                )
-            } else {
-                AssertionOutcome::Success
-            }
-        })
-    })
-}
-
 /// Specifies which conversations to check for task completion.
 #[derive(Debug, Clone, Copy)]
 pub enum ConversationTarget {

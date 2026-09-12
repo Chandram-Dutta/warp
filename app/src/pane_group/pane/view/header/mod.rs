@@ -87,9 +87,6 @@ pub enum Event<A: ActionPayload, B: ActionPayload> {
     PaneDroppedOutsideofTabBarOrPaneGroup,
     // This header was clicked and the pane should be focused
     PaneHeaderClicked,
-    /// This header's overflow menu was toggled,
-    /// bool is passed to indicate if menu is open
-    PaneHeaderOverflowMenuToggled(bool),
     /// One of the pane header's overlay elements was closed.
     OverlayClosed,
 }
@@ -232,7 +229,6 @@ impl<P: BackingView> PaneHeader<P> {
             self.overflow_menu.update(ctx, |menu, ctx| {
                 menu.reset_selection(ctx);
             });
-            ctx.emit(Event::PaneHeaderOverflowMenuToggled(false));
             ctx.notify();
         }
     }
@@ -914,7 +910,6 @@ impl<P: BackingView> TypedActionView for PaneHeader<P> {
             }
             PaneHeaderAction::OpenOverflowMenu => {
                 self.open_overlay = OpenOverlay::OverflowMenu;
-                ctx.emit(Event::PaneHeaderOverflowMenuToggled(true));
                 ctx.notify();
             }
             PaneHeaderAction::ShareContents => {

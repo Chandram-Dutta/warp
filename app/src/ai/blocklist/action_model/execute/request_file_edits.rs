@@ -34,7 +34,6 @@ use crate::ai::blocklist::diff_storage::RegisteredDiffStorage;
 use crate::ai::blocklist::diff_types::{DiffSessionType, FileDiff};
 use crate::ai::blocklist::{BlocklistAIPermissions, RequestedEditResolution};
 use crate::ai::paths::host_native_absolute_path;
-use crate::terminal::model::session::SessionType;
 use crate::terminal::model::session::active_session::ActiveSession;
 use crate::{BlocklistAIHistoryModel, safe_warn};
 
@@ -316,16 +315,7 @@ impl RequestFileEditsExecutor {
             diffs.push(file_diff);
         }
 
-        // Set the session type so save/delete/create routes through the
-        // correct FileModel backend.
-        let diff_session_type = match self.active_session.as_ref(ctx).session_type(ctx) {
-            Some(SessionType::WarpifiedRemote {
-                host_id: Some(host_id),
-            }) => DiffSessionType::Remote(host_id.clone()),
-            _ => DiffSessionType::Local,
-        };
-
-        storage.set_candidate_diffs(diffs, diff_session_type, ctx);
+        storage.set_candidate_diffs(diffs, DiffSessionType::Local, ctx);
     }
 
     fn generate_ai_identifiers(

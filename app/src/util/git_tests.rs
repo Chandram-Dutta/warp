@@ -5,8 +5,8 @@ use command::r#async::Command;
 use tempfile::TempDir;
 
 use super::{
-    RepositoryInfo, detect_current_branch, detect_current_branch_display, get_pr_for_branch,
-    is_gh_auth_error, is_gh_missing_error,
+    detect_current_branch, detect_current_branch_display, get_pr_for_branch, is_gh_auth_error,
+    is_gh_missing_error,
 };
 
 /// Helper: run a git command inside the given repo directory.
@@ -22,104 +22,6 @@ async fn git(repo: &Path, args: &[&str]) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_owned()
 }
 
-#[cfg(feature = "local_fs")]
-#[test]
-fn repository_info_from_gh_output_parses_name_and_owner() {
-    // No url in the output => host is absent.
-    assert_eq!(
-        super::repository_info_from_gh_output(
-            r#"{"name":"warp-internal","owner":{"login":"warpdotdev"}}"#
-        )
-        .unwrap(),
-        RepositoryInfo {
-            name: "warp-internal".to_owned(),
-            owner: Some("warpdotdev".to_owned()),
-            host: None,
-        }
-    );
-}
-
-#[cfg(feature = "local_fs")]
-#[test]
-fn repository_info_from_gh_output_parses_host_from_url() {
-    assert_eq!(
-        super::repository_info_from_gh_output(
-            r#"{"name":"warp-internal","owner":{"login":"warpdotdev"},"url":"https://github.com/warpdotdev/warp-internal"}"#
-        )
-        .unwrap(),
-        RepositoryInfo {
-            name: "warp-internal".to_owned(),
-            owner: Some("warpdotdev".to_owned()),
-            host: Some("github.com".to_owned()),
-        }
-    );
-}
-
-#[cfg(all(feature = "local_fs", unix))]
-#[tokio::test]
-async fn get_repository_info_returns_none_when_gh_cannot_resolve_github_repo() {
-    use std::fs;
-    use std::os::unix::fs::PermissionsExt;
-    let (_dir, repo) = init_repo().await;
-
-    let fake_bin = tempfile::tempdir().expect("failed to create fake bin dir");
-    let gh_path = fake_bin.path().join("gh");
-    fs::write(
-        &gh_path,
-        "#!/bin/sh\nprintf 'none of the git remotes configured for this repository point to a known GitHub host\\n' >&2\nexit 1\n",
-    )
-    .expect("failed to write fake gh");
-    let mut permissions = fs::metadata(&gh_path).unwrap().permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(&gh_path, permissions).unwrap();
-
-    let path_env = format!(
-        "{}:{}",
-        fake_bin.path().display(),
-        std::env::var("PATH").unwrap_or_default()
-    );
-
-    assert_eq!(
-        super::get_repository_info(&repo, Some(&path_env))
-            .await
-            .unwrap(),
-        None
-    );
-}
-
-#[cfg(feature = "local_fs")]
-#[test]
-fn repository_info_from_gh_output_rejects_missing_name() {
-    assert!(super::repository_info_from_gh_output(r#"{"owner":{"login":"warpdotdev"}}"#).is_err());
-}
-
-#[cfg(feature = "local_fs")]
-#[test]
-fn repository_info_from_gh_output_rejects_missing_owner_login() {
-    assert!(
-        super::repository_info_from_gh_output(r#"{"name":"warp-internal","owner":{}}"#).is_err()
-    );
-}
-
-#[cfg(feature = "local_fs")]
-#[test]
-fn repository_info_from_gh_output_rejects_empty_fields() {
-    assert!(
-        super::repository_info_from_gh_output(r#"{"name":"","owner":{"login":"warpdotdev"}}"#)
-            .is_err()
-    );
-    assert!(
-        super::repository_info_from_gh_output(r#"{"name":"warp-internal","owner":{"login":""}}"#)
-            .is_err()
-    );
-}
-
-#[cfg(feature = "local_fs")]
-#[test]
-fn repository_info_from_gh_output_rejects_malformed_json() {
-    assert!(super::repository_info_from_gh_output("not json").is_err());
-}
-
 /// Creates a temp git repo with one commit and returns `(dir_handle, repo_path)`.
 async fn init_repo() -> (TempDir, std::path::PathBuf) {
     let dir = tempfile::tempdir().expect("failed to create temp dir");
@@ -131,42 +33,6 @@ async fn init_repo() -> (TempDir, std::path::PathBuf) {
     git(&path, &["commit", "--allow-empty", "-m", "initial"]).await;
 
     (dir, path)
-}
-
-#[cfg(all(feature = "local_fs", unix))]
-#[tokio::test]
-async fn get_repository_info_reads_gh_repo_view() {
-    use std::fs;
-    use std::os::unix::fs::PermissionsExt;
-    let (_dir, repo) = init_repo().await;
-
-    let fake_bin = tempfile::tempdir().expect("failed to create fake bin dir");
-    let gh_path = fake_bin.path().join("gh");
-    fs::write(
-        &gh_path,
-        "#!/bin/sh\nprintf '{\"name\":\"warp-internal\",\"owner\":{\"login\":\"warpdotdev\"}}\\n'\n",
-    )
-    .expect("failed to write fake gh");
-    let mut permissions = fs::metadata(&gh_path).unwrap().permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(&gh_path, permissions).unwrap();
-
-    let path_env = format!(
-        "{}:{}",
-        fake_bin.path().display(),
-        std::env::var("PATH").unwrap_or_default()
-    );
-
-    assert_eq!(
-        super::get_repository_info(&repo, Some(&path_env))
-            .await
-            .unwrap(),
-        Some(RepositoryInfo {
-            name: "warp-internal".to_owned(),
-            owner: Some("warpdotdev".to_owned()),
-            host: None,
-        })
-    );
 }
 
 #[test]

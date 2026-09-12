@@ -6,7 +6,6 @@
 pub mod docker_sandbox;
 pub mod event_loop;
 mod mio_channel;
-pub mod recorder;
 #[cfg(unix)]
 pub mod server;
 pub mod shell;
@@ -30,13 +29,11 @@ use serde::{Deserialize, Serialize};
 use shell::ShellStarter;
 
 pub use self::terminal_manager::{TerminalManager, get_shell_starter};
-#[cfg(feature = "tui")]
-pub use self::terminal_manager::{TerminalManagerInit, TerminalSurfaceInit, TerminalSurfaceResult};
 #[cfg(windows)]
 pub use self::terminal_view_adaptor::shutdown_all_pty_event_loops;
 #[cfg(all(feature = "local_tty", not(feature = "remote_tty")))]
 pub(crate) use self::terminal_view_adaptor::{
-    TerminalViewSurfaceConfig, create_terminal_view_surface, terminal_view_restored_blocks,
+    TerminalViewSurfaceConfig, create_terminal_view_surface,
 };
 #[cfg(unix)]
 pub use self::unix::*;

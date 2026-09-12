@@ -123,7 +123,7 @@ pub enum HeaderContent {
         /// draggable behavior. The view is responsible for calling
         /// `PaneHeader::render_pane_header_draggable()` on the appropriate elements.
         ///
-        /// Use this for views like CodeView that have a custom tab bar where only
+        /// Use this for views that have a custom tab bar where only
         /// part of the header (the empty space) should be draggable.
         has_custom_draggable_behavior: bool,
     },

@@ -42,7 +42,6 @@ pub enum NodeVersionPopupAction {
 #[derive(Debug, Clone)]
 pub enum NodeVersionPopupEvent {
     Close,
-    InstallNvm,
     InstallLatestNodeVersion,
     SelectVersion { version: String },
 }
@@ -73,7 +72,7 @@ impl NodeVersionPopupView {
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let install_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("Install nvm", SecondaryTheme)
+            ActionButton::new("nvm installation instructions", SecondaryTheme)
                 .with_icon(icons::Icon::Terminal)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(NodeVersionPopupAction::InstallNvm);
@@ -412,7 +411,14 @@ impl TypedActionView for NodeVersionPopupView {
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
             NodeVersionPopupAction::ClosePopup => ctx.emit(NodeVersionPopupEvent::Close),
-            NodeVersionPopupAction::InstallNvm => ctx.emit(NodeVersionPopupEvent::InstallNvm),
+            NodeVersionPopupAction::InstallNvm => {
+                ctx.open_url(if cfg!(windows) {
+                    "https://github.com/coreybutler/nvm-windows#installation--upgrades"
+                } else {
+                    "https://github.com/nvm-sh/nvm#installing-and-updating"
+                });
+                ctx.emit(NodeVersionPopupEvent::Close);
+            }
             NodeVersionPopupAction::InstallLatestNodeVersion => {
                 ctx.emit(NodeVersionPopupEvent::InstallLatestNodeVersion)
             }

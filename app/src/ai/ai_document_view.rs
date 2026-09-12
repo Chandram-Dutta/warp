@@ -30,8 +30,6 @@ use crate::ai::document::ai_document_model::{
 };
 use crate::ai::document::orchestration_config_block::OrchestrationConfigBlockView;
 use crate::appearance::Appearance;
-use crate::drive::CloudObjectTypeAndId;
-use crate::drive::items::WarpDriveItemId;
 use crate::drive::sharing::ShareableObject;
 use crate::editor::InteractionState;
 use crate::menu::{Menu, MenuItem, MenuItemFields};
@@ -86,15 +84,12 @@ use warp_errors::report_error;
 #[cfg(feature = "local_fs")]
 use warp_util::path::LineAndColumnArg;
 
-#[cfg(feature = "local_fs")]
-use crate::code::editor_management::CodeSource;
-// Import keybinding constants from code view to ensure consistency
-use crate::code::view::{SAVE_FILE_BINDING_DESCRIPTION, SAVE_FILE_BINDING_NAME};
-use crate::notebooks::file::MarkdownDisplayMode;
-#[cfg(feature = "local_fs")]
-use crate::util::file::external_editor::settings::EditorLayout;
+use crate::notebooks::editor::MarkdownDisplayMode;
 #[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::FileTarget;
+
+const SAVE_FILE_BINDING_NAME: &str = "code_view:save";
+const SAVE_FILE_BINDING_DESCRIPTION: &str = "Save file";
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AIDocumentAction {
@@ -108,7 +103,6 @@ pub enum AIDocumentAction {
     SendUpdatedPlan,
     CopyLink(String),
     CopyPlanId,
-    ShowInWarpDrive,
     AttachToActiveSession,
 }
 
@@ -116,13 +110,6 @@ pub enum AIDocumentAction {
 pub enum AIDocumentEvent {
     Pane(PaneEvent),
     CloseRequested,
-    ViewInWarpDrive(WarpDriveItemId),
-    #[cfg(feature = "local_fs")]
-    OpenCodeInWarp {
-        source: CodeSource,
-        layout: EditorLayout,
-        line_col: Option<LineAndColumnArg>,
-    },
     #[cfg(feature = "local_fs")]
     OpenFileWithTarget {
         path: std::path::PathBuf,
@@ -287,7 +274,7 @@ impl AIDocumentView {
                     }
                     BlocklistAIHistoryEvent::OrchestrationConfigUpdated {
                         conversation_id: cid,
-                        from_restore,
+                        ..
                     } => {
                         let our_conv = AIDocumentModel::as_ref(ctx)
                             .get_conversation_id_for_document_id(&document_id);
@@ -295,7 +282,7 @@ impl AIDocumentView {
                             // Lazily create the config block view if the
                             // plan sidebar opened before the orchestration
                             // config arrived.
-                            let was_freshly_created = if me.orchestration_config_block.is_none() {
+                            if me.orchestration_config_block.is_none() {
                                 let conv_id = *cid;
                                 // TODO: introduce DocumentId / PlanId newtypes to make this
                                 // conversion type-safe.
@@ -304,19 +291,6 @@ impl AIDocumentView {
                                     Some(ctx.add_typed_action_view(move |ctx| {
                                         OrchestrationConfigBlockView::new(conv_id, plan_id, ctx)
                                     }));
-                                true
-                            } else {
-                                false
-                            };
-                            // Arm auto-pop for live agent dispatches but
-                            // not for restore-hydrated events.
-                            if was_freshly_created
-                                && !*from_restore
-                                && let Some(block) = &me.orchestration_config_block
-                            {
-                                block.update(ctx, |block, ctx| {
-                                    block.arm_for_fresh_dispatch(ctx);
-                                });
                             }
                             ctx.notify();
                         }
@@ -954,38 +928,23 @@ impl AIDocumentView {
             EditorViewEvent::OpenFile {
                 path,
                 line_and_column_num,
-                force_open_in_warp,
             } => {
                 use crate::util::file::external_editor::EditorSettings;
                 use crate::util::openable_file_type::{
                     is_supported_image_file, resolve_file_target,
                 };
 
-                if *force_open_in_warp {
-                    let layout = *EditorSettings::as_ref(ctx).open_file_layout;
-                    let source = CodeSource::Link {
-                        path: path.clone(),
-                        range_start: *line_and_column_num,
-                        range_end: None,
-                    };
-                    ctx.emit(AIDocumentEvent::OpenCodeInWarp {
-                        source,
-                        layout,
-                        line_col: *line_and_column_num,
-                    });
+                let settings = EditorSettings::as_ref(ctx);
+                let target = if is_supported_image_file(path) {
+                    FileTarget::SystemGeneric
                 } else {
-                    let settings = EditorSettings::as_ref(ctx);
-                    let target = if is_supported_image_file(path) {
-                        FileTarget::SystemGeneric
-                    } else {
-                        resolve_file_target(path, settings, None)
-                    };
-                    ctx.emit(AIDocumentEvent::OpenFileWithTarget {
-                        path: path.clone(),
-                        target,
-                        line_col: *line_and_column_num,
-                    });
-                }
+                    resolve_file_target(path, settings)
+                };
+                ctx.emit(AIDocumentEvent::OpenFileWithTarget {
+                    path: path.clone(),
+                    target,
+                    line_col: *line_and_column_num,
+                });
             }
             _ => (),
         }
@@ -1271,16 +1230,6 @@ impl TypedActionView for AIDocumentView {
                 // Update UI to reflect the new query
                 self.update_header_buttons(ctx);
             }
-            AIDocumentAction::ShowInWarpDrive => {
-                if let Some(document) =
-                    AIDocumentModel::as_ref(ctx).get_current_document(&self.document_id)
-                    && let Some(sync_id) = document.sync_id
-                {
-                    ctx.emit(AIDocumentEvent::ViewInWarpDrive(WarpDriveItemId::Object(
-                        CloudObjectTypeAndId::Notebook(sync_id),
-                    )));
-                }
-            }
             AIDocumentAction::AttachToActiveSession => {
                 ctx.emit(AIDocumentEvent::AttachPlanAsContext(self.document_id));
             }
@@ -1331,12 +1280,6 @@ impl BackingView for AIDocumentView {
                 MenuItemFields::new("Copy link")
                     .with_on_select_action(AIDocumentAction::CopyLink(link))
                     .with_icon(Icon::Link)
-                    .into_item(),
-            );
-            menu_items.push(
-                MenuItemFields::new("Show in Warp Drive")
-                    .with_on_select_action(AIDocumentAction::ShowInWarpDrive)
-                    .with_icon(Icon::WarpDrive)
                     .into_item(),
             );
         }

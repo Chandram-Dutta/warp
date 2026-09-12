@@ -442,31 +442,6 @@ impl SkillManager {
         self.bundled_skills.remove_remote(host_id);
     }
 
-    pub(crate) fn replace_remote_agent_context(
-        &mut self,
-        host_id: HostId,
-        bundled_skills: Option<BundledSkill>,
-        home_skills: Option<(LocalOrRemotePath, Vec<ParsedSkill>)>,
-    ) {
-        match bundled_skills {
-            Some(bundled_skills) => {
-                self.set_remote_bundled_skill(host_id.clone(), bundled_skills);
-            }
-            None => self.remove_remote_bundled_skill(&host_id),
-        }
-        match home_skills {
-            Some((home_dir, skills)) => {
-                self.set_remote_home_skills(host_id, home_dir, skills);
-            }
-            None => self.remove_remote_home_skills(&host_id),
-        }
-    }
-
-    pub(crate) fn remove_remote_agent_context(&mut self, host_id: &HostId) {
-        self.remove_remote_bundled_skill(host_id);
-        self.remove_remote_home_skills(host_id);
-    }
-
     /// Replaces the home skills published by one remote host.
     pub(crate) fn set_remote_home_skills(
         &mut self,

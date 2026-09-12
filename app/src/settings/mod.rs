@@ -6,7 +6,6 @@ pub mod app_installation_detection;
 mod block_visibility;
 mod changelog;
 pub mod cloud_preferences;
-pub mod cloud_preferences_syncer;
 mod code;
 mod debug;
 mod editor;
@@ -26,7 +25,6 @@ mod local_control;
 pub mod macros;
 pub mod manager;
 pub mod native_preference;
-mod onboarding;
 mod pane;
 mod privacy;
 mod same_line_prompt_block;
@@ -35,10 +33,6 @@ mod select;
 mod shared_object_limit_banner;
 mod ssh;
 mod theme;
-mod tui_autoupdate;
-mod tui_theme;
-mod tui_voice;
-mod tui_zero_state;
 mod vim_banner;
 
 #[cfg(test)]
@@ -66,7 +60,6 @@ pub use linux::*;
 pub use local_ai::*;
 pub use local_control::*;
 pub use native_preference::*;
-pub use onboarding::*;
 pub use pane::*;
 pub use privacy::*;
 pub use same_line_prompt_block::*;
@@ -75,10 +68,6 @@ pub use select::*;
 pub use shared_object_limit_banner::*;
 pub use ssh::*;
 pub use theme::*;
-pub use tui_autoupdate::*;
-pub use tui_theme::*;
-pub use tui_voice::*;
-pub use tui_zero_state::*;
 pub use vim_banner::*;
 use warp_core::user_preferences::GetUserPreferences as _;
 
@@ -157,7 +146,6 @@ pub const RESTORE_SESSION: &str = "RestoreSession";
 pub const INPUT_MODE: &str = "InputMode";
 pub const ACTIVATION_HOTKEY_ENABLED: &str = "ActivationHotkeyEnabled";
 pub const ACTIVATION_HOTKEY_KEYBINDING: &str = "ActivationHotkeyKeybinding";
-pub const DISMISSED_AI_ASSISTANT_WELCOME_KEY: &str = "DismissedWarpAIWarmWelcome";
 
 pub const TIMES_TO_SHOW_AUTOSUGGESTION_HINT: i8 = 2;
 pub const QUAKE_WINDOW_AUTOHIDE_SUPPORTED: bool = cfg!(any(target_os = "macos", windows));
@@ -606,16 +594,7 @@ pub fn user_preferences_file_path() -> PathBuf {
     warp_core::paths::config_local_dir().join("user_preferences.json")
 }
 
-/// Returns the path to the TOML settings file for the active settings surface.
-///
-/// Both surfaces use the same `settings.toml` file name but live in different
-/// config directories (the GUI under [`warp_core::paths::config_local_dir`], the
-/// TUI under [`warp_core::paths::tui_config_local_dir`]) so an installed GUI and
-/// TUI never share (and clobber) one file.
+/// Returns the path to the local TOML settings file.
 pub fn user_preferences_toml_file_path() -> PathBuf {
-    let config_dir = match settings::settings_mode() {
-        settings::SettingsMode::Gui => warp_core::paths::config_local_dir(),
-        settings::SettingsMode::Tui => warp_core::paths::tui_config_local_dir(),
-    };
-    config_dir.join("settings.toml")
+    warp_core::paths::config_local_dir().join("settings.toml")
 }

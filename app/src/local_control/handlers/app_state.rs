@@ -20,8 +20,6 @@ use warp_util::path::LineAndColumnArg;
 use warpui::SingletonEntity;
 use warpui::{AppContext, ModelContext, TypedActionView};
 
-#[cfg(feature = "local_fs")]
-use crate::code::editor_management::CodeSource;
 use crate::local_control::LocalControlBridge;
 use crate::local_control::handlers::ack;
 use crate::local_control::handlers::layout::create_tab;
@@ -38,9 +36,7 @@ use crate::settings_view::SettingsSection;
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::EditorSettings;
 #[cfg(feature = "local_fs")]
-use crate::util::openable_file_type::{EditorLayout, resolve_file_target_to_open_in_warp};
-#[cfg(feature = "local_fs")]
-use crate::workspace::PaneViewLocator;
+use crate::util::openable_file_type::resolve_file_target;
 use crate::workspace::{CommandSearchOptions, InitContent, WorkspaceAction};
 
 const MAX_PANE_RESIZE_STEPS: u32 = 1_000;
@@ -83,22 +79,6 @@ pub(crate) fn handle(
             target,
             ctx,
         ),
-        ActionKind::SurfaceWarpDriveOpen => surface_workspace_action(
-            instance_id,
-            action,
-            SurfaceDestination::WarpDrive,
-            WorkspaceAction::OpenWarpDrive,
-            target,
-            ctx,
-        ),
-        ActionKind::SurfaceAgentManagementOpen => surface_workspace_action(
-            instance_id,
-            action,
-            SurfaceDestination::AgentManagement,
-            WorkspaceAction::OpenAgentManagementView,
-            target,
-            ctx,
-        ),
         ActionKind::SessionNext => workspace_action(
             instance_id,
             action,
@@ -122,65 +102,10 @@ pub(crate) fn handle(
             surface_command_search_open(instance_id, params, target, ctx)
         }
         ActionKind::SurfaceThemePickerOpen => surface_theme_picker_open(instance_id, target, ctx),
-        ActionKind::SurfaceWarpDriveToggle => workspace_action(
-            instance_id,
-            action,
-            WorkspaceAction::ToggleWarpDrive,
-            target,
-            ctx,
-        ),
         ActionKind::SurfaceResourceCenterToggle => workspace_action(
             instance_id,
             action,
             WorkspaceAction::ToggleResourceCenter,
-            target,
-            ctx,
-        ),
-        ActionKind::SurfaceAiAssistantToggle => workspace_action(
-            instance_id,
-            action,
-            WorkspaceAction::ToggleAIAssistant,
-            target,
-            ctx,
-        ),
-        ActionKind::SurfaceCodeReviewOpen => surface_code_review_open(instance_id, target, ctx),
-        ActionKind::SurfaceCodeReviewToggle | ActionKind::SurfaceRightPanelToggle => {
-            workspace_action(
-                instance_id,
-                action,
-                WorkspaceAction::ToggleRightPanel,
-                target,
-                ctx,
-            )
-        }
-        ActionKind::SurfaceProjectExplorerOpen => surface_workspace_action(
-            instance_id,
-            action,
-            SurfaceDestination::ProjectExplorer,
-            WorkspaceAction::OpenProjectExplorer,
-            target,
-            ctx,
-        ),
-        ActionKind::SurfaceGlobalSearchOpen => surface_workspace_action(
-            instance_id,
-            action,
-            SurfaceDestination::GlobalSearch,
-            WorkspaceAction::OpenGlobalSearch,
-            target,
-            ctx,
-        ),
-        ActionKind::SurfaceConversationListOpen => surface_workspace_action(
-            instance_id,
-            action,
-            SurfaceDestination::ConversationList,
-            WorkspaceAction::OpenConversationListView,
-            target,
-            ctx,
-        ),
-        ActionKind::SurfaceLeftPanelToggle => workspace_action(
-            instance_id,
-            action,
-            WorkspaceAction::ToggleLeftPanel,
             target,
             ctx,
         ),
@@ -293,48 +218,6 @@ fn surface_theme_picker_open(
         }
     });
     Ok(ack(instance_id, action))
-}
-
-fn surface_code_review_open(
-    instance_id: &Option<InstanceId>,
-    target: &TargetSelector,
-    ctx: &mut ModelContext<LocalControlBridge>,
-) -> Result<serde_json::Value, ControlError> {
-    let action = ActionKind::SurfaceCodeReviewOpen;
-    ensure_surface_available(action, SurfaceDestination::CodeReview, ctx)?;
-    let workspace = target_workspace(action, target, ctx)?;
-    activate_target(&workspace, action, target, ctx)?;
-    #[cfg(feature = "local_fs")]
-    {
-        let pane_group = target_pane_group(action, target, ctx)?;
-        let pane_id = target_pane_id(action, target, &pane_group, ctx)?;
-        let has_repository = pane_group.read(ctx, |pane_group, ctx| {
-            pane_group
-                .terminal_view_from_pane_id(pane_id, ctx)
-                .is_some_and(|terminal| terminal.as_ref(ctx).current_repo_path().is_some())
-        });
-        if !has_repository {
-            return Err(ControlError::new(
-                ErrorCode::TargetStateConflict,
-                "surface.code_review.open requires an active terminal in a repository",
-            ));
-        }
-        workspace.update(ctx, |workspace, ctx| {
-            workspace.handle_action(
-                &WorkspaceAction::OpenCodeReviewPanel(PaneViewLocator {
-                    pane_group_id: pane_group.id(),
-                    pane_id,
-                }),
-                ctx,
-            );
-        });
-        Ok(ack(instance_id, action))
-    }
-    #[cfg(not(feature = "local_fs"))]
-    Err(ControlError::new(
-        ErrorCode::UnsupportedAction,
-        "surface.code_review.open is unavailable without local filesystem support",
-    ))
 }
 
 fn ensure_surface_available(
@@ -687,12 +570,6 @@ fn settings_section(page: String) -> Result<SettingsSection, ControlError> {
             format!("surface.settings.open cannot resolve settings page {page:?}"),
         )
     })?;
-    if section == SettingsSection::WarpDrive {
-        return Err(ControlError::new(
-            ErrorCode::UnsupportedAction,
-            "surface.settings.open does not open Warp Drive settings",
-        ));
-    }
     Ok(section)
 }
 
@@ -760,21 +637,9 @@ fn file_open(
     activate_target(&workspace, ActionKind::FileOpen, target, ctx)?;
     #[cfg(feature = "local_fs")]
     {
-        let layout = params.new_tab.then_some(EditorLayout::NewTab);
-        let file_target =
-            resolve_file_target_to_open_in_warp(&path, EditorSettings::as_ref(ctx), layout);
+        let file_target = resolve_file_target(&path, EditorSettings::as_ref(ctx));
         workspace.update(ctx, |workspace, ctx| {
-            workspace.open_file_with_target(
-                path.clone(),
-                file_target,
-                line_and_column,
-                CodeSource::Link {
-                    path,
-                    range_start: None,
-                    range_end: None,
-                },
-                ctx,
-            );
+            workspace.open_file_with_target(path, file_target, line_and_column, ctx);
         });
         Ok(ack(instance_id, ActionKind::FileOpen))
     }

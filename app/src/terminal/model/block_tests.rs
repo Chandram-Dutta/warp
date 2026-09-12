@@ -42,6 +42,35 @@ impl float_cmp::ApproxEq for BlockSection {
 }
 
 #[test]
+fn local_completed_output_uses_bounded_tail_without_analytics_expansion() {
+    // The grid's row limit excludes its final row; preserve that existing snapshot convention.
+    for (line_count, first_retained) in [(49, 0), (52, 1)] {
+        let output = (0..line_count)
+            .map(|line| format!("line-{line:02}"))
+            .collect::<Vec<_>>()
+            .join("\r\n");
+        let mut output_grid = mock_blockgrid(&output);
+        output_grid.finish();
+        let block = create_test_block_with_grids(
+            BlockIndex::zero(),
+            mock_blockgrid(""),
+            mock_blockgrid(""),
+            output_grid,
+            false,
+        );
+        let expected = (first_retained..line_count)
+            .map(|line| format!("line-{line:02}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(block.compute_output_truncated(), expected);
+        assert_eq!(
+            block.compute_output_truncated_with_obfuscated_secrets(),
+            expected
+        );
+    }
+}
+
+#[test]
 pub fn test_find() {
     let mut block = TestBlockBuilder::new().build();
 

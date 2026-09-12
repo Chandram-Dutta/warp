@@ -9,8 +9,6 @@ use warpui_extras::user_preferences;
 
 use super::*;
 use crate::server::server_api::ServerApiProvider;
-use crate::server::server_api::team::MockTeamClient;
-use crate::server::server_api::workspace::MockWorkspaceClient;
 use crate::workspaces::team::{Team, TeamVisibility};
 use crate::workspaces::workspace::{HostEnablementSetting, LlmHostSettings, Workspace};
 
@@ -199,14 +197,7 @@ fn initialize_app(app: &mut App, workspaces: Vec<Workspace>) {
     let auth_state = auth_state_provider.get().clone();
     app.add_singleton_model(|_| auth_state_provider);
     app.add_singleton_model(crate::settings::AISettings::new_with_defaults);
-    app.add_singleton_model(|ctx| {
-        UserWorkspaces::mock(
-            Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
-            workspaces,
-            ctx,
-        )
-    });
+    app.add_singleton_model(|ctx| UserWorkspaces::mock(workspaces, ctx));
     app.add_singleton_model(|ctx| {
         ManagedSecretManager::new(
             ServerApiProvider::as_ref(ctx).get_managed_secrets_client(),

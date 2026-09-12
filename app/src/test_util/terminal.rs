@@ -17,13 +17,9 @@ use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent_conversations_model::AgentConversationsModel;
 use crate::ai::agent_tips::AITipModel;
 use crate::ai::ambient_agents::github_auth_notifier::GitHubAuthNotifier;
-use crate::ai::blocklist::agent_view::orchestration_pill_bar_model::OrchestrationPillBarModel;
-use crate::ai::blocklist::local_agent_task_sync_model::LocalAgentTaskSyncModel;
 use crate::ai::blocklist::orchestration_event_streamer::OrchestrationEventStreamer;
 use crate::ai::blocklist::orchestration_events::OrchestrationEventService;
-use crate::ai::blocklist::{
-    BlocklistAIHistoryModel, BlocklistAIPermissions, QueuedQueryModel, SerializedBlockListItem,
-};
+use crate::ai::blocklist::{BlocklistAIHistoryModel, BlocklistAIPermissions};
 use crate::ai::cloud_environments::CloudEnvironmentCatalog;
 use crate::ai::connected_self_hosted_workers::ConnectedSelfHostedWorkersModel;
 use crate::ai::document::ai_document_model::AIDocumentModel;
@@ -34,14 +30,13 @@ use crate::ai::mcp::gallery::MCPGalleryManager;
 use crate::ai::mcp::templatable_manager::TemplatableMCPServerManager;
 use crate::ai::outline::RepoOutlines;
 use crate::ai::persisted_workspace::PersistedWorkspace;
-use crate::ai::pricing_promotion::PricingPromotionState;
 use crate::ai::restored_conversations::RestoredAgentConversations;
 use crate::ai::skills::SkillManager;
 use crate::auth::AuthStateProvider;
 use crate::auth::auth_manager::AuthManager;
 use crate::changelog_model::ChangelogModel;
 use crate::cloud_object::model::persistence::CloudModel;
-use crate::code_review::git_repo_model::GitRepoModels;
+use crate::context_chips::git_repo_model::GitRepoModels;
 use crate::context_chips::prompt::Prompt;
 use crate::network::NetworkStatus;
 use crate::pricing::PricingInfoModel;
@@ -58,6 +53,7 @@ use crate::system::{SystemInfo, SystemStats};
 use crate::terminal::alt_screen_reporting::AltScreenReporting;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::keys::TerminalKeybindings;
+use crate::terminal::model::block::SerializedBlock;
 use crate::terminal::resizable_data::ResizableData;
 use crate::terminal::shared_session::permissions_manager::SessionPermissionsManager;
 use crate::terminal::view::inline_banner::ByoLlmAuthBannerSessionState;
@@ -66,7 +62,7 @@ use crate::undo_close::UndoCloseStack;
 use crate::warp_managed_paths_watcher::WarpManagedPathsWatcher;
 use crate::workflows::local_workflows::LocalWorkflows;
 use crate::workspace::sync_inputs::SyncedInputState;
-use crate::workspace::{ActiveSession, OneTimeModalModel, WorkspaceRegistry};
+use crate::workspace::{ActiveSession, WorkspaceRegistry};
 use crate::workspaces::team_tester::TeamTesterStatus;
 use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::workspaces::user_workspaces::UserWorkspaces;
@@ -108,15 +104,8 @@ pub fn initialize_app_for_terminal_view(app: &mut App) {
     app.add_singleton_model(LocalWorkflows::new);
     app.add_singleton_model(|_| History::default());
     app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
-    // QueuedQueryModel subscribes to history events; register after the
-    // history model is in place.
-    app.add_singleton_model(QueuedQueryModel::new);
-    // Pill bar model subscribes to history events; register after the
-    // history model is in place.
-    app.add_singleton_model(|ctx| OrchestrationPillBarModel::new(Default::default(), ctx));
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
     app.add_singleton_model(OrchestrationEventService::new);
-    app.add_singleton_model(LocalAgentTaskSyncModel::new);
     app.add_singleton_model(OrchestrationEventStreamer::new);
     app.add_singleton_model(|_| ActiveAgentViewsModel::new());
     app.add_singleton_model(BlocklistAIPermissions::new);
@@ -176,11 +165,9 @@ pub fn initialize_app_for_terminal_view(app: &mut App) {
     app.add_singleton_model(SystemInfo::new);
 
     app.add_singleton_model(|_| RestoredAgentConversations::new_seeded(vec![]));
-    app.add_singleton_model(OneTimeModalModel::new);
     app.add_singleton_model(|_| WorkspaceRegistry::new());
     app.add_singleton_model(|_| IgnoredSuggestionsModel::new(vec![]));
     app.add_singleton_model(|_| PricingInfoModel::new());
-    app.add_singleton_model(PricingPromotionState::new);
     app.add_singleton_model(AIDocumentModel::new);
     app.add_singleton_model(ByoLlmAuthBannerSessionState::new);
     app.add_singleton_model(|_| GitHubAuthNotifier::new());
@@ -195,7 +182,7 @@ pub fn initialize_app_for_terminal_view(app: &mut App) {
 /// Returns the handle to that terminal view.
 pub fn add_window_with_terminal(
     app: &mut App,
-    restored_blocks: Option<&[SerializedBlockListItem]>,
+    restored_blocks: Option<&[SerializedBlock]>,
 ) -> ViewHandle<TerminalView> {
     add_window_with_id_and_terminal(app, restored_blocks).1
 }
@@ -204,7 +191,7 @@ pub fn add_window_with_terminal(
 /// Returns the WindowID and the handle to that terminal view.
 pub fn add_window_with_id_and_terminal(
     app: &mut App,
-    restored_blocks: Option<&[SerializedBlockListItem]>,
+    restored_blocks: Option<&[SerializedBlock]>,
 ) -> (WindowId, ViewHandle<TerminalView>) {
     let tips_model = app.add_model(|_| Default::default());
     app.add_window(WindowStyle::NotStealFocus, |ctx| {

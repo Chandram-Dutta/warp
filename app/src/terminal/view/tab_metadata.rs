@@ -78,10 +78,7 @@ impl TerminalView {
     }
 
     pub fn current_diff_line_changes(&self, ctx: &AppContext) -> Option<GitLineChanges> {
-        // Prefer the externally-updated GitRepoStatusModel (local filesystem
-        // watcher or remote daemon push receiver) over parsing the raw shell
-        // chip output. This matches the preference order used by the prompt
-        // chip display (display.rs) and agent footer (chips.rs).
+        // Prefer local watcher metadata when available; SSH uses shell chip output.
         let from_model = self
             .git_status_metadata(ctx)
             .map(|metadata| GitLineChanges::from_diff_stats(&metadata.stats_against_head));

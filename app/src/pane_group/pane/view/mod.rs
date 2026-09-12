@@ -280,11 +280,6 @@ impl<P: BackingView> PaneView<P> {
     ) {
         match event {
             header::Event::PaneHeaderClicked => ctx.emit(PaneViewEvent::PaneHeaderClicked),
-            header::Event::PaneHeaderOverflowMenuToggled(is_open) => {
-                self.child(ctx).update(ctx, |child, ctx| {
-                    child.on_pane_header_overflow_menu_toggled(*is_open, ctx);
-                });
-            }
             header::Event::SelectedOverflowMenuAction(action) => {
                 self.child(ctx).update(ctx, |child, ctx| {
                     child.handle_pane_header_overflow_menu_action(action, ctx);

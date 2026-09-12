@@ -28,18 +28,8 @@ const CODE_BLOCK_CORNER_RADIUS: f32 = 8.0;
 
 #[derive(Default, Clone)]
 pub struct CodeSnippetButtonHandles {
-    pub open_button: MouseStateHandle,
     pub copy_button: MouseStateHandle,
     pub insert_button: MouseStateHandle,
-}
-
-impl CodeSnippetButtonHandles {
-    // Resets the hover state of all buttons that trigger a focus change.
-    pub fn reset_hover_state_on_focus_change(&self) {
-        if let Ok(mut state) = self.open_button.lock() {
-            state.reset_hover_state();
-        }
-    }
 }
 
 pub type HandleCode = Box<dyn FnMut(String, &mut EventContext)>;
@@ -92,7 +82,6 @@ where
 }
 
 pub struct CodeBlockOptions {
-    pub on_open: Option<HandleCode>,
     pub on_execute: Option<HandleCode>,
     pub on_copy: Option<HandleCode>,
     pub on_insert: Option<HandleCode>,
@@ -163,7 +152,6 @@ pub fn render_runnable_code_snippet(
         code_snippet,
         Box::new(iter::empty()),
         CodeBlockOptions {
-            on_open: None,
             on_execute: if allow_execution { on_execute } else { None },
             on_copy,
             on_insert: None,
@@ -183,7 +171,6 @@ fn render_linked_code_block_internal(
     file_path_text: Box<dyn Element>,
     code: &str,
     code_element: Box<dyn Element>,
-    on_open: Option<HandleCode>,
     on_copy: Option<HandleCode>,
     on_insert: Option<HandleCode>,
     insert_text: Option<String>,
@@ -249,24 +236,6 @@ fn render_linked_code_block_internal(
             .finish();
 
             action_row.add_child(copy_button);
-        }
-
-        if let Some(on_open) = on_open {
-            let open_button = render_button(
-                appearance,
-                Icon::LinkExternal,
-                "Open file",
-                mouse_handles.open_button,
-                code_clone.clone(),
-                on_open,
-                Some(Fill::from(blended_colors::text_main(
-                    theme,
-                    theme.surface_1(),
-                ))),
-            )
-            .with_margin_left(8.)
-            .finish();
-            action_row.add_child(open_button);
         }
 
         header_row.add_child(action_row.finish());
@@ -401,7 +370,6 @@ fn render_code_block_internal(
     code: &str,
     code_element: Box<dyn Element>,
     CodeBlockOptions {
-        on_open,
         on_execute,
         on_copy,
         on_insert,
@@ -449,7 +417,6 @@ fn render_code_block_internal(
                 file_path_text,
                 code,
                 code_element,
-                on_open,
                 on_copy,
                 on_insert,
                 formatted_insert_text,

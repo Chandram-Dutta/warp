@@ -21,16 +21,14 @@ use warpui::{
 
 use super::event_loop::SharedSessionInitialLoadMode;
 use super::network::{
-    FailedToJoinReason, Network, NetworkEvent, agent_prompt_failure_reason_string,
+    Network, NetworkEvent, agent_prompt_failure_reason_string,
     command_execution_failure_reason_string, control_action_failure_reason_string,
     session_ended_reason_string, viewer_removed_reason_string, write_to_pty_failure_reason_string,
 };
-use super::orchestration_viewer_model::OrchestrationViewerModel;
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
-use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
+use crate::ai::agent::conversation::ConversationStatus;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
-use crate::ai::blocklist::orchestration_event_streamer::OrchestrationEventStreamer;
 use crate::ai::blocklist::{
     BlocklistAIContextEvent, BlocklistAIContextModel, BlocklistAIHistoryEvent,
     BlocklistAIHistoryModel,
@@ -43,9 +41,6 @@ use crate::network::{NetworkStatus, NetworkStatusEvent, NetworkStatusKind};
 use crate::pane_group::TerminalViewResources;
 use crate::pane_group::pane::DetachType;
 use crate::settings::{InputModeSettings, WarpPromptSeparator};
-use crate::terminal::cli_agent_sessions::{
-    CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
-};
 use crate::terminal::event_listener::ChannelEventListener;
 use crate::terminal::input::CommandExecutionSource;
 use crate::terminal::model::ObfuscateSecrets;
@@ -57,8 +52,8 @@ use crate::terminal::shared_session::manager::Manager;
 use crate::terminal::shared_session::permissions_manager::SessionPermissionsManager;
 use crate::terminal::shared_session::shared_handlers::{
     ActiveRemoteUpdate, RemoteUpdateGuard, apply_auto_approve_agent_actions_update,
-    apply_cli_agent_state_update, apply_input_mode_update, apply_selected_agent_model_update,
-    apply_selected_conversation_update, build_selected_conversation_update,
+    apply_input_mode_update, apply_selected_agent_model_update, apply_selected_conversation_update,
+    build_selected_conversation_update,
 };
 use crate::terminal::terminal_manager::{BlockSpacing, compute_block_size, terminal_colors_list};
 use crate::terminal::view::ExecuteCommandEvent;
@@ -99,21 +94,11 @@ pub struct TerminalManager {
     current_network: Arc<FairMutex<Option<ModelHandle<Network>>>>,
     viewer_remote_update_guard: RemoteUpdateGuard,
     outbound_handlers_registered: bool,
-    /// Owns child discovery + status polling for an orchestrated ambient
-    /// agent run. Lazily created in `JoinedSuccessfully` on the first
-    /// ambient session join. `Arc<FairMutex<Option<...>>>` matches
-    /// `current_network` so the network-event closure can write into it
-    /// without `&mut self`.
-    orchestration_viewer_model: Arc<FairMutex<Option<ModelHandle<OrchestrationViewerModel>>>>,
     /// `true` for the root viewer pane of an orchestrator, `false` for
     /// per-child viewer panes. Skipping polling on children avoids
     /// duplicated REST traffic and grandchild double-registration via the
     /// transitive `ancestor_run_id` filter.
     enable_orchestration_polling: bool,
-    /// Dedicated orchestration child viewers recover missing or inaccessible
-    /// live sessions through their pane group instead of the generic join
-    /// failure UI.
-    orchestration_child_conversation_id: Option<AIConversationId>,
 }
 
 pub struct TerminalManagerInit {
@@ -143,42 +128,6 @@ impl TerminalManager {
             update,
             ctx,
         );
-    }
-
-    /// Creates the live-session viewer for an orchestration child pane, with
-    /// both ambient-agent controls and the `FailedToJoin` recovery routing
-    /// that a known child conversation enables. Callers are responsible for
-    /// wiring ambient session events after construction.
-    #[allow(clippy::new_ret_no_self)]
-    pub fn new_for_ambient_orchestration_child(
-        session_id: SessionId,
-        conversation_id: AIConversationId,
-        resources: TerminalViewResources,
-        initial_size: Vector2F,
-        window_id: WindowId,
-        ctx: &mut AppContext,
-    ) -> TerminalManagerInit {
-        let TerminalManagerInit {
-            manager: mut terminal_manager,
-            view: terminal_view,
-        } = Self::new_internal(
-            resources,
-            initial_size,
-            window_id,
-            false,
-            true,
-            Some(conversation_id),
-            ctx,
-        );
-        terminal_manager.connect_session(
-            session_id,
-            SharedSessionInitialLoadMode::ReplaceFromSessionScrollback,
-            ctx,
-        );
-        TerminalManagerInit {
-            manager: terminal_manager,
-            view: terminal_view,
-        }
     }
 
     fn current_network(
@@ -225,7 +174,6 @@ impl TerminalManager {
     ) {
         let reason_string = command_execution_failure_reason_string(reason);
         terminal_view.show_persistent_toast(reason_string, ToastFlavor::Error, ctx);
-        terminal_view.clear_queued_command_in_flight(ctx);
 
         // On command execution request, the input is frozen and set to a loading state.
         // We only need to restore the input for errors that aren't the result of a new buffer.
@@ -246,7 +194,6 @@ impl TerminalManager {
         window_id: WindowId,
         enable_orchestration_polling: bool,
         is_ambient_agent: bool,
-        orchestration_child_conversation_id: Option<AIConversationId>,
         ctx: &mut AppContext,
     ) -> TerminalManagerInit {
         // Create all the necessary channels we need for communication.
@@ -308,8 +255,7 @@ impl TerminalManager {
         let colors = model.colors();
         let model = Arc::new(FairMutex::new(model));
 
-        let sessions: ModelHandle<Sessions> =
-            ctx.add_model(|ctx| Sessions::new(executor_command_tx, ctx));
+        let sessions: ModelHandle<Sessions> = ctx.add_model(|_| Sessions::new(executor_command_tx));
         let cloned_model = model.clone();
         let model_events =
             ctx.add_model(|ctx| ModelEventDispatcher::new(events_rx, sessions.clone(), ctx));
@@ -330,7 +276,6 @@ impl TerminalManager {
                 None, // model_event_sender - not used for viewer
                 prompt_type.clone(),
                 None, // initial_input_config - not used for viewer
-                None, // no conversation restoration for shared session viewer
                 Some(inactive_pty_reads_rx.clone()),
                 is_ambient_agent,
                 ctx,
@@ -363,9 +308,7 @@ impl TerminalManager {
             current_network: Arc::new(FairMutex::new(None)),
             viewer_remote_update_guard: RemoteUpdateGuard::new(),
             outbound_handlers_registered: false,
-            orchestration_viewer_model: Arc::new(FairMutex::new(None)),
             enable_orchestration_polling,
-            orchestration_child_conversation_id,
         };
         TerminalManagerInit {
             manager,
@@ -402,7 +345,6 @@ impl TerminalManager {
             window_id,
             enable_orchestration_polling,
             is_ambient_agent,
-            None,
             ctx,
         );
 
@@ -434,7 +376,6 @@ impl TerminalManager {
             window_id,
             enable_orchestration_polling,
             true, // is_ambient_agent
-            None,
             ctx,
         )
     }
@@ -569,9 +510,7 @@ impl TerminalManager {
             self.current_network.clone(),
             self.network_resources.prompt_type.clone(),
             self.viewer_remote_update_guard.clone(),
-            self.orchestration_viewer_model.clone(),
             self.enable_orchestration_polling,
-            self.orchestration_child_conversation_id,
             ctx,
         );
         if !self.outbound_handlers_registered {
@@ -752,50 +691,6 @@ impl TerminalManager {
                 },
             );
 
-            // Broadcast CLI agent rich input open/close changes from viewer back to sharer.
-            let current_network_for_cli = self.current_network.clone();
-            let model_for_cli = self.model.clone();
-            let view_id_for_cli = self.view.id();
-            let cli_remote_update_guard = self.viewer_remote_update_guard.clone();
-            ctx.subscribe_to_model(&CLIAgentSessionsModel::handle(ctx), move |_, event, ctx| {
-                let CLIAgentSessionsModelEvent::InputSessionChanged {
-                    terminal_view_id,
-                    new_input_state,
-                    ..
-                } = event
-                else {
-                    return;
-                };
-                if *terminal_view_id != view_id_for_cli
-                    || !cli_remote_update_guard.should_broadcast()
-                {
-                    return;
-                }
-                let cli_agent_session = {
-                    let sessions_model = CLIAgentSessionsModel::as_ref(ctx);
-                    match sessions_model.session(view_id_for_cli) {
-                        Some(session) => CLIAgentSessionState::Active {
-                            cli_agent: session.agent.to_serialized_name(),
-                            is_rich_input_open: matches!(
-                                new_input_state,
-                                CLIAgentInputState::Open { .. }
-                            ),
-                        },
-                        None => CLIAgentSessionState::Inactive,
-                    }
-                };
-                Self::send_input_context_update_to_current_network(
-                    &cli_remote_update_guard,
-                    &model_for_cli,
-                    &current_network_for_cli,
-                    UniversalDeveloperInputContextUpdate {
-                        cli_agent_session: Some(cli_agent_session),
-                        ..Default::default()
-                    },
-                    ctx,
-                );
-            });
-
             self.outbound_handlers_registered = true;
         }
         self.network_state = NetworkState::Active(network);
@@ -813,9 +708,7 @@ impl TerminalManager {
         current_network: Arc<FairMutex<Option<ModelHandle<Network>>>>,
         prompt_type: ModelHandle<PromptType>,
         viewer_remote_update_guard: RemoteUpdateGuard,
-        orchestration_viewer_model: Arc<FairMutex<Option<ModelHandle<OrchestrationViewerModel>>>>,
         enable_orchestration_polling: bool,
-        orchestration_child_conversation_id: Option<AIConversationId>,
         ctx: &mut AppContext,
     ) {
         // We use a weak view handle instead of a strong reference because we may add a subscription to the view which moves a strong reference of the Model into the callback,
@@ -851,12 +744,6 @@ impl TerminalManager {
                     if let Some(ref input_mode) = universal_developer_input_context.input_mode {
                         Self::handle_input_mode_update(&weak_view_handle, input_mode, &active_remote_update, ctx);
                     }
-                    apply_cli_agent_state_update(
-                        &weak_view_handle,
-                        &universal_developer_input_context.cli_agent_session,
-                        &active_remote_update,
-                        ctx,
-                    );
                     if let Some(ref selected_conversation) = universal_developer_input_context.selected_conversation {
                         Self::handle_selected_conversation_update(
                             &weak_view_handle,
@@ -891,24 +778,6 @@ impl TerminalManager {
                         });
                     }
                 }
-
-                if enable_orchestration_polling
-                    && orchestration_viewer_model.lock().is_none()
-                    && let Some(task_id) = ambient_task_id {
-                        let terminal_view_id = view.id();
-                        let weak_view_handle_for_orch = weak_view_handle.clone();
-                        let orchestration_viewer_model_slot =
-                            orchestration_viewer_model.clone();
-                        let model = ctx.add_model(|model_ctx| {
-                            OrchestrationViewerModel::new(
-                                task_id,
-                                terminal_view_id,
-                                weak_view_handle_for_orch,
-                                model_ctx,
-                            )
-                        });
-                        *orchestration_viewer_model_slot.lock() = Some(model);
-                    }
 
                 let session_id = network.as_ref(ctx).session_id();
                 Manager::handle(ctx).update(ctx, |manager, ctx| {
@@ -954,7 +823,6 @@ impl TerminalManager {
                     model.clone(),
                     &current_network,
                     &network,
-                    &orchestration_viewer_model,
                     is_ambient_agent,
                     ctx,
                 ) {
@@ -1001,7 +869,6 @@ impl TerminalManager {
                     model.clone(),
                     &current_network,
                     &network,
-                    &orchestration_viewer_model,
                     is_ambient_agent,
                     ctx,
                 ) {
@@ -1013,33 +880,9 @@ impl TerminalManager {
                 });
             }
             NetworkEvent::FailedToJoin { reason } => {
-                let session_id = network.as_ref(ctx).session_id();
-                log::debug!(
-                    "[shared-session] viewer TerminalManager: NetworkEvent::FailedToJoin \
-                     session_id={session_id} reason={reason:?} \
-                     orchestration_child_conversation_id={orchestration_child_conversation_id:?}"
-                );
                 let Some(view) = weak_view_handle.upgrade(ctx) else {
                     return;
                 };
-                if FeatureFlag::OrchestrationUnifiedStack.is_enabled()
-                    && matches!(
-                        reason,
-                        FailedToJoinReason::SessionNotFound
-                            | FailedToJoinReason::SessionNotAccessible
-                    )
-                    && let Some(conversation_id) = orchestration_child_conversation_id
-                {
-                    view.update(ctx, |_terminal_view, ctx| {
-                        ctx.emit(
-                            TerminalViewEvent::OrchestrationChildSharedSessionJoinFailed {
-                                conversation_id,
-                                session_id,
-                            },
-                        );
-                    });
-                    return;
-                }
                 view.update(ctx, |terminal_view, ctx| {
                     terminal_view.show_persistent_toast(
                         reason.user_facing_error_message().to_string(),
@@ -1063,7 +906,6 @@ impl TerminalManager {
                     model.clone(),
                     &current_network,
                     &network,
-                    &orchestration_viewer_model,
                     is_ambient_agent,
                     ctx,
                 ) {
@@ -1143,14 +985,6 @@ impl TerminalManager {
                     }
                 }
 
-                if let Some(ref cli_agent_session) = context_update.cli_agent_session {
-                    apply_cli_agent_state_update(
-                        &weak_view_handle,
-                        cli_agent_session,
-                        &active_remote_update,
-                        ctx,
-                    );
-                }
             }
             NetworkEvent::Reconnecting => {
                 let Some(view) = weak_view_handle.upgrade(ctx) else {
@@ -1249,18 +1083,6 @@ impl TerminalManager {
                     }
                     view.apply_viewer_shared_session_input_update(block_id, operations.clone(), ctx);
                 })
-            }
-            NetworkEvent::RoleRequestInFlight(role_request_id) => {
-                let Some(view) = weak_view_handle.upgrade(ctx) else {
-                    return;
-                };
-
-                view.update(ctx, |view, ctx| {
-                    view.on_shared_session_viewer_role_request_in_flight(
-                        role_request_id.clone(),
-                        ctx,
-                    );
-                });
             }
             NetworkEvent::RoleRequestResponse(role_request_response) => {
                 let Some(view) = weak_view_handle.upgrade(ctx) else {
@@ -1603,11 +1425,11 @@ impl TerminalManager {
                 block_id,
                 operations,
             } => {
-                let should_send_input_update = view.read(ctx, |view, ctx| {
+                let should_send_input_update = view.read(ctx, |view, _| {
                     let model = model.lock();
                     model.block_list().active_block_id() == block_id
                         && model.shared_session_status().is_executor()
-                        && view.should_publish_shared_session_input_editor_update(&model, ctx)
+                        && view.should_publish_shared_session_input_editor_update(&model)
                 });
                 if should_send_input_update {
                     Self::update_current_network(&current_network, ctx, |network, _| {
@@ -1654,13 +1476,6 @@ impl TerminalManager {
                         prompt.clone(),
                         attachments.clone(),
                     );
-                });
-            }
-            TerminalViewEvent::CancelSharedSessionConversation {
-                server_conversation_token,
-            } => {
-                Self::update_current_network(&current_network, ctx, |network, _| {
-                    network.send_cancel_control_action(*server_conversation_token);
                 });
             }
             TerminalViewEvent::ReportViewerTerminalSize { window_size } => {
@@ -1762,35 +1577,6 @@ impl TerminalManager {
         });
     }
 
-    /// Drops the [`OrchestrationViewerModel`] from the shared slot if one
-    /// exists. Called from terminal session-end paths. The model's
-    /// `ctx.spawn` continuations are entity-scoped, so dropping the
-    /// entity makes them no-ops; no explicit `.abort()` needed.
-    ///
-    /// The model also holds a viewer-mode registration on the shared
-    /// [`OrchestrationEventStreamer`]; we unregister explicitly here so
-    /// the streamer can refcount-tear-down the ancestor SSE on the last
-    /// pane close. The unregister API is idempotent.
-    fn stop_orchestration_polling(
-        orchestration_viewer_model: &Arc<FairMutex<Option<ModelHandle<OrchestrationViewerModel>>>>,
-        ctx: &mut AppContext,
-    ) {
-        let Some(handle) = orchestration_viewer_model.lock().take() else {
-            return;
-        };
-        let parent_task_id = handle.as_ref(ctx).parent_task_id();
-        let consumer_id = handle.id();
-        log::debug!(
-            "[orch-viewer] stopping orchestration viewer model parent_task_id={parent_task_id} \
-             consumer_id={consumer_id:?}"
-        );
-        OrchestrationEventStreamer::handle(ctx).update(ctx, move |streamer, _ctx| {
-            streamer.unregister_viewer_mode_consumer(parent_task_id, consumer_id);
-        });
-        // `handle` drops here, releasing the per-pane viewer model.
-        drop(handle);
-    }
-
     /// Common teardown for the viewer session-end network events
     /// (`SessionEnded`, `ViewerRemoved`, `FailedToReconnect`).
     ///
@@ -1811,7 +1597,6 @@ impl TerminalManager {
         model: Arc<FairMutex<TerminalModel>>,
         current_network: &Arc<FairMutex<Option<ModelHandle<Network>>>>,
         ended_network: &ModelHandle<Network>,
-        orchestration_viewer_model: &Arc<FairMutex<Option<ModelHandle<OrchestrationViewerModel>>>>,
         is_ambient_agent: bool,
         ctx: &mut AppContext,
     ) -> bool {
@@ -1825,18 +1610,7 @@ impl TerminalManager {
             ) {
                 return false;
             }
-            // Non-owner viewers (read-only) won't get a follow-up session;
-            // owners may handoff via `attach_execution_session` (same
-            // `TerminalManager`, same orchestrator `task_id`), so keep their
-            // model.
-            let is_owner = terminal_view.read(ctx, |terminal_view, app| {
-                terminal_view.owned_ambient_agent_task_id(app).is_some()
-            });
-            if !is_owner {
-                Self::stop_orchestration_polling(orchestration_viewer_model, ctx);
-            }
         } else {
-            Self::stop_orchestration_polling(orchestration_viewer_model, ctx);
             Self::shared_session_ended(terminal_view, model, ctx);
         }
         true
@@ -1943,18 +1717,7 @@ impl crate::terminal::TerminalManager for TerminalManager {
     }
 
     fn on_view_detached(&self, detach_type: DetachType, app: &mut AppContext) {
-        // Keep the network + shared-session state — and the orchestration
-        // viewer model (OVM) — alive for non-permanent detaches:
-        // - `HiddenForClose`: the pane may be restored from the undo-close stack within the
-        //   grace window (~60s default). We deliberately leave the OVM (and its ancestor
-        //   streamer registration) in place so undo-close-tab restores the pill bar
-        //   seamlessly. If the tab is never restored, we'll be invoked again with `Closed`
-        //   from the grace-period expiry and tear down then.
-        // - `Moved`: the same `TerminalManager` is reused in the target pane group (the
-        //   `Box<dyn AnyPaneContent>` is transferred via `remove_pane_for_move` and then
-        //   immediately re-attached), so tearing down the network or OVM would break the
-        //   live session.
-        // Only `Closed` tears down the OVM here.
+        // Undo-close and pane moves reuse the existing network connection.
         if !matches!(detach_type, DetachType::Closed) {
             return;
         }
@@ -1964,15 +1727,6 @@ impl crate::terminal::TerminalManager for TerminalManager {
             model.unregister_agent_view_controller(terminal_view_id, ctx);
             model.unregister_ambient_session(terminal_view_id, ctx);
         });
-
-        // Tear down the orchestration viewer model so its streamer
-        // registration is released and the ancestor SSE can close. The
-        // network-event paths (SessionEnded / ViewerRemoved /
-        // FailedToReconnect) also call this, but pane-close doesn't flow
-        // through them — without this, the SSE leaks until the app exits.
-        // `stop_orchestration_polling` is idempotent, so a later
-        // network-event-driven call is a no-op.
-        Self::stop_orchestration_polling(&self.orchestration_viewer_model, app);
 
         if let NetworkState::Active(ref network) = self.network_state {
             network.update(app, |network, _| {

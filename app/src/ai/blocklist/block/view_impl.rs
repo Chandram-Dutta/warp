@@ -650,12 +650,14 @@ pub fn render_citation(
 
     let (icon, name) = match citation {
         AIAgentCitation::WarpDriveObject { uid } => {
-            let item = CloudModel::as_ref(app)
-                .get_by_uid(uid)?
-                .to_warp_drive_item(appearance)?;
+            let object = CloudModel::as_ref(app).get_by_uid(uid)?;
             (
-                item.icon(appearance, Some(theme.active_ui_text_color())),
-                item.display_name().unwrap_or(String::from("Untitled")),
+                Some(
+                    Icon::LinkExternal
+                        .to_warpui_icon(theme.active_ui_text_color())
+                        .finish(),
+                ),
+                object.display_name(),
             )
         }
         AIAgentCitation::WarpDocumentation { .. } => {
@@ -1076,9 +1078,6 @@ impl View for AIBlock {
                 model: self.model.as_ref(),
                 state_handles: &self.state_handles,
                 action_buttons: &self.action_buttons,
-                view_screenshot_buttons: &self.view_screenshot_buttons,
-                open_recording_buttons: &self.open_recording_buttons,
-                has_recording_related_actions: self.has_recording_related_actions,
                 action_model: &self.action_model,
                 active_session: &self.active_session,
                 editor_views: &self.code_editor_views,
@@ -1089,7 +1088,6 @@ impl View for AIBlock {
                 requested_commands: &self.requested_commands,
                 requested_mcp_tools: &self.requested_mcp_tools,
                 requested_edits: &self.requested_edits,
-                unit_test_suggestions: &self.unit_tests_suggestions,
                 todo_list_states: &self.todo_list_states,
                 collapsible_block_states: &self.collapsible_block_states,
                 is_selecting_text: self.state_handles.selection_handle.is_selecting(),
@@ -1115,8 +1113,6 @@ impl View for AIBlock {
                 search_codebase_view: &self.search_codebase_view,
                 web_search_views: &self.web_search_views,
                 web_fetch_views: &self.web_fetch_views,
-                review_changes_button: &self.review_changes_button,
-                open_all_comments_button: &self.open_all_comments_button,
                 dismiss_suggestion_button: &self.dismiss_suggestion_button,
                 disable_rule_suggestions_button: &self.disable_rule_suggestions_button,
                 has_accepted_edits,

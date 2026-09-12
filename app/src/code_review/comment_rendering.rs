@@ -11,6 +11,7 @@ use warp_core::ui::theme::Fill;
 use warp_core::ui::theme::color::internal_colors::{neutral_1, neutral_2, text_sub};
 use warp_editor::content::buffer::InitialBufferState;
 use warp_editor::render::element::VerticalExpansionBehavior;
+use warp_util::local_or_remote_path::LocalOrRemotePath;
 use warpui::elements::new_scrollable::ScrollableAppearance;
 use warpui::elements::{
     Border, ChildView, Container, CornerRadius, CrossAxisAlignment, Flex, Hoverable,
@@ -23,7 +24,6 @@ use warpui::units::Pixels;
 use warpui::{AppContext, Element, EventContext, SingletonEntity, View, ViewContext, ViewHandle};
 
 use crate::appearance::Appearance;
-use crate::code::buffer_location::LocalOrRemotePath;
 use crate::code::editor::comment_editor::create_readonly_comment_markdown_editor;
 use crate::code::editor::view::{CodeEditorRenderOptions, CodeEditorView};
 use crate::code_review::comments::{

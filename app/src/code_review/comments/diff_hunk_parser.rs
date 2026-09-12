@@ -6,8 +6,13 @@ use warp_editor::render::model::LineCount;
 
 use crate::code::editor::line::EditorLineLocation;
 use crate::code_review::comments::LineDiffContent;
-use crate::code_review::diff_state::DiffLineType;
 use crate::util::git::parse_unified_diff_header;
+
+enum DiffLineType {
+    Context,
+    Add,
+    Delete,
+}
 
 #[derive(Debug)]
 pub(crate) enum DiffHunkParseError {
@@ -42,9 +47,8 @@ impl From<anyhow::Error> for DiffHunkParseError {
 fn build_line_result(
     line: &str,
     line_type: &DiffLineType,
-    line_index_in_hunk: usize,
     new_file_line: LineCount,
-) -> Result<(EditorLineLocation, LineDiffContent), DiffHunkParseError> {
+) -> (EditorLineLocation, LineDiffContent) {
     // EditorLineLocation expects 0-based line numbers, but diff hunks are 1-based.
     let line_num = new_file_line.saturating_sub(&LineCount::from(1));
 
@@ -58,11 +62,6 @@ fn build_line_result(
             line_range: line_num..line_num,
             index: 0,
         },
-        DiffLineType::HunkHeader => {
-            return Err(DiffHunkParseError::UnexpectedHunkHeader {
-                line_index: line_index_in_hunk,
-            });
-        }
     };
 
     let lines_added = usize::from(matches!(line_type, DiffLineType::Add));
@@ -74,7 +73,7 @@ fn build_line_result(
         lines_removed: LineCount::from(lines_removed),
     };
 
-    Ok((editor_line_location, line_diff_content))
+    (editor_line_location, line_diff_content)
 }
 
 fn get_diff_line_from_diff_hunk(
@@ -109,12 +108,11 @@ fn get_diff_line_from_diff_hunk(
             CommentSide::Left => {
                 if matches!(line_type, DiffLineType::Delete | DiffLineType::Context) {
                     if index_in_file == target_line_number {
-                        return build_line_result(
+                        return Ok(build_line_result(
                             line,
                             &line_type,
-                            index_in_hunk,
                             LineCount::from(index_in_file),
-                        );
+                        ));
                     }
                     index_in_file += 1;
                 }
@@ -122,12 +120,11 @@ fn get_diff_line_from_diff_hunk(
             CommentSide::Right => {
                 if matches!(line_type, DiffLineType::Add | DiffLineType::Context) {
                     if index_in_file == target_line_number {
-                        return build_line_result(
+                        return Ok(build_line_result(
                             line,
                             &line_type,
-                            index_in_hunk,
                             LineCount::from(index_in_file),
-                        );
+                        ));
                     }
                     index_in_file += 1;
                 }

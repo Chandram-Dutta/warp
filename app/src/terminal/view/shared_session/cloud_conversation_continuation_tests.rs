@@ -24,8 +24,6 @@ use crate::cloud_object::{
     Owner, Revision, ServerGuestSubject, ServerMetadata, ServerObjectGuest, ServerPermissions,
 };
 use crate::server::ids::ServerId;
-use crate::server::server_api::team::MockTeamClient;
-use crate::server::server_api::workspace::MockWorkspaceClient;
 use crate::terminal::TerminalModel;
 use crate::terminal::shared_session::{SharedSessionSource, SharedSessionStatus};
 use crate::workspaces::team::Team;
@@ -104,14 +102,7 @@ fn setup_app_with_creator(
         }
     }
     let workspaces = workspaces_for_permission_fixture(permissions_fixture);
-    app.add_singleton_model(|ctx| {
-        UserWorkspaces::mock(
-            Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
-            workspaces,
-            ctx,
-        )
-    });
+    app.add_singleton_model(|ctx| UserWorkspaces::mock(workspaces, ctx));
     app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
     app.add_singleton_model(AgentConversationsModel::new);
 
@@ -1007,19 +998,6 @@ fn routing_omits_task_id_for_non_ambient_shared_session_viewer() {
                     is_executor: true,
                     ambient_agent_task_id: None,
                 }
-            );
-        });
-    });
-}
-
-#[test]
-fn routing_is_local_for_active_sharer_local_orchestration_child() {
-    App::test((), |mut app| async move {
-        let model = ambient_pane_model(ambient_task_id(1), SharedSessionStatus::ActiveSharer);
-        app.update(|ctx| {
-            assert_eq!(
-                resolve_ai_query_routing(EntityId::new(), None, &model, ctx),
-                AIQueryRouting::Local
             );
         });
     });

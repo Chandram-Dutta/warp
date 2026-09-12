@@ -631,191 +631,6 @@ settings::macros::implement_setting_for_enum!(
     description: "Controls how child-agent messages are displayed.",
 );
 
-/// Which unit the usage entry displays in Warp Agent CLI.
-#[derive(
-    Default,
-    Debug,
-    serde::Serialize,
-    serde::Deserialize,
-    PartialEq,
-    Copy,
-    Clone,
-    EnumIter,
-    schemars::JsonSchema,
-    settings_value::SettingsValue,
-)]
-#[schemars(
-    description = "Which unit the usage entry displays in Warp Agent CLI.",
-    rename_all = "snake_case"
-)]
-pub enum TuiUsageDisplayMode {
-    /// Credits spent — the same number the GUI's usage footer shows (default).
-    #[default]
-    Credits,
-    /// Provider dollar cost.
-    Cost,
-}
-
-settings::macros::implement_setting_for_enum!(
-    TuiUsageDisplayMode,
-    AISettings,
-    SupportedPlatforms::ALL,
-    SyncToCloud::Never,
-    surface: settings::SettingSurfaces::TUI,
-    private: false,
-    toml_path: "agents.usage_display_mode",
-    description: "Which unit the usage entry displays in Warp Agent CLI: credits or provider cost.",
-);
-/// One configurable item in the Warp Agent CLI statusline.
-#[derive(
-    Debug,
-    serde::Serialize,
-    serde::Deserialize,
-    PartialEq,
-    Eq,
-    Copy,
-    Clone,
-    Hash,
-    schemars::JsonSchema,
-    settings_value::SettingsValue,
-)]
-#[schemars(
-    description = "A configurable item in the Warp Agent CLI statusline.",
-    rename_all = "snake_case"
-)]
-#[serde(rename_all = "snake_case")]
-pub enum TuiStatuslineItem {
-    AutoApprove,
-    /// Vim mode indicator (NOR/INS/VIS/V-L/REP); hidden when vim mode is disabled.
-    VimModeIndicator,
-    Model,
-    WorkingDirectory,
-    GitBranch,
-    GitBranchStatus,
-    GitDiffStatus,
-    GitHubPullRequest,
-    CreditUsage,
-    ContextWindowUsage,
-    Date,
-    #[schemars(rename = "time_12_hour")]
-    Time12Hour,
-    #[schemars(rename = "time_24_hour")]
-    Time24Hour,
-    AgentTodoList,
-    VoiceInput,
-}
-
-impl TuiStatuslineItem {
-    pub const ALL: [Self; 15] = [
-        Self::AutoApprove,
-        Self::VimModeIndicator,
-        Self::Model,
-        Self::WorkingDirectory,
-        Self::GitBranch,
-        Self::GitBranchStatus,
-        Self::GitDiffStatus,
-        Self::GitHubPullRequest,
-        Self::CreditUsage,
-        Self::ContextWindowUsage,
-        Self::Date,
-        Self::Time12Hour,
-        Self::Time24Hour,
-        Self::AgentTodoList,
-        Self::VoiceInput,
-    ];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::AutoApprove => "Auto-approve indicator",
-            Self::VimModeIndicator => "Vim mode indicator",
-            Self::Model => "Model",
-            Self::WorkingDirectory => "Working directory",
-            Self::GitBranch => "Git branch",
-            Self::GitBranchStatus => "Git branch status",
-            Self::GitDiffStatus => "Git diff status",
-            Self::GitHubPullRequest => "GitHub pull request",
-            Self::CreditUsage => "Credit usage",
-            Self::ContextWindowUsage => "Context window usage",
-            Self::Date => "Date",
-            Self::Time12Hour => "Time (12 hour format)",
-            Self::Time24Hour => "Time (24 hour format)",
-            Self::AgentTodoList => "Agent to-do list",
-            Self::VoiceInput => "Voice input",
-        }
-    }
-}
-
-/// Ordered and enabled items in the Warp Agent CLI statusline.
-#[derive(
-    Debug,
-    serde::Serialize,
-    serde::Deserialize,
-    PartialEq,
-    Eq,
-    Clone,
-    schemars::JsonSchema,
-    settings_value::SettingsValue,
-)]
-pub struct TuiStatuslineConfig {
-    pub order: Vec<TuiStatuslineItem>,
-    pub enabled: Vec<TuiStatuslineItem>,
-}
-
-impl Default for TuiStatuslineConfig {
-    fn default() -> Self {
-        Self {
-            order: TuiStatuslineItem::ALL.to_vec(),
-            enabled: vec![
-                TuiStatuslineItem::AutoApprove,
-                TuiStatuslineItem::VimModeIndicator,
-                TuiStatuslineItem::Model,
-                TuiStatuslineItem::WorkingDirectory,
-                TuiStatuslineItem::GitBranch,
-                TuiStatuslineItem::GitDiffStatus,
-            ],
-        }
-    }
-}
-
-impl TuiStatuslineConfig {
-    /// Returns a complete, duplicate-free catalog and a valid enabled subset.
-    pub fn normalized(&self) -> Self {
-        let is_legacy_config = !self.order.contains(&TuiStatuslineItem::VimModeIndicator);
-        let mut order = Vec::with_capacity(TuiStatuslineItem::ALL.len());
-        for item in self.order.iter().copied().chain(TuiStatuslineItem::ALL) {
-            if TuiStatuslineItem::ALL.contains(&item) && !order.contains(&item) {
-                order.push(item);
-            }
-        }
-
-        let mut enabled = Vec::with_capacity(self.enabled.len());
-        for item in self.enabled.iter().copied() {
-            if order.contains(&item) && !enabled.contains(&item) {
-                enabled.push(item);
-            }
-        }
-        if is_legacy_config {
-            enabled.insert(0, TuiStatuslineItem::VimModeIndicator);
-        }
-
-        Self { order, enabled }
-    }
-
-    pub fn is_enabled(&self, item: TuiStatuslineItem) -> bool {
-        self.enabled.contains(&item)
-    }
-}
-
-impl TuiUsageDisplayMode {
-    /// The other unit — clicking the usage entry flips to this.
-    pub fn toggled(self) -> Self {
-        match self {
-            TuiUsageDisplayMode::Credits => TuiUsageDisplayMode::Cost,
-            TuiUsageDisplayMode::Cost => TuiUsageDisplayMode::Credits,
-        }
-    }
-}
-
 impl OrchestrationMessageDisplayMode {
     /// Display name for the settings dropdown.
     pub fn display_name(&self) -> &'static str {
@@ -852,134 +667,6 @@ impl OrchestrationMessageDisplayMode {
     /// Whether child-agent message bodies should collapse after streaming.
     pub fn should_collapse_agent_message_body_on_finish(&self) -> bool {
         matches!(self, OrchestrationMessageDisplayMode::ShowAndCollapse)
-    }
-}
-
-/// Controls what happens when a user submits a new prompt while the agent is
-/// still responding to an earlier prompt.
-///
-/// This is the *default* used when a conversation has no explicit auto-queue
-/// override. Per-conversation overrides live on `QueuedQueryModel` and take
-/// precedence over this setting.
-#[derive(
-    Default,
-    Debug,
-    serde::Serialize,
-    serde::Deserialize,
-    PartialEq,
-    Copy,
-    Clone,
-    EnumIter,
-    schemars::JsonSchema,
-    settings_value::SettingsValue,
-)]
-#[schemars(
-    description = "Default behavior when submitting a new prompt while the agent is still responding.",
-    rename_all = "snake_case"
-)]
-pub enum PromptSubmissionMode {
-    /// Cancel the in-flight response and submit the new prompt immediately
-    /// (default).
-    #[default]
-    Interrupt,
-    /// Hold the new prompt until the in-flight response finishes, then submit.
-    Queue,
-}
-
-settings::macros::implement_setting_for_enum!(
-    PromptSubmissionMode,
-    AISettings,
-    SupportedPlatforms::ALL,
-    SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-    surface: settings::SettingSurfaces::GUI,
-    private: false,
-    toml_path: "agents.warp_agent.other.default_prompt_submission_mode",
-    description: "Default behavior when submitting a new prompt while the agent is still responding.",
-    feature_flag: FeatureFlag::QueueSlashCommand,
-);
-
-impl PromptSubmissionMode {
-    /// Display name for the settings dropdown.
-    pub fn display_name(&self) -> &'static str {
-        match self {
-            PromptSubmissionMode::Interrupt => "Interrupt response",
-            PromptSubmissionMode::Queue => "Queue until response finishes",
-        }
-    }
-
-    pub fn command_palette_description(&self) -> &'static str {
-        match self {
-            PromptSubmissionMode::Interrupt => "Set default prompt submission: interrupt response",
-            PromptSubmissionMode::Queue => {
-                "Set default prompt submission: queue until response finishes"
-            }
-        }
-    }
-}
-
-/// What happens when a prompt is submitted while an agent controls an agent-requested
-/// long-running command (LRC).
-///
-/// Only consulted when [`PromptSubmissionMode`] is `Interrupt`: in `Queue` mode
-/// prompts always queue until the full response finishes, so this setting is
-/// hidden and ignored.
-#[derive(
-    Default,
-    Debug,
-    serde::Serialize,
-    serde::Deserialize,
-    PartialEq,
-    Copy,
-    Clone,
-    EnumIter,
-    schemars::JsonSchema,
-    settings_value::SettingsValue,
-)]
-#[schemars(
-    description = "What happens when a prompt is submitted while an agent controls an agent-requested long-running command.",
-    rename_all = "snake_case"
-)]
-pub enum LongRunningCommandSubmissionMode {
-    /// Send the prompt to the agent immediately, steering it mid-command.
-    SendImmediately,
-    /// Queue the prompt and send it to the agent when the command finishes
-    /// (default).
-    #[default]
-    QueueUntilCommandCompletes,
-}
-
-settings::macros::implement_setting_for_enum!(
-    LongRunningCommandSubmissionMode,
-    AISettings,
-    SupportedPlatforms::ALL,
-    SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-    surface: settings::SettingSurfaces::GUI,
-    private: false,
-    toml_path: "agents.warp_agent.other.long_running_command_submission_mode",
-    description: "What happens when a prompt is submitted while an agent controls an agent-requested long-running command.",
-    feature_flag: FeatureFlag::QueueSlashCommand,
-);
-
-impl LongRunningCommandSubmissionMode {
-    /// Display name for the settings dropdown.
-    pub fn display_name(&self) -> &'static str {
-        match self {
-            LongRunningCommandSubmissionMode::SendImmediately => "Send immediately",
-            LongRunningCommandSubmissionMode::QueueUntilCommandCompletes => {
-                "Queue until command finishes"
-            }
-        }
-    }
-
-    pub fn command_palette_description(&self) -> &'static str {
-        match self {
-            LongRunningCommandSubmissionMode::SendImmediately => {
-                "Set long-running command submission: send immediately"
-            }
-            LongRunningCommandSubmissionMode::QueueUntilCommandCompletes => {
-                "Set long-running command submission: queue until command finishes"
-            }
-        }
     }
 }
 
@@ -1255,20 +942,6 @@ define_settings_group!(AISettings, settings: [
         toml_path: "agents.warp_agent.active_ai.code_suggestions_enabled",
         description: "Controls whether AI code suggestions are enabled.",
     }
-    // This field should not be referenced directly to lookup natural language autosuggestions
-    // enablement -- use the `is_natural_language_autosuggestions_enabled()` getter.
-    // This feature refers to ghosted text for AI input queries.
-    natural_language_autosuggestions_enabled_internal: NaturalLanguageAutosuggestionsEnabled {
-        type: bool,
-        default: true,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-        surface: settings::SettingSurfaces::GUI,
-        private: false,
-        toml_path: "agents.warp_agent.active_ai.natural_language_autosuggestions_enabled",
-        description: "Controls whether ghosted text autosuggestions are shown for AI input queries.",
-        feature_flag: FeatureFlag::PredictAMQueries,
-    }
     // This field should not be referenced directly to lookup shared block title generations
     // enablement -- use the `is_shared_block_title_generation_enabled()` getter.
     // This feature refers to the auto title generation when the user opens the shared block dialog.
@@ -1458,23 +1131,6 @@ define_settings_group!(AISettings, settings: [
         max_table_depth: 2,
         description: "AI execution profiles and their permissions.",
     }
-    // Which unit the TUI footer's usage entry displays (credits or provider
-    // cost), flipped by clicking the entry.
-    //
-    // TUI-only and file-backed so the choice persists across TUI sessions.
-    usage_display_mode: TuiUsageDisplayMode,
-    // Ordered visibility configuration for the TUI's bottom statusline.
-    // TUI-only and local so separate devices can use different terminal layouts.
-    tui_statusline: TuiStatusline {
-        type: TuiStatuslineConfig,
-        default: TuiStatuslineConfig::default(),
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Never,
-        surface: settings::SettingSurfaces::TUI,
-        private: false,
-        toml_path: "agents.statusline",
-        description: "Controls the order and visibility of Warp Agent CLI statusline items.",
-    },
     // Whether or not the profile-level command autoexecution speedbump has been shown.
     //
     // Not a user-visible setting - we model it as a setting so we can track how often
@@ -1633,18 +1289,6 @@ define_settings_group!(AISettings, settings: [
         description: "Whether Warp Drive context is included in AI requests.",
     }
 
-    // Whether the codebase speedbump banner has been permanently dismissed for a given repo path.
-    //
-    // Not a user-visible settings - we model it as a setting so we can track state.
-    codebase_index_speedbump_banner_dismissed_for_repo_paths: CodebaseIndexSpeedbumpBannerDismissedForRepoPaths {
-        type: Vec<PathBuf>,
-        default: vec![],
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Never,
-        surface: settings::SettingSurfaces::GUI,
-        private: true,
-    }
-
     // Whether the agent mode setup banner has been shown for a given repo path.
     // Once shown, it will not be shown again for that repo.
     //
@@ -1654,18 +1298,6 @@ define_settings_group!(AISettings, settings: [
         default: vec![],
         supported_platforms: SupportedPlatforms::ALL,
         sync_to_cloud: SyncToCloud::Never,
-        surface: settings::SettingSurfaces::GUI,
-        private: true,
-    }
-
-    // Whether the codebase speedbump banner has been globally dismissed ("Don't show again").
-    //
-    // Not a user-visible settings - we model it as a setting so we can track state.
-    codebase_index_speedbump_banner_globally_dismissed: CodebaseIndexSpeedbumpBannerGloballyDismissed {
-        type: bool,
-        default: false,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
         surface: settings::SettingSurfaces::GUI,
         private: true,
     }
@@ -1702,100 +1334,6 @@ define_settings_group!(AISettings, settings: [
         private: true,
     },
 
-    // This is not a user-visible setting - its merely a one-time flag to track if the agents 3 launch modal
-    // has been shown to the user.
-    //
-    // We model it as a setting so it's only shown once to a given user regardless of the number of
-    // devices they use.
-    did_check_to_trigger_agents_3_launch_modal: DidShowAgents3LaunchModal {
-        type: bool,
-        default: false,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::No),
-        surface: settings::SettingSurfaces::GUI,
-        private: true,
-    }
-
-    // This is not a user-visible setting - it's merely a one-time flag to track if the Oz launch modal
-    // has been shown to the user.
-    //
-    // We model it as a setting so it's only shown once to a given user regardless of the number of
-    // devices they use.
-    did_check_to_trigger_oz_launch_modal: DidShowOzLaunchModal {
-        type: bool,
-        default: false,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::No),
-        surface: settings::SettingSurfaces::GUI,
-        private: true,
-    }
-
-    // This is not a user-visible setting - it's merely a one-time flag to track if the
-    // orchestration launch modal has been shown to the user.
-    //
-    // We model it as a setting so it's only shown once to a given user regardless of the number of
-    // devices they use.
-    did_check_to_trigger_orchestration_launch_modal: DidShowOrchestrationLaunchModal {
-        type: bool,
-        default: false,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::No),
-        surface: settings::SettingSurfaces::GUI,
-        private: true,
-    }
-
-    // This is not a user-visible setting - it's merely a one-time flag to track if the
-    // Warp Agent CLI launch modal has been shown to the user.
-    //
-    // We model it as a setting so it's only shown once to a given user regardless of the number of
-    // devices they use.
-    did_check_to_trigger_agent_cli_launch_modal: DidShowAgentCliLaunchModal {
-        type: bool,
-        default: false,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::No),
-        surface: settings::SettingSurfaces::GUI,
-        private: true,
-    }
-
-    // This is not a user-visible setting - it's merely a one-time flag to track if the
-    // free-AI-removal notice modal has been shown to (or silently marked as seen for) the user.
-    //
-    // We model it as a setting so it's only shown once to a given user regardless of the number of
-    // devices they use.
-    did_check_to_trigger_free_ai_removal_modal: DidShowFreeAiRemovalModal {
-        type: bool,
-        default: false,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::No),
-        surface: settings::SettingSurfaces::GUI,
-        private: true,
-    }
-
-    // Used to determine whether the "Latest updates" section of the agent view
-    // zero state is expanded or collapsed by default.
-    should_expand_oz_updates: ShouldExpandOzUpdates {
-        type: bool,
-        default: false,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Never,
-        surface: settings::SettingSurfaces::GUI,
-        private: true,
-    }
-
-    // Used to determine whether the "Latest updates" section of the agent view
-    // zero state is shown or hidden.
-    should_show_oz_updates_in_zero_state: ShouldShowOzUpdatesInZeroState {
-        type: bool,
-        default: true,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-        surface: settings::SettingSurfaces::GUI,
-        private: false,
-        toml_path: "agents.warp_agent.other.should_show_oz_updates_in_zero_state",
-        description: "Whether the \"What's new\" section is shown in the agent view.",
-    }
-
     // Whether or not the user has enabled fallback to Warp credits for user-provided models.
     can_use_warp_credits_for_fallback: CanUseWarpCreditsForFallback {
         type: bool,
@@ -1809,19 +1347,7 @@ define_settings_group!(AISettings, settings: [
         description: "Whether Warp credits can be used as a fallback for user-provided models.",
     }
 
-    should_render_use_agent_footer_for_user_commands: ShouldRenderUseAgentToolbarForUserCommands {
-        type: bool,
-        default: true,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-        surface: settings::SettingSurfaces::GUI,
-        private: false,
-        toml_path: "agents.warp_agent.other.should_render_use_agent_toolbar_for_user_commands",
-        description: "Whether to show the \"Use Agent\" footer for terminal commands.",
-    }
-
     // Whether to render the CLI agent footer for commands like Claude, Codex, Gemini, etc.
-    // This is independent of the "Use Agent" footer setting.
     should_render_cli_agent_footer: ShouldRenderCLIAgentToolbar {
         type: bool,
         default: true,
@@ -1981,16 +1507,6 @@ define_settings_group!(AISettings, settings: [
     // Controls how orchestration message bodies are expanded by default.
     orchestration_message_display_mode: OrchestrationMessageDisplayMode,
 
-    // Default behavior when the user submits a new prompt while the agent is still
-    // responding. Per-conversation overrides live on `QueuedQueryModel`; this
-    // setting is the fallback used when a conversation has no explicit override.
-    default_prompt_submission_mode: PromptSubmissionMode,
-
-    // What happens when a prompt is submitted while an agent controls an agent-requested
-    // long-running command. Only consulted when `default_prompt_submission_mode` is `Interrupt`;
-    // per-LRC manual overrides live on `QueuedQueryModel`.
-    long_running_command_submission_mode: LongRunningCommandSubmissionMode,
-
     // Whether agent-executed shell commands should be included in command history
     // (up-arrow, Ctrl-R search, inline history menu).
     // When false, commands run by the AI agent are excluded from history.
@@ -2115,34 +1631,6 @@ define_settings_group!(AISettings, settings: [
         description: "Whether Warp automatically hands off local agent conversations to cloud when the computer is about to sleep.",
     }
 
-    // This is not a user-visible setting - it's merely a one-time flag to track if the
-    // auto-handoff sleep modal has been shown to the user.
-    //
-    // We model it as a setting so it's only shown once to a given user regardless of the number of
-    // devices they use.
-    did_show_auto_handoff_sleep_modal: DidShowAutoHandoffSleepModal {
-        type: bool,
-        default: false,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::No),
-        surface: settings::SettingSurfaces::GUI,
-        private: true,
-    }
-
-    // Not a user-visible setting - it tracks which one-time feature-intro popups the
-    // user has already seen, keyed by the feature-intro id (see `FEATURE_INTROS`).
-    //
-    // We model it as a globally-synced setting (not respecting the user's sync setting)
-    // so each feature is announced at most once per user, regardless of how many devices
-    // they use. A feature is considered seen when its id is present and mapped to `true`.
-    seen_feature_intro_ids: SeenFeatureIntroIds {
-        type: HashMap<String, bool>,
-        default: HashMap::default(),
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::No),
-        surface: settings::SettingSurfaces::GUI,
-        private: true,
-    }
 ]);
 
 impl AISettings {
@@ -2310,10 +1798,6 @@ impl AISettings {
 
     pub fn is_code_suggestions_enabled(&self, app: &warpui::AppContext) -> bool {
         self.is_active_ai_enabled(app) && *self.code_suggestions_enabled_internal
-    }
-
-    pub fn is_natural_language_autosuggestions_enabled(&self, app: &warpui::AppContext) -> bool {
-        self.is_active_ai_enabled(app) && *self.natural_language_autosuggestions_enabled_internal
     }
 
     pub fn is_shared_block_title_generation_enabled(&self, app: &warpui::AppContext) -> bool {
@@ -2676,25 +2160,6 @@ impl AISettings {
             self.cli_agent_footer_enabled_commands
                 .set_value(ToolbarCommandMap::new(map), ctx)
         );
-    }
-
-    /// Whether the feature-intro popover with the given id key has been seen.
-    pub fn is_feature_intro_seen(&self, key: &str) -> bool {
-        self.seen_feature_intro_ids
-            .get(key)
-            .copied()
-            .unwrap_or(false)
-    }
-
-    /// Records that the feature-intro popover with the given id key has been seen,
-    /// so it is never shown again. No-op if already recorded.
-    pub fn mark_feature_intro_seen(&mut self, key: &str, ctx: &mut ModelContext<Self>) {
-        if self.is_feature_intro_seen(key) {
-            return;
-        }
-        let mut map = self.seen_feature_intro_ids.clone();
-        map.insert(key.to_owned(), true);
-        report_if_error!(self.seen_feature_intro_ids.set_value(map, ctx));
     }
 
     /// Whether the plugin install chip was dismissed for the given agent/host.

@@ -13,7 +13,6 @@ use warpui::event::{DispatchedEvent, InBoundsExt, KeyState, ModifiersState};
 use warpui::fonts::Properties;
 use warpui::geometry::rect::RectF;
 use warpui::geometry::vector::Vector2F;
-use warpui::platform::keyboard::KeyCode;
 use warpui::text::SelectionType;
 use warpui::units::{IntoLines, IntoPixels, Lines, Pixels};
 use warpui::{
@@ -41,16 +40,10 @@ use crate::terminal::model::mouse::{MouseAction, MouseButton, MouseState};
 use crate::terminal::model::selection::{SelectAction, SelectionPoint};
 use crate::terminal::model::terminal_model::WithinModel;
 use crate::terminal::safe_mode_settings::get_secret_obfuscation_mode;
-use crate::terminal::shared_session::presence_manager::{
-    MUTED_PARTICIPANT_COLOR, PresenceManager, text_selection_color,
-};
 use crate::terminal::view::{
     ActiveSessionState, TerminalAction, TerminalEditor, TerminalViewRenderContext,
 };
 use crate::terminal::{SizeInfo, TerminalModel, grid_renderer, heights_approx_eq};
-
-const CLI_SUBAGENT_HORIZONTAL_MARGIN: f32 = 8.;
-const CLI_SUBAGENT_VERTICAL_MARGIN: f32 = 8.;
 
 pub struct AltScreenElement {
     model: Arc<FairMutex<TerminalModel>>,
@@ -74,20 +67,12 @@ pub struct AltScreenElement {
     active_session_state: ActiveSessionState,
     selection_range: Option<Vec1<Range<Point>>>,
 
-    presence_manager: Option<ModelHandle<PresenceManager>>,
-
     // Fields needed for vertical scrolling for shared session viewer when window is smaller than sharer's
     scroll_top: Lines,
     max_scroll_top: Option<Lines>,
     visible_lines: Option<Lines>,
 
     cursor_hint_text: Option<Box<dyn Element>>,
-
-    cli_subagent_view: Option<Box<dyn Element>>,
-
-    /// Voice input toggle key code for CLI agent footer integration.
-    #[cfg_attr(not(feature = "voice_input"), allow(unused))]
-    voice_input_toggle_key_code: Option<KeyCode>,
 }
 
 impl AltScreenElement {
@@ -101,7 +86,6 @@ impl AltScreenElement {
         appearance: &Appearance,
         scroll_top: Lines,
         cursor_hint_text: Option<Box<dyn Element>>,
-        cli_subagent_view: Option<Box<dyn Element>>,
     ) -> Self {
         let highlighted_url = terminal_view_render_context
             .highlighted_url
@@ -148,40 +132,16 @@ impl AltScreenElement {
                         .as_f32(),
                 ),
                 use_ligature_rendering: false,
-                hide_cursor_cell: false,
             },
-            presence_manager: None,
             scroll_top,
             visible_lines: None,
             max_scroll_top: None,
             cursor_hint_text,
-            cli_subagent_view,
-            voice_input_toggle_key_code: None,
         }
     }
 
     pub fn with_ligature_rendering(mut self) -> Self {
         self.grid_render_params.use_ligature_rendering = true;
-        self
-    }
-
-    pub fn with_hide_cursor_cell(mut self) -> Self {
-        self.grid_render_params.hide_cursor_cell = true;
-        self
-    }
-
-    pub fn with_shared_session_presence(
-        mut self,
-        presence_manager: Option<ModelHandle<PresenceManager>>,
-    ) -> Self {
-        self.presence_manager = presence_manager;
-        self
-    }
-
-    /// Sets the voice input toggle key code for CLI agent footer integration.
-    #[cfg(feature = "voice_input")]
-    pub fn with_voice_input_toggle_key(mut self, key_code: Option<KeyCode>) -> Self {
-        self.voice_input_toggle_key_code = key_code;
         self
     }
 
@@ -532,95 +492,12 @@ impl AltScreenElement {
         };
     }
 
-    /// Renders any shared session participants' selections.
-    fn render_participant_selections(
-        &self,
-        size_info: &SizeInfo,
-        origin: Vector2F,
-        ctx: &mut PaintContext,
-        app: &AppContext,
-    ) {
-        if let Some(presence_manager) = &self.presence_manager {
-            let is_self_reconnecting = presence_manager.as_ref(app).is_reconnecting();
-            for participant in presence_manager.as_ref(app).all_present_participants() {
-                let session_sharing_protocol::common::Selection::AltScreenText {
-                    start,
-                    end,
-                    is_reversed,
-                } = &participant.info.selection
-                else {
-                    continue;
-                };
-                let start = SelectionPoint {
-                    row: start.row.into_lines(),
-                    col: start.col,
-                };
-                let end = SelectionPoint {
-                    row: end.row.into_lines(),
-                    col: end.col,
-                };
-                let participant_color = if is_self_reconnecting {
-                    MUTED_PARTICIPANT_COLOR
-                } else {
-                    participant.color
-                };
-                grid_renderer::render_selection(
-                    &start,
-                    &end,
-                    size_info,
-                    Lines::zero(),
-                    origin,
-                    text_selection_color(participant_color),
-                    ctx,
-                );
-                let cursor_point = if *is_reversed { &start } else { &end };
-                grid_renderer::render_selection_cursor(
-                    cursor_point,
-                    size_info,
-                    Lines::zero(),
-                    origin,
-                    participant_color,
-                    !*is_reversed,
-                    ctx,
-                );
-            }
-        }
-    }
-
     fn total_lines(&self) -> Lines {
         self.grid_render_params.size_info.rows().into_lines()
     }
 
     fn line_height(&self) -> Pixels {
         self.grid_render_params.size_info.cell_height_px()
-    }
-
-    #[cfg(feature = "voice_input")]
-    fn maybe_handle_voice_toggle(
-        &self,
-        key_code: &KeyCode,
-        state: &KeyState,
-        ctx: &mut EventContext,
-    ) -> bool {
-        if let Some(voice_input_toggle_key_code) = self.voice_input_toggle_key_code
-            && *key_code == voice_input_toggle_key_code
-        {
-            ctx.dispatch_typed_action(TerminalAction::ToggleCLIAgentVoiceInput(
-                voice_input::VoiceInputToggledFrom::Key { state: *state },
-            ));
-            return true;
-        }
-        false
-    }
-
-    #[cfg(not(feature = "voice_input"))]
-    fn maybe_handle_voice_toggle(
-        &self,
-        _key_code: &KeyCode,
-        _state: &KeyState,
-        _ctx: &mut EventContext,
-    ) -> bool {
-        false
     }
 }
 
@@ -637,37 +514,16 @@ impl Element for AltScreenElement {
             cursor_hint_text.layout(constraint, ctx, app);
         }
 
-        if let Some(cli_subagent_view) = &mut self.cli_subagent_view {
-            cli_subagent_view.layout(
-                SizeConstraint {
-                    min: vec2f(0., 0.),
-                    max: vec2f(
-                        constraint.max.x() * 0.3 - CLI_SUBAGENT_HORIZONTAL_MARGIN,
-                        constraint.max.y() - CLI_SUBAGENT_VERTICAL_MARGIN * 3.,
-                    ),
-                },
-                ctx,
-                app,
-            );
-        }
-
         constraint.max
     }
 
-    fn after_layout(&mut self, ctx: &mut AfterLayoutContext, app: &AppContext) {
+    fn after_layout(&mut self, _: &mut AfterLayoutContext, _: &AppContext) {
         let size = self.size.expect("Size should be set in `layout()`");
         self.visible_lines = Some(size.y().into_pixels().to_lines(self.line_height()).floor());
         self.max_scroll_top = Some(self.total_lines() - self.visible_lines.unwrap());
         // After resizing the window to be larger, the max_scroll_top could have decreased,
         // so we need to make sure scroll_top is in bounds.
         self.scroll_top = self.scroll_top.min(self.max_scroll_top.unwrap());
-
-        // We want to make sure to call after_layout on each of the elements that were actually laid out.
-        if let Some(cli_subagent_view) = &mut self.cli_subagent_view
-            && cli_subagent_view.size().is_some()
-        {
-            cli_subagent_view.after_layout(ctx, app);
-        }
     }
 
     fn paint(&mut self, origin: Vector2F, ctx: &mut PaintContext, app: &AppContext) {
@@ -748,15 +604,13 @@ impl Element for AltScreenElement {
             RespectDisplayedOutput::Yes,
             &model.image_id_to_metadata,
             Some(&mut sampler),
-            self.grid_render_params.hide_cursor_cell,
             ctx,
             app,
         );
         record_trace_event!("alt_screen_element:paint:grid_rendered");
 
         // Render cursor if the escape sequence is set.
-        // Also suppress the cursor when hide_cursor_cell is active (CLI agent rich input is open).
-        if cursor_visible && !self.grid_render_params.hide_cursor_cell {
+        if cursor_visible {
             grid_renderer::render_cursor(
                 &self.grid_render_params,
                 grid.cursor_render_point(),
@@ -779,32 +633,6 @@ impl Element for AltScreenElement {
             adjusted_grid_origin,
             ctx,
         );
-        self.render_participant_selections(
-            &self.grid_render_params.size_info,
-            adjusted_grid_origin,
-            ctx,
-            app,
-        );
-
-        if let Some(cli_subagent_view) = &mut self.cli_subagent_view {
-            ctx.scene.start_layer(ClipBounds::ActiveLayer);
-            let size = cli_subagent_view
-                .size()
-                .expect("Subagent output was laid out already.");
-            cli_subagent_view.paint(
-                vec2f(
-                    self.bounds.expect("bounds set during paint.").max_x()
-                        - CLI_SUBAGENT_HORIZONTAL_MARGIN
-                        - size.x(),
-                    self.bounds.expect("bounds set during paint.").max_y()
-                        - CLI_SUBAGENT_VERTICAL_MARGIN
-                        - size.y(),
-                ),
-                ctx,
-                app,
-            );
-            ctx.scene.stop_layer();
-        }
 
         record_trace_event!("alt_screen_element:paint:selection_rendered");
         end_trace!();
@@ -820,12 +648,6 @@ impl Element for AltScreenElement {
         ctx: &mut EventContext,
         app: &AppContext,
     ) -> bool {
-        if let Some(cli_subagent_view) = &mut self.cli_subagent_view
-            && cli_subagent_view.dispatch_event(event, ctx, app)
-        {
-            return true;
-        }
-
         let bounds = self
             .bounds
             .expect("Bounds should be set before event dispatching");
@@ -958,10 +780,8 @@ impl Element for AltScreenElement {
                         ctx.dispatch_typed_action(TerminalAction::ControlSequence(escape_sequence));
                         return true;
                     }
-                    self.maybe_handle_voice_toggle(key_code, state, ctx)
-                } else {
-                    false
                 }
+                false
             }
             _ => false,
         }

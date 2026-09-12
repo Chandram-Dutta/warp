@@ -4,6 +4,7 @@ use std::rc::Rc;
 use warpui::App;
 
 use super::*;
+use crate::LaunchMode;
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::auth::AuthStateProvider;
@@ -13,11 +14,9 @@ use crate::network::NetworkStatus;
 use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::server_api::ServerApiProvider;
 use crate::server::sync_queue::SyncQueue;
-use crate::terminal::input::models::query_model_picker_choices;
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::workspaces::team_tester::TeamTesterStatus;
 use crate::workspaces::user_workspaces::UserWorkspaces;
-use crate::{LaunchMode, TuiEntryPoint};
 
 // -- DisableReason::should_clear_preference tests --
 
@@ -699,39 +698,6 @@ fn active_models_fall_back_to_usable_choice_or_custom_endpoint_when_default_disa
     });
 }
 
-/// Runs picker-query assertions with searchable, selectable, and disabled model fixtures plus
-/// the app singletons consulted by model eligibility logic.
-fn with_model_picker_query_test_context(f: impl FnOnce(&LLMPreferences, &AppContext) + 'static) {
-    App::test((), |app| async move {
-        app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-        app.add_singleton_model(UserWorkspaces::default_mock);
-        app.read(|app_ctx| {
-            let agent_mode = AvailableLLMs::new(
-                "auto".into(),
-                vec![
-                    agent_llm("auto", "auto (cost-efficient)"),
-                    agent_llm("gpt-5", "GPT 5"),
-                    disabled_agent_llm("disabled-gpt", "GPT Disabled"),
-                ],
-                None,
-            )
-            .expect("choices are non-empty");
-            let preferences = LLMPreferences {
-                models_by_feature: ModelsByFeature {
-                    agent_mode,
-                    ..Default::default()
-                },
-                agent_mode_models_unavailable: false,
-                last_update: None,
-                base_llm_for_terminal_view: HashMap::new(),
-                custom_llms: Vec::new(),
-                custom_model_routers: Vec::new(),
-            };
-            f(&preferences, app_ctx);
-        });
-    });
-}
-
 #[test]
 fn active_models_use_default_when_usable() {
     App::test((), |mut app| async move {
@@ -1061,39 +1027,9 @@ fn preferences_for_profile_model_tests() -> LLMPreferences {
 }
 
 #[test]
-fn shared_model_picker_query_orders_filters_and_marks_disabled_choices() {
-    with_model_picker_query_test_context(|preferences, app| {
-        let all = query_model_picker_choices(
-            preferences,
-            preferences.get_base_llm_choices_for_agent_mode(app),
-            "",
-            app,
-        );
-        assert_eq!(
-            all.first().map(|choice| choice.llm.id.as_str()),
-            Some("auto")
-        );
-        assert_eq!(
-            all.last().map(|choice| choice.llm.id.as_str()),
-            Some("disabled-gpt")
-        );
-        assert!(!all.last().expect("disabled choice").is_selectable());
-
-        let filtered = query_model_picker_choices(
-            preferences,
-            preferences.get_base_llm_choices_for_agent_mode(app),
-            "gpt 5",
-            app,
-        );
-        assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].llm.id.as_str(), "gpt-5");
-        assert!(filtered[0].name_match_result.is_some());
-        assert!(filtered[0].is_selectable());
-    });
-}
-
-#[test]
 fn updating_active_profile_base_model_persists_and_updates_resolution() {
+    let _guard = FeatureFlag::FileBackedExecutionProfiles.override_enabled(true);
+
     App::test((), |mut app| async move {
         initialize_settings_for_tests(&mut app);
         app.add_singleton_model(|_| ServerApiProvider::new_for_test());
@@ -1107,15 +1043,7 @@ fn updating_active_profile_base_model_persists_and_updates_resolution() {
         app.add_singleton_model(UpdateManager::mock);
         app.add_singleton_model(|_| TemplatableMCPServerManager::default());
         let profiles = app.add_singleton_model(|ctx| {
-            AIExecutionProfilesModel::new(
-                &LaunchMode::Tui {
-                    entrypoint: TuiEntryPoint::Interactive {
-                        mount: Box::new(|_| {}),
-                        api_key: None,
-                    },
-                },
-                ctx,
-            )
+            AIExecutionProfilesModel::new(&LaunchMode::new_for_unit_test(), ctx)
         });
         let preferences = app.add_singleton_model(|_| preferences_for_profile_model_tests());
         let surface_id = EntityId::new();

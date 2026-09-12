@@ -22,8 +22,6 @@ use crate::cloud_object::{
     Revision,
 };
 use crate::drive::CloudObjectTypeAndId;
-use crate::drive::items::WarpDriveItem;
-use crate::drive::items::mcp_server::WarpDriveMCPServer;
 #[cfg(not(target_family = "wasm"))]
 use crate::persistence::model::MCPEnvironmentVariables;
 use crate::server::ids::SyncId;
@@ -124,21 +122,6 @@ impl StringModel for MCPServer {
 
     fn renders_in_warp_drive(&self) -> bool {
         false
-    }
-
-    fn to_warp_drive_item(
-        &self,
-        id: SyncId,
-        _appearance: &Appearance,
-        mcp_server: &CloudMCPServer,
-    ) -> Option<Box<dyn WarpDriveItem>> {
-        Some(Box::new(WarpDriveMCPServer::new(
-            CloudObjectTypeAndId::GenericStringObject {
-                object_type: GenericStringObjectFormat::Json(JsonObjectType::MCPServer),
-                id,
-            },
-            mcp_server.clone(),
-        )))
     }
 }
 

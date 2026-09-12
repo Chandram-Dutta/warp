@@ -35,7 +35,7 @@ use super::selection::ScrollDelta;
 use super::terminal_model::RangeInModel;
 use crate::ai::agent::AIAgentActionId;
 use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::blocklist::{AIBlock, SerializedBlockListItem};
+use crate::ai::blocklist::AIBlock;
 use crate::terminal::block_filter::BlockFilterQuery;
 use crate::terminal::block_list_element::GridType;
 use crate::terminal::event::Event::{AfterBlockCompleted, TerminalClear};
@@ -371,9 +371,6 @@ pub struct BlockList {
 
     obfuscate_secrets: ObfuscateSecrets,
 
-    /// `true` if client-side telemetry for user-generated AI data is enabled.
-    is_ai_ugc_telemetry_enabled: bool,
-
     /// Persisted info about the scroll position before a filter is applied. This
     /// data is used return users to their original scroll position after a
     /// filter is removed.
@@ -611,7 +608,7 @@ impl<'a> SharedSessionScrollbackBlocks<'a> {
 impl BlockList {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        restored_blocks: Option<&[SerializedBlockListItem]>,
+        restored_blocks: Option<&[SerializedBlock]>,
         sizes: BlockSize,
         event_proxy: ChannelEventListener,
         background_executor: Arc<Background>,
@@ -621,7 +618,6 @@ impl BlockList {
         honor_ps1: bool,
         is_inverted: bool,
         obfuscate_secrets: ObfuscateSecrets,
-        is_ai_ugc_telemetry_enabled: bool,
     ) -> Self {
         let mut block_list = Self::new_internal(
             sizes,
@@ -633,7 +629,6 @@ impl BlockList {
             honor_ps1,
             is_inverted,
             obfuscate_secrets,
-            is_ai_ugc_telemetry_enabled,
         );
         block_list.initialize(restored_blocks);
         block_list
@@ -670,7 +665,6 @@ impl BlockList {
         honor_ps1: bool,
         is_inverted: bool,
         obfuscate_secrets: ObfuscateSecrets,
-        is_ai_ugc_telemetry_enabled: bool,
     ) -> Self {
         let bootstrap_stage = BootstrapStage::RestoreBlocks;
         let block_heights = SumTree::new();
@@ -705,7 +699,6 @@ impl BlockList {
             last_populated_precmd_payload: None,
             cached_prompt_data: None,
             obfuscate_secrets,
-            is_ai_ugc_telemetry_enabled,
             scroll_position_before_filter: None,
             is_inverted,
             transcript_scope: TranscriptScope::Terminal,
@@ -717,33 +710,22 @@ impl BlockList {
 
     /// Must be called before the model is used. Even if no blocks are to be restored,
     /// this is necessary in the BlockList lifecycle.
-    fn initialize(&mut self, restored_blocks: Option<&[SerializedBlockListItem]>) {
+    fn initialize(&mut self, restored_blocks: Option<&[SerializedBlock]>) {
         if let Some(restored_blocks) = restored_blocks {
             self.is_restored_session = true;
 
             let mut processor = Processor::new();
 
-            self.restored_session_ts = restored_blocks.last().and_then(|item| match item {
-                SerializedBlockListItem::Command { block } => block.completed_ts,
-            });
+            self.restored_session_ts = restored_blocks.last().and_then(|block| block.completed_ts);
 
             for block in restored_blocks {
-                match block {
-                    SerializedBlockListItem::Command { block } => {
-                        // For session-restoration, we only want to restore blocks
-                        // that were completed.
-                        if block.start_ts.is_some() && block.completed_ts.is_some() {
-                            self.restore_block(
-                                block,
-                                BootstrapStage::RestoreBlocks,
-                                &mut processor,
-                            );
-                        } else {
-                            log::warn!(
-                                "Tried to restore a block that was either not started or not completed"
-                            );
-                        }
-                    }
+                // For session-restoration, we only want to restore blocks that were completed.
+                if block.start_ts.is_some() && block.completed_ts.is_some() {
+                    self.restore_block(block, BootstrapStage::RestoreBlocks, &mut processor);
+                } else {
+                    log::warn!(
+                        "Tried to restore a block that was either not started or not completed"
+                    );
                 }
             }
         }
@@ -1772,9 +1754,7 @@ impl BlockList {
                     && rich_content.content_type.is_some_and(|content_type| {
                         matches!(
                             content_type,
-                            RichContentType::AIBlock
-                                | RichContentType::EnterAgentView
-                                | RichContentType::InlineAgentViewHeader
+                            RichContentType::AIBlock | RichContentType::EnterAgentView
                         )
                     })
                 {
@@ -2865,7 +2845,6 @@ impl BlockList {
             self.blocks.len().into(),
             honor_ps1,
             self.obfuscate_secrets,
-            self.is_ai_ugc_telemetry_enabled,
             self.active_conversation_id(),
         );
         if let Some(is_local) = restored_block_was_local {
@@ -2919,7 +2898,6 @@ impl BlockList {
             BlockIndex::zero(),
             false,
             self.obfuscate_secrets,
-            self.is_ai_ugc_telemetry_enabled,
             None,
         )
     }

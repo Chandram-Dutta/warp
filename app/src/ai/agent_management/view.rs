@@ -1431,7 +1431,6 @@ impl AgentManagementView {
                         );
                         ctx.dispatch_typed_action(&WorkspaceAction::NewTabInAgentMode {
                             entrypoint: AgentModeEntrypoint::AgentManagementView,
-                            zero_state_prompt_suggestion_type: None,
                         });
                     }
                 }

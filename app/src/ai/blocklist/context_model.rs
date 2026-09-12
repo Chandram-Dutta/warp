@@ -9,9 +9,7 @@ use ai::project_context::model::ProjectContextModel;
 use parking_lot::FairMutex;
 use warp_core::features::FeatureFlag;
 use warp_util::local_or_remote_path::LocalOrRemotePath;
-use warpui::{
-    AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity, WeakModelHandle,
-};
+use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
 
 use super::agent_view::{AgentViewEntryOrigin, EnterAgentViewError};
 use super::block::DirectoryContext;
@@ -27,13 +25,11 @@ use crate::ai::block_context::BlockContext;
 use crate::ai::document::ai_document_model::AIDocumentId;
 use crate::ai::llms::{LLMPreferences, LLMPreferencesEvent};
 use crate::ai::outline::RepoOutlines;
-use crate::code_review::github_repo_model::GitHubRepoModel;
 use crate::terminal::TerminalModel;
 use crate::terminal::event::{BlockCompletedEvent, BlockType};
 use crate::terminal::model::block::{BlockId, BlockMetadata};
 use crate::terminal::model::session::Sessions;
 use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
-use crate::util::git::{PrInfo, RepositoryInfo};
 use crate::workspaces::user_workspaces::UserWorkspaces;
 
 /// A non-image file picked via the "attach file" button, stored until query submission.
@@ -48,14 +44,6 @@ pub struct PendingFile {
 pub enum AttachmentType {
     Image,
     File,
-}
-
-/// Lightweight metadata for rendering a pending attachment without cloning its payload.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PendingAttachmentSummary {
-    pub index: usize,
-    pub attachment_type: AttachmentType,
-    pub file_name: String,
 }
 
 /// A pending attachment — either an image (base64 in memory) or a file (path reference).
@@ -84,7 +72,6 @@ impl PendingAttachment {
 pub struct BlocklistAIContextModel {
     terminal_model: Arc<FairMutex<TerminalModel>>,
     directory_context: DirectoryContext,
-    github_repo_model: Option<WeakModelHandle<GitHubRepoModel>>,
 
     /// `BlockId`s corresponding to blocks to be included as context with the next AI query.
     pending_context_block_ids: HashSet<BlockId>,
@@ -219,7 +206,6 @@ impl BlocklistAIContextModel {
         Self {
             terminal_model,
             directory_context: Default::default(),
-            github_repo_model: None,
             pending_context_block_ids: HashSet::new(),
             pending_context_selected_text: None,
             pending_attachments: Default::default(),
@@ -241,7 +227,6 @@ impl BlocklistAIContextModel {
         Self {
             terminal_model,
             directory_context: Default::default(),
-            github_repo_model: None,
             pending_context_block_ids: HashSet::new(),
             pending_context_selected_text: None,
             pending_attachments: Default::default(),
@@ -284,19 +269,6 @@ impl BlocklistAIContextModel {
     /// Returns all pending attachments (images and files) for the next query.
     pub fn pending_attachments(&self) -> &[PendingAttachment] {
         &self.pending_attachments
-    }
-
-    /// Returns lightweight metadata for all pending attachments.
-    pub fn pending_attachment_summaries(&self) -> Vec<PendingAttachmentSummary> {
-        self.pending_attachments
-            .iter()
-            .enumerate()
-            .map(|(index, attachment)| PendingAttachmentSummary {
-                index,
-                attachment_type: attachment.attachment_type(),
-                file_name: attachment.file_name().to_owned(),
-            })
-            .collect()
     }
 
     /// Returns only the pending images for the next query.
@@ -381,14 +353,6 @@ impl BlocklistAIContextModel {
                 head: head.unwrap_or_default(),
                 branch,
             });
-        }
-
-        // Include repository info from the origin remote URL if available.
-        if let Some(repo_context) = self.repository_context(app) {
-            context.push(repo_context);
-        }
-        if let Some(pull_request_context) = self.pull_request_context(app) {
-            context.push(pull_request_context);
         }
 
         // Always include project rules if available
@@ -834,41 +798,6 @@ impl BlocklistAIContextModel {
                 requires_text_resync: false,
             });
         }
-    }
-
-    pub fn set_github_repo_model(&mut self, handle: Option<WeakModelHandle<GitHubRepoModel>>) {
-        self.github_repo_model = handle;
-    }
-
-    /// Builds an `AIAgentContext::Repository` from cached git remote metadata, if available.
-    fn repository_context(&self, app: &AppContext) -> Option<AIAgentContext> {
-        let handle = self.github_repo_model.as_ref()?.upgrade(app)?;
-        let repository_info = handle.as_ref(app).repository_info(app)?;
-        Some(Self::repository_context_from_repository_info(
-            repository_info,
-        ))
-    }
-    fn repository_context_from_repository_info(repository_info: &RepositoryInfo) -> AIAgentContext {
-        AIAgentContext::Repository {
-            name: repository_info.name.clone(),
-            owner: repository_info.owner.clone(),
-            host: repository_info.host.clone(),
-        }
-    }
-
-    fn pull_request_context(&self, app: &AppContext) -> Option<AIAgentContext> {
-        let handle = self.github_repo_model.as_ref()?.upgrade(app)?;
-        let pr_info = handle.as_ref(app).pr_info(app)?;
-        Self::pull_request_context_from_pr_info(pr_info)
-    }
-    fn pull_request_context_from_pr_info(pr_info: &PrInfo) -> Option<AIAgentContext> {
-        Some(AIAgentContext::PullRequest {
-            number: i32::try_from(pr_info.number).ok()?,
-            state: pr_info.state.clone(),
-            draft: pr_info.draft,
-            base_branch: pr_info.base_branch.clone(),
-            url: pr_info.url.clone(),
-        })
     }
 
     /// Clears all pending attachments.

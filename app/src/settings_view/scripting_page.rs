@@ -14,8 +14,7 @@ use warpui::ui_components::components::UiComponent;
 use warpui::{AppContext, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle};
 
 use super::settings_page::{
-    LocalOnlyIconState, MatchData, PageType, SettingsPageMeta, SettingsPageViewHandle,
-    SettingsWidget, render_body_item,
+    MatchData, PageType, SettingsPageMeta, SettingsPageViewHandle, SettingsWidget, render_body_item,
 };
 use super::{SettingsSection, ToggleState};
 use crate::appearance::Appearance;
@@ -36,7 +35,7 @@ pub enum ScriptingSettingsPageAction {
 
 pub struct ScriptingSettingsPageView {
     page: PageType<Self>,
-    local_only_icon_tooltip_states: RefCell<HashMap<String, MouseStateHandle>>,
+
     local_control_mode_dropdown: ViewHandle<Dropdown<ScriptingSettingsPageAction>>,
     #[cfg(target_os = "macos")]
     warpctrl_installing: bool,
@@ -72,7 +71,7 @@ impl ScriptingSettingsPageView {
 
         Self {
             page: PageType::new_uncategorized(widgets, Some("Scripting")),
-            local_only_icon_tooltip_states: RefCell::new(HashMap::new()),
+
             local_control_mode_dropdown,
             #[cfg(target_os = "macos")]
             warpctrl_installing: false,
@@ -261,7 +260,6 @@ impl SettingsWidget for WarpControlCliInstallWidget {
         render_body_item::<ScriptingSettingsPageAction>(
             "Warp Control CLI command".into(),
             None,
-            LocalOnlyIconState::Hidden,
             ToggleState::Enabled,
             appearance,
             button,
@@ -287,12 +285,6 @@ impl SettingsWidget for LocalControlModeWidget {
         render_body_item::<ScriptingSettingsPageAction>(
             "warpctrl CLI".into(),
             None,
-            LocalOnlyIconState::for_setting(
-                LocalControlModeSetting::storage_key(),
-                LocalControlModeSetting::sync_to_cloud(),
-                &mut view.local_only_icon_tooltip_states.borrow_mut(),
-                app,
-            ),
             ToggleState::Enabled,
             appearance,
             ChildView::new(&view.local_control_mode_dropdown).finish(),

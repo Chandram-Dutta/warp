@@ -1,6 +1,5 @@
 #[allow(dead_code)]
 pub mod entry;
-mod query;
 
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
@@ -9,13 +8,10 @@ use chrono::{DateTime, Utc};
 use clap::ValueEnum;
 pub use entry::{
     AgentConversationEntry, AgentConversationEntryId, AgentConversationNavigationSubject,
-    AgentConversationProvenance,
 };
 use futures::stream::AbortHandle;
-use fuzzy_match::FuzzyMatchResult;
 use instant::Instant;
 use itertools::Itertools;
-pub use query::query_conversation_entries;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use warp_cli::agent::Harness;
 use warp_core::execution_mode::AppExecutionMode;
@@ -346,12 +342,6 @@ pub trait AgentConversationListPolicy: 'static {
         entry: &AgentConversationEntry,
         app: &AppContext,
     ) -> AgentConversationListEntryState;
-}
-
-/// A normalized conversation entry paired with optional title-match metadata.
-pub struct AgentConversationQueryResult {
-    pub entry: AgentConversationEntry,
-    pub title_match: Option<FuzzyMatchResult>,
 }
 
 impl AgentManagementFilters {
@@ -751,7 +741,6 @@ impl AgentConversationsModel {
     }
 
     /// Returns whether cloud conversation metadata failed to load.
-    #[cfg_attr(not(feature = "tui"), allow(dead_code))]
     pub(crate) fn cloud_conversation_metadata_load_failed(&self) -> bool {
         self.initial_load_state == InitialConversationLoadState::CloudFailed
     }
@@ -1700,7 +1689,6 @@ impl AgentConversationsModel {
             | BlocklistAIHistoryEvent::NewConversationRequestComplete { .. }
             | BlocklistAIHistoryEvent::OrchestrationConfigUpdated { .. }
             | BlocklistAIHistoryEvent::ConversationUsageMetadataUpdated { .. }
-            | BlocklistAIHistoryEvent::LocalSharedSessionEstablished { .. }
             | BlocklistAIHistoryEvent::UpdatedConversationMetadata { .. } => {}
 
             BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. } => {

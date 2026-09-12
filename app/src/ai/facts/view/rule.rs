@@ -70,7 +70,7 @@ pub enum RuleViewEvent {
     AddRule,
     Edit(SyncId),
     OpenSettings,
-    OpenFile(LocalOrRemotePath),
+    OpenFile(PathBuf),
     InitializeProject(PathBuf),
 }
 
@@ -81,7 +81,7 @@ pub enum RuleViewAction {
     Edit(SyncId),
     OpenSettings,
     SelectScope(RuleScope),
-    OpenFile(LocalOrRemotePath),
+    OpenFile(PathBuf),
 }
 
 #[derive(Default, Debug, Clone)]
@@ -679,8 +679,7 @@ impl RuleView {
             return None;
         }
 
-        let item = ai_row.fact.to_warp_drive_item(appearance)?;
-        let icon = item.sync_status_icon(
+        let icon = ai_row.fact.metadata.pending_changes_statuses.render_icon(
             SyncQueue::as_ref(app).is_dequeueing(),
             ai_row.mouse_states.sync_status_icon.clone(),
             appearance,
@@ -710,7 +709,7 @@ impl RuleView {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Option<Box<dyn Element>> {
-        let row_name = display_path_with_host(&project_row.file_path, false, app);
+        let row_name = display_path_with_host(&project_row.file_path, false);
         let mut row = Flex::row()
             .with_main_axis_size(MainAxisSize::Max)
             .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
@@ -729,18 +728,20 @@ impl RuleView {
             .finish(),
         );
 
-        let file_path = project_row.file_path.clone();
-        row.add_child(
-            appearance
-                .ui_builder()
-                .button(ButtonVariant::Outlined, project_row.mouse_state.clone())
-                .with_text_label("Open file".to_string())
-                .build()
-                .on_click(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(RuleViewAction::OpenFile(file_path.clone()));
-                })
-                .finish(),
-        );
+        if let Some(file_path) = project_row.file_path.to_local_path() {
+            let file_path = file_path.to_path_buf();
+            row.add_child(
+                appearance
+                    .ui_builder()
+                    .button(ButtonVariant::Outlined, project_row.mouse_state.clone())
+                    .with_text_label("Open file".to_string())
+                    .build()
+                    .on_click(move |ctx, _, _| {
+                        ctx.dispatch_typed_action(RuleViewAction::OpenFile(file_path.clone()));
+                    })
+                    .finish(),
+            );
+        }
 
         Some(
             Container::new(row.finish())

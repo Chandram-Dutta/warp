@@ -20,12 +20,11 @@ use super::session_settings::SessionSettings;
 use super::settings::TerminalSettings;
 use super::shell::ShellType;
 use super::{SizeInfo, TerminalModel, prompt};
-use crate::ai::blocklist::BlocklistAIInputModel;
 use crate::appearance::Appearance;
 use crate::context_chips::display::PromptDisplay;
 use crate::context_chips::spacing;
 use crate::features::FeatureFlag;
-use crate::settings::{FontSettings, InputSettings};
+use crate::settings::FontSettings;
 use crate::terminal::blockgrid_element::BlockGridElement;
 use crate::terminal::grid_size_util::grid_compute_baseline_position_fn;
 use crate::terminal::input::get_input_box_top_border_width;
@@ -57,7 +56,6 @@ fn prompt_marker_grace_period(shell_type: Option<ShellType>, is_msys2: bool) -> 
 pub const LPROMPT_RIGHT_PADDING_SAME_LINE_PROMPT: f32 = 4.;
 
 pub fn should_render_ps1_prompt(terminal_model: &TerminalModel, app: &AppContext) -> bool {
-    let is_classic_input_enabled = InputSettings::as_ref(app).is_classic_input_enabled(app);
     let session_settings = SessionSettings::as_ref(app);
 
     // In the context of session sharing, these values may differ from the local settings i.e.
@@ -69,60 +67,22 @@ pub fn should_render_ps1_prompt(terminal_model: &TerminalModel, app: &AppContext
     let active_block = terminal_model.block_list().active_block();
     let active_block_honor_ps1 = active_block.honor_ps1();
 
-    is_classic_input_enabled && (*session_settings.honor_ps1.value() || active_block_honor_ps1)
+    *session_settings.honor_ps1.value() || active_block_honor_ps1
 }
 
 /// Returns whether the prompt should be rendered on the same line as the input editor's contents.
-pub fn should_render_prompt_on_same_line(
-    is_universal_developer_input: bool,
-    terminal_model: &TerminalModel,
-    app: &AppContext,
-) -> bool {
+pub fn should_render_prompt_on_same_line(terminal_model: &TerminalModel, app: &AppContext) -> bool {
     // We render the prompt on the same line, in the input editor, if:
     // 1. The user is using a custom prompt (PS1)
     // 2. The user has the same line prompt setting enabled for their Warp prompt.
 
-    // If universal developer input is enabled, ignore PS1 rendering logic
-    if is_universal_developer_input {
-        return false;
-    }
-
     let should_render_ps1 = should_render_ps1_prompt(terminal_model, app);
-
-    if FeatureFlag::AgentView.is_enabled() {
-        should_render_ps1
-    } else {
-        let session_settings = SessionSettings::as_ref(app);
-        should_render_ps1
-            || session_settings
-                .saved_prompt
-                .value()
-                .same_line_prompt_enabled()
-    }
-}
-
-/// Returns `true` if the shell or AI prompt should be rendered using the editors
-/// `EditorDecoratorElements` API.
-///
-/// The AI prompt is unconditionally rendered above the input.
-pub fn should_render_prompt_using_editor_decorator_elements(
-    is_universal_developer_input: bool,
-    ai_input_model: &ModelHandle<BlocklistAIInputModel>,
-    model: &TerminalModel,
-    app: &AppContext,
-) -> bool {
-    #[cfg(feature = "local_only")]
-    {
-        let _ = (is_universal_developer_input, ai_input_model);
-        should_render_prompt_on_same_line(false, model, app)
-    }
-
-    #[cfg(not(feature = "local_only"))]
-    {
-        should_render_prompt_on_same_line(is_universal_developer_input, model, app)
-            && (!ai_input_model.as_ref(app).is_ai_input_enabled()
-                || FeatureFlag::AgentView.is_enabled())
-    }
+    let session_settings = SessionSettings::as_ref(app);
+    should_render_ps1
+        || session_settings
+            .saved_prompt
+            .value()
+            .same_line_prompt_enabled()
 }
 
 pub(in crate::terminal) struct PromptAndPadding {
@@ -182,8 +142,6 @@ pub struct PromptRenderHelper {
     prompt_view: ViewHandle<PromptDisplay>,
     prompt_selection_state_handle: SelectionHandle,
     input_render_state_model_handle: ModelHandle<InputRenderStateModel>,
-
-    ai_input_model: ModelHandle<BlocklistAIInputModel>,
 }
 
 #[derive(Clone, Copy)]
@@ -208,7 +166,6 @@ impl PromptRenderHelper {
         prompt_selection_state_handle: SelectionHandle,
         parent_view_id: EntityId,
         input_render_state_model_handle: ModelHandle<InputRenderStateModel>,
-        ai_input_model: ModelHandle<BlocklistAIInputModel>,
     ) -> Self {
         Self {
             sessions,
@@ -216,7 +173,6 @@ impl PromptRenderHelper {
             prompt_selection_state_handle,
             prompt_parent_view_id: parent_view_id,
             input_render_state_model_handle,
-            ai_input_model,
         }
     }
 
@@ -250,32 +206,6 @@ impl PromptRenderHelper {
     }
 
     fn bootstrapping_shell_message(&self, model: &TerminalModel, sessions: &Sessions) -> String {
-        use crate::terminal::event::RemoteServerSetupState;
-
-        // If a remote server setup is in progress for the pending session,
-        // show a stage-specific message instead of the generic "Starting shell...".
-        if let Some(pending_session_id) = model.pending_session_id()
-            && let Some(state) = sessions.remote_server_setup_state(pending_session_id)
-        {
-            return match state {
-                RemoteServerSetupState::Checking => "Starting shell...".to_string(),
-                RemoteServerSetupState::Installing {
-                    progress_percent: Some(p),
-                } => format!("Installing Warp SSH Extension... ({p}%)"),
-                RemoteServerSetupState::Installing {
-                    progress_percent: None,
-                } => "Installing Warp SSH Extension...".to_string(),
-                RemoteServerSetupState::Updating => "Updating Warp SSH Extension...".to_string(),
-                RemoteServerSetupState::Initializing => "Initializing...".to_string(),
-                RemoteServerSetupState::Ready => "Starting shell...".to_string(),
-                // Failed and Unsupported both fall back to the wrapper-only SSH
-                // flow, so we render the same generic prompt as a normal
-                // SSH session that doesn't have the remote-server extension.
-                RemoteServerSetupState::Failed { .. }
-                | RemoteServerSetupState::Unsupported { .. } => "Starting shell...".to_string(),
-            };
-        }
-
         if !sessions.is_empty() {
             "Starting shell...".to_string()
         } else {
@@ -413,16 +343,8 @@ impl PromptRenderHelper {
         Option<PromptAndPadding>,
     ) {
         let active_block = model.block_list().active_block();
-        let is_universal_input =
-            InputSettings::as_ref(app).is_universal_developer_input_enabled(app);
-        let render_prompt_on_same_line =
-            should_render_prompt_on_same_line(is_universal_input, model, app);
-        let padding_right = if should_render_prompt_using_editor_decorator_elements(
-            is_universal_input,
-            &self.ai_input_model,
-            model,
-            app,
-        ) {
+        let render_prompt_on_same_line = should_render_prompt_on_same_line(model, app);
+        let padding_right = if render_prompt_on_same_line {
             LPROMPT_RIGHT_PADDING_SAME_LINE_PROMPT
         } else {
             *TERMINAL_VIEW_PADDING_LEFT
@@ -456,11 +378,7 @@ impl PromptRenderHelper {
             } else {
                 (Some(prompt), None, None)
             }
-        } else if active_block.honor_ps1()
-            && model.block_list().is_bootstrapped()
-            && !is_universal_input
-        {
-            // Only render PS1 directly if the shell is bootstrapped and universal developer input is disabled.
+        } else if active_block.honor_ps1() && model.block_list().is_bootstrapped() {
             let prompt_block = self.prompt_block(model).unwrap_or(active_block);
             let shell_type = active_block.shell_host().map(|shell| shell.shell_type);
             let is_msys2 = active_block
@@ -551,7 +469,7 @@ impl PromptRenderHelper {
             (lprompt_top, lprompt_bottom_val, rprompt_val)
 
         // If not render the default starting shell message.
-        } else if model.block_list().active_block().honor_ps1() && !is_universal_input {
+        } else if model.block_list().active_block().honor_ps1() {
             let prompt = PromptAndPadding {
                 element: PromptAndPaddingElement::Text(Box::new(
                     self.bootstrapping_shell_text(model, appearance, app),
@@ -596,16 +514,8 @@ impl PromptRenderHelper {
         prompt_side: PromptSide,
         app: &AppContext,
     ) -> Option<Box<dyn Element>> {
-        let is_universal_input =
-            InputSettings::as_ref(app).is_universal_developer_input_enabled(app);
-
         let should_render_prompt_using_editor_decorator_elements =
-            should_render_prompt_using_editor_decorator_elements(
-                is_universal_input,
-                &self.ai_input_model,
-                terminal_model,
-                app,
-            );
+            should_render_prompt_on_same_line(terminal_model, app);
         let view_id = self.prompt_parent_view_id;
         let position_id = format!("{prompt_side}_{view_id}");
         let size_info = app.model(&self.input_render_state_model_handle).size_info();
@@ -666,55 +576,6 @@ impl PromptRenderHelper {
             )
             .finish(),
         )
-    }
-
-    pub(in crate::terminal) fn render_universal_developer_input_prompt(
-        &self,
-        model: &TerminalModel,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Box<dyn Element> {
-        let element = {
-            if model.block_list().is_bootstrapped() {
-                PromptAndPaddingElement::ContextChips(self.prompt_view.clone())
-            } else {
-                PromptAndPaddingElement::Text(Box::new(
-                    self.bootstrapping_shell_text(model, appearance, app),
-                ))
-            }
-        };
-
-        let view_id = self.prompt_parent_view_id;
-        let position_id = format!("{}_{}", PromptSide::Left, view_id);
-        let size_info = app.model(&self.input_render_state_model_handle).size_info();
-        let terminal_spacing = TerminalSettings::as_ref(app)
-            .terminal_input_spacing(appearance.line_height_ratio(), app);
-
-        let prompt_with_padding_container = Container::new(element.render())
-            .with_padding_top({
-                (terminal_spacing.block_padding.padding_top * size_info.cell_height_px().as_f32()
-                    - get_input_box_top_border_width())
-                    * spacing::UDI_PROMPT_TOP_PADDING_FACTOR
-            })
-            .finish();
-
-        SavePosition::new(
-            EventHandler::new(prompt_with_padding_container)
-                .on_right_mouse_down(move |ctx, _, position| {
-                    let position_id = format!("prompt_area_{view_id}");
-                    let Some(prompt_rect) = ctx.element_position_by_id(position_id) else {
-                        return DispatchEventResult::PropagateToParent;
-                    };
-                    let offset_position = position - prompt_rect.origin();
-                    ctx.dispatch_typed_action(TerminalAction::PromptContextMenu {
-                        position_offset_from_prompt: offset_position,
-                    });
-                    DispatchEventResult::StopPropagation
-                })
-                .finish(),
-            &position_id,
-        )
-        .finish()
     }
 
     pub(in crate::terminal) fn render_prompt_areas(

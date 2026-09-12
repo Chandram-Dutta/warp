@@ -30,10 +30,8 @@ publish = false
 [workspace.dependencies]
 # Local workspace crates. This lets us reference them in other crates without specifying a path.
 ai = { path = "crates/ai" }
-app-installation-detection = { path = "crates/app-installation-detection" }
 asset_cache = { path = "crates/asset_cache" }
 asset_macro = { path = "crates/asset_macro" }
-build_cache = { path = "crates/build_cache" }
 channel_versions = { path = "crates/channel_versions", default-features = false }
 command = { path = "crates/command" }
 command-signatures-v2 = { path = "crates/command-signatures-v2" }
@@ -41,13 +39,11 @@ cloud_objects = { path = "crates/cloud_objects" }
 cloud_object_client = { path = "crates/cloud_object_client" }
 cloud_object_persistence = { path = "crates/cloud_object_persistence" }
 cloud_object_models = { path = "crates/cloud_object_models" }
-computer_use = { path = "crates/computer_use" }
 field_mask = { path = "crates/field_mask" }
 firebase = { path = "crates/firebase" }
 fuzzy_match = { path = "crates/fuzzy_match" }
 handlebars = { path = "crates/handlebars" }
 http_client = { path = "crates/http_client" }
-http_server = { path = "crates/http_server" }
 input_classifier = { path = "crates/input_classifier" }
 integration = { path = "crates/integration" }
 ipc = { path = "crates/ipc" }
@@ -56,15 +52,11 @@ jsonrpc = { path = "crates/jsonrpc" }
 languages = { path = "crates/languages" }
 local_control = { path = "crates/local_control" }
 warp_local_ai = { path = "crates/local_ai" }
-lsp = { path = "crates/lsp" }
 markdown_parser = { path = "crates/markdown_parser" }
 mcp = { path = "crates/mcp" }
 natural_language_detection = { path = "crates/natural_language_detection" }
-node_runtime = { path = "crates/node_runtime" }
-onboarding = { path = "crates/onboarding" }
 persistence = { path = "crates/persistence" }
 prevent_sleep = { path = "crates/prevent_sleep" }
-remote_server = { path = "crates/remote_server" }
 repo_metadata = { path = "crates/repo_metadata" }
 settings = { path = "crates/settings" }
 settings_value = { path = "crates/settings_value", default-features = false }
@@ -114,7 +106,6 @@ anyhow = "1.0"
 arboard = { version = "3.6.1", default-features = false }
 arrayvec = "0.7.4"
 async-broadcast = "0.7.2"
-ashpd = { version = "0.11", default-features = false, features = ["async-std"] }
 async-channel = "2.3.1"
 async-compat = "0.2.5"
 async-io = "2.4.0"
@@ -207,15 +198,6 @@ notify-debouncer-full = { git = "https://github.com/warpdotdev/notify", rev = "9
 nom = "7.1.1"
 num-traits = "0.2"
 oauth2 = { version = "5.0.0", default-features = false }
-opentelemetry = { version = "0.32.0", default-features = false, features = ["trace"] }
-opentelemetry-http = "0.32.0"
-opentelemetry-otlp = { version = "0.32.0", default-features = false, features = [
-  "gzip-http",
-  "http-proto",
-  "trace",
-  "zstd-http",
-] }
-opentelemetry_sdk = { version = "0.32.1", default-features = false, features = ["trace"] }
 openh264 = "0.8"
 static_assertions = "1.1.0"
 url = "2.5.4"
@@ -296,11 +278,6 @@ tower = "0.5.2"
 tower-http = "0.6.6"
 tracing = "0.1.40"
 tracing-futures = "0.2.5"
-tracing-opentelemetry = { version = "0.33.0", default-features = false }
-tracing-subscriber = { version = "0.3.22", default-features = false, features = [
-  "registry",
-  "std",
-] }
 arborium = { version = "2", default-features = false, features = [
   "lang-rust",
   "lang-go",
@@ -522,17 +499,6 @@ inherits = "release-cli"
 [profile.rclida]
 inherits = "release-cli-debug_assertions"
 
-# Release profile for the standalone TUI. Strip debug-map entries while
-# retaining function symbols so local backtraces and profiles remain readable.
-[profile.release-tui]
-inherits = "release-cli"
-strip = "debuginfo"
-
-# Packaged local/dev TUI builds retain the release profile's debug assertions.
-[profile.release-tui-debug-assertions]
-inherits = "release-tui"
-debug-assertions = true
-
 [profile.release-wasm]
 inherits = "release"
 opt-level = "s"
@@ -542,12 +508,6 @@ codegen-units = 1
 [profile.release-wasm-debug_assertions]
 inherits = "release-wasm"
 debug-assertions = true
-
-# A dev profile optimized for remote server deployment. Strips symbols to
-# reduce binary size and improve rsync delta transfer efficiency.
-[profile.dev-remote]
-inherits = "dev"
-strip = "symbols"
 
 [profile.dev-wasm]
 inherits = "dev"

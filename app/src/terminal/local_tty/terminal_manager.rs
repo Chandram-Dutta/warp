@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::sync::mpsc::{SendError, SyncSender};
 use std::thread::JoinHandle;
 
-use ai::api_keys::ApiKeyManager;
 use anyhow::Context as _;
 use async_broadcast::InactiveReceiver;
 #[cfg(unix)]
@@ -18,25 +17,18 @@ use pathfinder_geometry::vector::Vector2F;
 use settings::Setting as _;
 use warp_core::SessionId;
 use warp_errors::report_error;
-use warpui::r#async::executor::Background;
 use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity, ViewHandle};
 
 use super::event_loop::EventLoop;
+use super::mio_channel;
 use super::shell::{ShellStarter, ShellStarterSource};
 #[cfg(unix)]
 use super::terminal_attributes::TerminalAttributesPoller;
-use super::{mio_channel, recorder};
-use crate::ai::aws_credentials::AwsCredentialRefresher as _;
-use crate::ai::blocklist::SerializedBlockListItem;
-use crate::auth::AuthStateProvider;
-use crate::auth::auth_state::AuthState;
 use crate::banner::BannerState;
 use crate::context_chips::ContextChipKind;
 use crate::context_chips::prompt::Prompt;
 use crate::features::FeatureFlag;
 use crate::persistence::ModelEvent;
-use crate::send_telemetry_on_executor;
-use crate::server::telemetry::TelemetryEvent;
 use crate::settings::{DebugSettings, PrivacySettings, SshSettings};
 use crate::terminal::available_shells::{AvailableShell, AvailableShells};
 use crate::terminal::color::List as ColorList;
@@ -44,22 +36,21 @@ use crate::terminal::event_listener::ChannelEventListener;
 #[cfg(unix)]
 use crate::terminal::local_tty::terminal_attributes::Event as TerminalAttributesPollerEvent;
 use crate::terminal::local_tty::{Pty, PtyOptions};
+use crate::terminal::model::block::SerializedBlock;
 use crate::terminal::model::session::Sessions;
 #[cfg(unix)]
 use crate::terminal::model::terminal_model::BlockIndex;
 use crate::terminal::model::terminal_model::ExitReason;
 #[cfg(unix)]
 use crate::terminal::model_events::ModelEvent as TerminalModelEvent;
-use crate::terminal::model_events::{ModelEventDispatcher, SshRemoteServerSupport};
+use crate::terminal::model_events::ModelEventDispatcher;
 use crate::terminal::session_settings::{SessionSettings, ToolbarChipSelection};
-use crate::terminal::shared_session::sharer::network::Network;
-use crate::terminal::shared_session::{IsSharedSessionCreator, SharedSessionStatus};
 use crate::terminal::shell::ShellName;
 use crate::terminal::terminal_manager::BlockSpacing;
 use crate::terminal::warpify::settings::WarpifySettings;
 use crate::terminal::writeable_pty::pty_controller::{EventLoopSendError, EventLoopSender};
 use crate::terminal::writeable_pty::terminal_manager_util::{
-    init_pty_controller_model, init_remote_server_controller, wire_up_pty_controller_with_surface,
+    init_pty_controller_model, wire_up_pty_controller_with_surface,
 };
 use crate::terminal::writeable_pty::{self, Message, PtyIntentEvent, TerminalSurface};
 use crate::terminal::{
@@ -68,8 +59,6 @@ use crate::terminal::{
 };
 
 type PtyController = writeable_pty::PtyController<mio_channel::Sender<Message>>;
-type RemoteServerController =
-    writeable_pty::remote_server_controller::RemoteServerController<mio_channel::Sender<Message>>;
 
 /// Owns a local terminal session: the terminal model, PTY event loop, PTY
 /// controller, and a terminal surface.
@@ -94,9 +83,6 @@ pub struct TerminalManager<S> {
     /// of the PTY controller.
     pty_controller: ModelHandle<PtyController>,
 
-    /// The manager is responsible for managing the lifetime of the remote server controller.
-    remote_server_controller: ModelHandle<RemoteServerController>,
-
     /// The process ID of the PTY. Purely used for integration tests. None if the PTY has not yet
     /// been started.
     #[cfg(feature = "integration_tests")]
@@ -107,10 +93,6 @@ pub struct TerminalManager<S> {
     /// to avoid unnecessary allocations of data coming from the PTY (high throughput).
     /// Note that we need to hold onto the inactive receiver so that the channel isn't closed prematurely.
     inactive_pty_reads_rx: InactiveReceiver<Arc<Vec<u8>>>,
-
-    /// The sharer side of the session sharing protocol. [`Some`] only when a
-    /// shared session connection is ongoing.
-    pub(super) session_sharer: Rc<RefCell<Option<ModelHandle<Network>>>>,
 }
 
 /// Shared inputs needed to construct a terminal surface for a local PTY.
@@ -124,7 +106,7 @@ pub struct TerminalSurfaceInit {
     pub inactive_pty_reads_rx: InactiveReceiver<Arc<Vec<u8>>>,
 }
 
-#[cfg(any(test, all(feature = "tui", feature = "test-util")))]
+#[cfg(test)]
 impl TerminalSurfaceInit {
     /// Creates mock terminal surface inputs without spawning a PTY.
     pub fn new_for_test(ctx: &mut AppContext) -> Self {
@@ -151,12 +133,6 @@ impl TerminalSurfaceInit {
     }
 }
 
-/// A newly constructed terminal surface and its manager post-wiring callback.
-pub struct TerminalSurfaceResult<S, PostWire> {
-    pub surface: ViewHandle<S>,
-    pub post_wire: PostWire,
-}
-
 /// One-shot resources consumed when the shell is determined and the PTY starts.
 struct ShellStartupResources {
     event_loop_rx: mio_channel::Receiver<Message>,
@@ -170,21 +146,6 @@ pub struct TerminalManagerInit<S> {
     pub manager: ModelHandle<Box<dyn TerminalManagerTrait>>,
     pub surface: ViewHandle<S>,
 }
-/// Adapts a TUI-owned surface manager to Warp's type-erased manager contract.
-struct TuiTerminalManager<S>(TerminalManager<S>);
-
-impl<S: 'static> TerminalManagerTrait for TuiTerminalManager<S> {
-    fn model(&self) -> Arc<FairMutex<TerminalModel>> {
-        self.0.model()
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        &self.0
-    }
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        &mut self.0
-    }
-}
 
 impl<S> Drop for TerminalManager<S> {
     fn drop(&mut self) {
@@ -195,110 +156,21 @@ impl<S> Drop for TerminalManager<S> {
 impl<S> TerminalManager<S> {
     /// Creates a local terminal manager model and terminal surface.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn create_model<PostWire>(
+    pub(crate) fn create_model(
         startup_directory: Option<PathBuf>,
         env_vars: HashMap<OsString, OsString>,
-        is_shared_session_creator: IsSharedSessionCreator,
-        all_restored_blocks: Option<&Vec<SerializedBlockListItem>>,
+        all_restored_blocks: Option<&Vec<SerializedBlock>>,
         user_default_shell_unsupported_banner_model_handle: ModelHandle<BannerState>,
         initial_size: Vector2F,
         model_event_sender: Option<SyncSender<ModelEvent>>,
         chosen_shell: Option<AvailableShell>,
         ctx: &mut AppContext,
-        create_surface: impl FnOnce(
-            TerminalSurfaceInit,
-            &mut AppContext,
-        ) -> TerminalSurfaceResult<S, PostWire>,
+        create_surface: impl FnOnce(TerminalSurfaceInit, &mut AppContext) -> ViewHandle<S>,
     ) -> TerminalManagerInit<S>
     where
         S: TerminalSurface,
         <S as Entity>::Event: PtyIntentEvent,
         Self: TerminalManagerTrait,
-        PostWire: FnOnce(&mut Self, &ViewHandle<S>, &mut AppContext),
-    {
-        Self::create_model_with_manager(
-            startup_directory,
-            env_vars,
-            is_shared_session_creator,
-            all_restored_blocks,
-            user_default_shell_unsupported_banner_model_handle,
-            initial_size,
-            model_event_sender,
-            chosen_shell,
-            BlockSpacing::for_gui(ctx),
-            SshRemoteServerSupport::Enabled,
-            ctx,
-            create_surface,
-            |manager| Box::new(manager),
-        )
-    }
-
-    /// Creates a local terminal manager for a TUI-owned terminal surface.
-    /// `block_spacing` is the TUI frontend's spacing baked into block heights.
-    #[allow(clippy::too_many_arguments)]
-    pub fn create_tui_model<PostWire>(
-        startup_directory: Option<PathBuf>,
-        env_vars: HashMap<OsString, OsString>,
-        is_shared_session_creator: IsSharedSessionCreator,
-        all_restored_blocks: Option<&Vec<SerializedBlockListItem>>,
-        user_default_shell_unsupported_banner_model_handle: ModelHandle<BannerState>,
-        initial_size: Vector2F,
-        model_event_sender: Option<SyncSender<ModelEvent>>,
-        chosen_shell: Option<AvailableShell>,
-        block_spacing: BlockSpacing,
-        ctx: &mut AppContext,
-        create_surface: impl FnOnce(
-            TerminalSurfaceInit,
-            &mut AppContext,
-        ) -> TerminalSurfaceResult<S, PostWire>,
-    ) -> TerminalManagerInit<S>
-    where
-        S: TerminalSurface,
-        <S as Entity>::Event: PtyIntentEvent,
-        PostWire: FnOnce(&mut Self, &ViewHandle<S>, &mut AppContext),
-    {
-        Self::create_model_with_manager(
-            startup_directory,
-            env_vars,
-            is_shared_session_creator,
-            all_restored_blocks,
-            user_default_shell_unsupported_banner_model_handle,
-            initial_size,
-            model_event_sender,
-            chosen_shell,
-            block_spacing,
-            SshRemoteServerSupport::Disabled,
-            ctx,
-            create_surface,
-            |manager| Box::new(TuiTerminalManager(manager)),
-        )
-    }
-
-    /// Creates a manager using the supplied type-erasure adapter.
-    #[allow(clippy::too_many_arguments)]
-    fn create_model_with_manager<PostWire, BoxManager>(
-        startup_directory: Option<PathBuf>,
-        env_vars: HashMap<OsString, OsString>,
-        is_shared_session_creator: IsSharedSessionCreator,
-        all_restored_blocks: Option<&Vec<SerializedBlockListItem>>,
-        user_default_shell_unsupported_banner_model_handle: ModelHandle<BannerState>,
-        initial_size: Vector2F,
-        model_event_sender: Option<SyncSender<ModelEvent>>,
-        chosen_shell: Option<AvailableShell>,
-        block_spacing: BlockSpacing,
-        ssh_remote_server_support: SshRemoteServerSupport,
-        ctx: &mut AppContext,
-        create_surface: impl FnOnce(
-            TerminalSurfaceInit,
-            &mut AppContext,
-        ) -> TerminalSurfaceResult<S, PostWire>,
-        box_manager: BoxManager,
-    ) -> TerminalManagerInit<S>
-    where
-        S: TerminalSurface,
-        <S as Entity>::Event: PtyIntentEvent,
-        PostWire: FnOnce(&mut Self, &ViewHandle<S>, &mut AppContext),
-        BoxManager: FnOnce(Self) -> Box<dyn TerminalManagerTrait> + 'static,
     {
         let (wakeups_tx, wakeups_rx) = async_channel::unbounded();
         let (events_tx, events_rx) = async_channel::unbounded();
@@ -314,16 +186,10 @@ impl<S> TerminalManager<S> {
         let channel_event_proxy = ChannelEventListener::new(wakeups_tx, events_tx, pty_reads_tx);
 
         // Initialize the sessions model.
-        let sessions = ctx.add_model(|ctx| Sessions::new(executor_command_tx.clone(), ctx));
+        let sessions = ctx.add_model(|_| Sessions::new(executor_command_tx.clone()));
 
-        let model_events = ctx.add_model(|ctx| {
-            ModelEventDispatcher::new_with_ssh_remote_server_support(
-                events_rx,
-                sessions.clone(),
-                ssh_remote_server_support,
-                ctx,
-            )
-        });
+        let model_events =
+            ctx.add_model(|ctx| ModelEventDispatcher::new(events_rx, sessions.clone(), ctx));
 
         let preferred_shell = chosen_shell.unwrap_or_else(|| {
             AvailableShells::handle(ctx)
@@ -351,50 +217,11 @@ impl<S> TerminalManager<S> {
                     .map(|wsl_name_or_shell_starter| wsl_name_or_shell_starter.name())
                     .unwrap_or(ShellName::LessDescriptive("Shell".to_owned())),
             },
-            block_spacing,
+            BlockSpacing::for_gui(ctx),
             ctx,
         );
         let colors = model.colors();
         let model = Arc::new(FairMutex::new(model));
-
-        // Have ApiKeyManager subscribe to block completion events for AWS credential refresh.
-        // This must happen after `model` is created, since the subscription needs it to resolve
-        // lazily-computed `UserBlockCompleted` fields.
-        ApiKeyManager::handle(ctx).update(ctx, |manager, ctx| {
-            manager.register_model_event_dispatcher(&model_events, model.clone(), ctx);
-        });
-
-        // This is purely for measuring throughput on WarpDev.
-        if FeatureFlag::RecordPtyThroughput.is_enabled() {
-            let auth_state = AuthStateProvider::as_ref(ctx).get();
-            recorder::record_pty_throughput(
-                inactive_pty_reads_rx.clone().activate(),
-                model.clone(),
-                auth_state.clone(),
-                ctx.background_executor().to_owned(),
-            );
-        }
-
-        // If this session should be a shared-session creator, configure its initial
-        // shared-session state before the surface is constructed, so that bootstrap
-        // events can observe the correct pending status and source type.
-        match is_shared_session_creator {
-            IsSharedSessionCreator::Yes { source }
-                if FeatureFlag::CreatingSharedSessions.is_enabled() =>
-            {
-                model.lock().set_shared_session_status(
-                    SharedSessionStatus::SharePendingPreBootstrap { source },
-                );
-                log::info!("Configured terminal to start sharing after bootstrap");
-            }
-            IsSharedSessionCreator::Yes { .. } => {
-                log::warn!(
-                    "Session sharing was requested, but CreatingSharedSessions is disabled; \
-                     skipping shared-session startup"
-                );
-            }
-            IsSharedSessionCreator::No => {}
-        }
 
         // Initialize the PtyController.
         let pty_controller = init_pty_controller_model(
@@ -406,11 +233,8 @@ impl<S> TerminalManager<S> {
             ctx,
         );
 
-        // Initialize the RemoteServerController.
-        let remote_server_controller =
-            init_remote_server_controller(&pty_controller, &model_events, ctx);
         let size_info = model.lock().block_list().size().to_owned();
-        let TerminalSurfaceResult { surface, post_wire } = create_surface(
+        let surface = create_surface(
             TerminalSurfaceInit {
                 wakeups_rx,
                 model_events: model_events.clone(),
@@ -430,7 +254,7 @@ impl<S> TerminalManager<S> {
             model_event_sender,
             ctx,
         );
-        let mut terminal_manager = Self {
+        let terminal_manager = Self {
             event_loop_tx: Arc::new(Mutex::new(event_loop_tx)),
             model,
             event_loop_handle: None,
@@ -438,16 +262,18 @@ impl<S> TerminalManager<S> {
             #[cfg(unix)]
             terminal_attributes_poller: None,
             pty_controller,
-            remote_server_controller,
             #[cfg(feature = "integration_tests")]
             pid: None,
             inactive_pty_reads_rx,
-            session_sharer: Rc::new(RefCell::new(None)),
         };
 
-        // Run surface-specific wiring after the manager exists, because this
-        // step may need manager-owned controllers and retained handles.
-        post_wire(&mut terminal_manager, &surface, ctx);
+        if all_restored_blocks.is_some_and(|blocks| !blocks.is_empty()) {
+            terminal_manager
+                .model
+                .lock()
+                .block_list_mut()
+                .append_session_restoration_separator_to_block_list(false);
+        }
 
         let terminal_surface = surface.clone();
         let shell_startup_resources = ShellStartupResources {
@@ -458,7 +284,7 @@ impl<S> TerminalManager<S> {
         };
 
         let terminal_manager_model = ctx.add_model(|ctx| {
-            let terminal_manager = box_manager(terminal_manager);
+            let terminal_manager = Box::new(terminal_manager) as Box<dyn TerminalManagerTrait>;
             ctx.spawn(
                 async move {
                     match wsl_name_or_shell_starter {
@@ -500,11 +326,6 @@ impl<S> TerminalManager<S> {
     /// Returns the terminal model owned by this manager.
     pub(crate) fn model(&self) -> Arc<FairMutex<TerminalModel>> {
         self.model.clone()
-    }
-
-    /// Returns the remote server controller owned by this manager.
-    pub(super) fn remote_server_controller(&self) -> ModelHandle<RemoteServerController> {
-        self.remote_server_controller.clone()
     }
 
     /// Sends a shutdown message to the PTY event loop and waits for it to
@@ -554,15 +375,12 @@ fn on_shell_determined<S: TerminalSurface>(
     }
 
     log::debug!("Using shell starter source {shell_starter_source:?}");
-    let bg_executor = ctx.background_executor();
-    let auth_state = AuthStateProvider::as_ref(ctx).get();
 
     let is_fallback_shell = matches!(
         shell_starter_source,
         Some(ShellStarterSource::Fallback { .. })
     );
-    let shell_starter = shell_starter_source
-        .map(|source| get_shell_starter_internal(source, bg_executor, auth_state));
+    let shell_starter = shell_starter_source.map(get_shell_starter_internal);
     let shell_starter = match shell_starter {
         Some(shell_starter) => shell_starter,
         None => {
@@ -960,7 +778,6 @@ fn wire_up_terminal_attribute_poller_with_surface<S: TerminalSurface>(
 
 pub fn get_shell_starter(
     chosen_shell: Option<AvailableShell>,
-    auth_state: &AuthState,
     ctx: &mut AppContext,
 ) -> Option<ShellStarter> {
     let preferred_shell = chosen_shell.unwrap_or_else(|| {
@@ -973,41 +790,15 @@ pub fn get_shell_starter(
         .and_then(|starter| {
             warpui::r#async::block_on(async { starter.to_shell_starter_source().await })
         })
-        .map(|starter_source| {
-            get_shell_starter_internal(
-                starter_source,
-                ctx.background_executor().clone(),
-                auth_state,
-            )
-        })
+        .map(get_shell_starter_internal)
 }
 
-fn get_shell_starter_internal(
-    shell_starter_source: ShellStarterSource,
-    background_executor: Arc<Background>,
-    auth_state: &AuthState,
-) -> ShellStarter {
+fn get_shell_starter_internal(shell_starter_source: ShellStarterSource) -> ShellStarter {
     match shell_starter_source {
         ShellStarterSource::Override(shell_starter) => shell_starter,
-        ShellStarterSource::Environment(starter) | ShellStarterSource::UserDefault(starter) => {
-            ShellStarter::Direct(starter)
-        }
-        ShellStarterSource::Fallback {
-            unsupported_shell,
-            starter,
-        } => {
-            if let Some(unsupported_shell) = unsupported_shell {
-                send_telemetry_on_executor!(
-                    auth_state,
-                    TelemetryEvent::UnsupportedShell {
-                        shell: unsupported_shell
-                    },
-                    background_executor
-                );
-            }
-
-            ShellStarter::Direct(starter)
-        }
+        ShellStarterSource::Environment(starter)
+        | ShellStarterSource::UserDefault(starter)
+        | ShellStarterSource::Fallback { starter } => ShellStarter::Direct(starter),
     }
 }
 

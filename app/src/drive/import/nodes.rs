@@ -8,6 +8,7 @@ use async_recursion::async_recursion;
 use futures_lite::StreamExt;
 use pathfinder_color::ColorU;
 use warp_errors::report_error;
+use warp_util::file_type::is_markdown_file;
 use warpui::Element;
 use warpui::elements::{
     Align, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex, Hoverable,
@@ -20,7 +21,6 @@ use super::modal_body::{BASE_INDENT, IMPORT_FONT_SIZE, INDENT_MARGIN, ImportModa
 use crate::appearance::Appearance;
 use crate::drive::DriveObjectType;
 use crate::drive::cloud_object_styling::warp_drive_icon_color;
-use crate::notebooks::file::is_markdown_file;
 use crate::server::ids::ClientId;
 use crate::themes::theme::Fill;
 use crate::ui_components::icons::Icon;

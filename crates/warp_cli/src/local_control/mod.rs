@@ -405,49 +405,13 @@ pub enum SurfaceCommand {
     #[command(subcommand)]
     Keybindings(SurfaceOpenCommand),
 
-    /// Open or toggle Warp Drive.
-    #[command(subcommand)]
-    WarpDrive(SurfaceOpenToggleCommand),
-
     /// Toggle the resource center.
     #[command(subcommand)]
     ResourceCenter(SurfaceToggleCommand),
 
-    /// Toggle the AI assistant.
-    #[command(subcommand)]
-    AiAssistant(SurfaceToggleCommand),
-
-    /// Open or toggle code review.
-    #[command(subcommand)]
-    CodeReview(SurfaceOpenToggleCommand),
-
-    /// Open the project explorer.
-    #[command(subcommand)]
-    ProjectExplorer(SurfaceOpenCommand),
-
-    /// Open global search.
-    #[command(subcommand)]
-    GlobalSearch(SurfaceOpenCommand),
-
-    /// Open the conversation list.
-    #[command(subcommand)]
-    ConversationList(SurfaceOpenCommand),
-
-    /// Toggle the left panel.
-    #[command(subcommand)]
-    LeftPanel(SurfaceToggleCommand),
-
-    /// Toggle the right panel.
-    #[command(subcommand)]
-    RightPanel(SurfaceToggleCommand),
-
     /// Open or toggle vertical tabs.
     #[command(subcommand)]
     VerticalTabs(SurfaceOpenToggleCommand),
-
-    /// Open agent management.
-    #[command(subcommand)]
-    AgentManagement(SurfaceOpenCommand),
 }
 
 #[derive(Debug, Clone, Subcommand)]
@@ -722,9 +686,6 @@ pub struct FileOpenArgs {
 
     #[arg(long = "column")]
     pub column: Option<u32>,
-
-    #[arg(long = "new-tab")]
-    pub new_tab: bool,
 
     #[command(flatten)]
     pub target: TargetArgs,

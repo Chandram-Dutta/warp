@@ -1,7 +1,5 @@
 //! This module should houses all horizontal/cross-cutting AI functionality throughout
 //! Warp (including Agent Mode).
-//!
-//! The side panel Warp AI implementation lives in `super::ai_assistant`.
 pub(crate) mod active_agent_views_model;
 pub(crate) mod agent;
 pub(crate) mod agent_conversations_model;
@@ -14,30 +12,6 @@ pub(crate) mod artifact_download;
 pub mod artifacts;
 pub(crate) mod attachment_utils;
 pub mod auth_secret_types;
-#[cfg(all(
-    not(target_family = "wasm"),
-    feature = "warp_agent_runtime",
-    not(feature = "local_only")
-))]
-pub mod aws_credentials;
-#[cfg(all(
-    not(target_family = "wasm"),
-    any(not(feature = "warp_agent_runtime"), feature = "local_only")
-))]
-#[path = "aws_credentials_disabled.rs"]
-pub mod aws_credentials;
-#[cfg(all(
-    not(target_family = "wasm"),
-    feature = "warp_agent_runtime",
-    not(feature = "local_only")
-))]
-pub(crate) mod bedrock_credentials;
-#[cfg(all(
-    not(target_family = "wasm"),
-    any(not(feature = "warp_agent_runtime"), feature = "local_only")
-))]
-#[path = "bedrock_credentials_disabled.rs"]
-pub(crate) mod bedrock_credentials;
 pub(crate) mod block_context;
 pub(crate) mod blocklist;
 #[cfg(any(feature = "local_fs", not(target_family = "wasm")))]
@@ -62,34 +36,23 @@ pub(crate) mod harness_display;
 pub(crate) mod llms;
 pub(crate) mod local_harness_setup;
 pub(crate) mod metadata_project_rules;
-pub mod onboarding;
 pub(crate) mod orchestration;
 pub(crate) mod persisted_workspace;
-pub(crate) mod predict;
-pub(crate) mod pricing_promotion;
-#[cfg(all(not(target_family = "wasm"), feature = "local_fs"))]
-pub(crate) mod remote_agent_context;
-pub(crate) mod remote_context_files;
 pub mod request_usage_model;
 pub(crate) mod restored_conversations;
 pub(crate) mod runner_display;
 pub(crate) mod skills;
-#[cfg(not(target_family = "wasm"))]
-pub(crate) mod tui_api_keys;
 pub(crate) mod voice;
 pub use agent_tips::*;
 pub use credit_availability::*;
 pub use request_usage_model::*;
 use warpui::AppContext;
-#[cfg(not(target_family = "wasm"))]
-pub mod agent_sdk;
 pub mod cloud_agent_config;
 pub mod cloud_agent_settings;
 pub mod cloud_environments;
 pub mod connected_self_hosted_workers;
 pub mod execution_profiles;
 pub mod facts;
-pub(crate) mod generate_block_title;
 pub(crate) mod generate_code_review_content;
 pub(crate) mod loading;
 pub mod mcp;

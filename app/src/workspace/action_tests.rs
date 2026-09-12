@@ -21,22 +21,12 @@ use crate::workspace::tab_settings::{
 fn local_only_product_rejects_cloud_agent_and_ide_actions() {
     assert!(WorkspaceAction::AddDefaultTab.is_available_in_product());
     assert!(WorkspaceAction::ShowSettings.is_available_in_product());
+    assert!(WorkspaceAction::OpenSettingsFile.is_available_in_product());
     assert!(!WorkspaceAction::LogOut.is_available_in_product());
     assert!(!WorkspaceAction::AddAgentTab.is_available_in_product());
-    assert!(!WorkspaceAction::OpenWarpDrive.is_available_in_product());
-    assert!(!WorkspaceAction::OpenMCPServerCollection.is_available_in_product());
-    assert!(!WorkspaceAction::NewCodeFile.is_available_in_product());
     assert!(!WorkspaceAction::JoinSlack.is_available_in_product());
     assert!(!WorkspaceAction::SendFeedback.is_available_in_product());
     assert!(!WorkspaceAction::CheckForUpdate.is_available_in_product());
-    assert!(
-        !WorkspaceAction::OpenPalette {
-            mode: PaletteMode::WarpDrive,
-            source: PaletteSource::Keybinding,
-            query: None,
-        }
-        .is_available_in_product()
-    );
     assert!(
         WorkspaceAction::OpenPalette {
             mode: PaletteMode::Navigation,
@@ -57,12 +47,6 @@ fn local_only_product_rejects_cloud_agent_and_ide_actions() {
     assert!(
         WorkspaceAction::DispatchToSettingsTab(SettingsAction::SelectAndRefresh(
             SettingsSection::Appearance,
-        ))
-        .is_available_in_product()
-    );
-    assert!(
-        !WorkspaceAction::DispatchToSettingsTab(SettingsAction::SelectAndRefresh(
-            SettingsSection::Account,
         ))
         .is_available_in_product()
     );

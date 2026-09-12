@@ -83,13 +83,9 @@
 //! ]);
 //! ```
 //!
-//! ## Syncing a setting to the cloud.
+//! ## Historical sync metadata.
 //!
-//! It's easy to declare a setting as being synced to the cloud by
-//! setting the sync_to_cloud field to either Global or PerPlatform.
-//! For either syncing option you can specify whether the setting
-//! should be synced regardless of the current state of
-//! CloudPreferencesSettings.
+//! The sync_to_cloud field records historical metadata; it does not trigger synchronization.
 //!
 //! ```
 //! # use settings::macros::*;
@@ -851,9 +847,7 @@ macro_rules! generate_settings_event_fn {
                     });
                     // Register callbacks for updating individual settings model by storage key
                     let settings_group_update_clone = settings_group.clone();
-                    let settings_group_reset_clone = settings_group.clone();
                     let settings_group_load_clone = settings_group.clone();
-                    let settings_group_is_syncable_clone = settings_group.clone();
                     let serialized_default_value =
                         serde_json::to_string(&$setting::default_value())
                             .expect("default should serialize");
@@ -865,8 +859,6 @@ macro_rules! generate_settings_event_fn {
                     };
                     manager.register_setting(
                         $setting::storage_key(),
-                        $setting::sync_to_cloud(),
-                        $setting::supported_platforms(),
                         serialized_default_value,
                         file_serialized_default_value,
                         $setting::hierarchy(),
@@ -894,22 +886,6 @@ macro_rules! generate_settings_event_fn {
                                     settings_group.$var.set_value_from_cloud_sync(value, ctx)
                                 } else {
                                     settings_group.$var.set_value(value, ctx)
-                                }
-                            })
-                        },
-                        move |ctx| {
-                            settings_group_reset_clone.update(ctx, |settings_group, ctx| {
-                                if settings_group
-                                    .$var
-                                    .is_setting_syncable_on_current_platform(true)
-                                {
-                                    log::debug!(
-                                        "Clearing cloud synced setting from local storage: {}",
-                                        $setting::storage_key()
-                                    );
-                                    settings_group.$var.clear_value(ctx)
-                                } else {
-                                    Ok(())
                                 }
                             })
                         },
@@ -948,12 +924,6 @@ macro_rules! generate_settings_event_fn {
                             let left_setting = $setting::new(Some(parse(left)?));
                             let right_setting = $setting::new(Some(parse(right)?));
                             Ok(left_setting.value() == right_setting.value())
-                        },
-                        move |ctx| {
-                            settings_group_is_syncable_clone
-                                .as_ref(ctx)
-                                .$var
-                                .current_value_is_syncable()
                         },
                     );
                 });

@@ -1,12 +1,12 @@
 use ai::agent::action::{
     ReviewCommentThread, format_review_comment_thread, group_review_comment_threads,
 };
+use warp_util::local_or_remote_path::LocalOrRemotePath;
 
 use super::comment::{
     AttachedReviewComment, AttachedReviewCommentTarget, CommentId, CommentOrigin,
 };
 use super::pending_imported::{PendingImportedReviewComment, PendingImportedReviewCommentTarget};
-use crate::code::buffer_location::LocalOrRemotePath;
 
 /// Converts pending imported provider comments into attached review comments by:
 /// * flattening threaded replies

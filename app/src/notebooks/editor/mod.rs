@@ -42,6 +42,12 @@ pub use block_insertion_menu::BlockInsertionSource;
 const NOTEBOOK_LINE_HEIGHT_RATIO: f32 = 1.5;
 const NOTEBOOK_BASELINE_RATIO: f32 = 0.7;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarkdownDisplayMode {
+    Rendered,
+    Raw,
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct MarkdownTableAppearance {
     pub border_color: ColorU,

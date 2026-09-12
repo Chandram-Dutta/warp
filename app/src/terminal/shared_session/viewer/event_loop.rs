@@ -260,7 +260,6 @@ impl EventLoop {
                         .terminal_model
                         .lock()
                         .start_command_execution_for_shared_session(
-                            participant_id,
                             reconstructed_ai_metadata.clone(),
                         );
 
@@ -286,8 +285,7 @@ impl EventLoop {
                                             ctx,
                                         )
                                     };
-                                if skip_clear_during_setup || view.has_queued_command_in_flight(ctx)
-                                {
+                                if skip_clear_during_setup {
                                     return;
                                 }
                                 view.input().update(ctx, |input, ctx| {
@@ -410,8 +408,6 @@ impl EventLoop {
                             view.tear_down_cloud_mode_setup_phase(ctx);
                             // A promptless handoff run never fires a first turn,
                             // so this is the only point a prompt queued during
-                            // setup can be auto-sent.
-                            view.maybe_drain_queue_after_promptless_setup(ctx);
                         });
                     }
                 }

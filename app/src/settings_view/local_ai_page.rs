@@ -9,8 +9,7 @@ use warpui::ui_components::components::{Coords, UiComponent as _, UiComponentSty
 use warpui::{AppContext, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle};
 
 use super::settings_page::{
-    LocalOnlyIconState, MatchData, PageType, SettingsPageMeta, SettingsPageViewHandle,
-    SettingsWidget, render_body_item,
+    MatchData, PageType, SettingsPageMeta, SettingsPageViewHandle, SettingsWidget, render_body_item,
 };
 use super::{SettingsSection, ToggleState};
 use crate::appearance::Appearance;
@@ -29,7 +28,7 @@ pub enum LocalAISettingsPageAction {
 
 pub struct LocalAISettingsPageView {
     page: PageType<Self>,
-    local_only_icon_tooltip_states: RefCell<HashMap<String, MouseStateHandle>>,
+
     enabled_dropdown: ViewHandle<Dropdown<LocalAISettingsPageAction>>,
     provider_dropdown: ViewHandle<Dropdown<LocalAISettingsPageAction>>,
     endpoint_editor: ViewHandle<EditorView>,
@@ -91,7 +90,7 @@ impl LocalAISettingsPageView {
                 ],
                 Some("Next Command AI"),
             ),
-            local_only_icon_tooltip_states: RefCell::new(HashMap::new()),
+
             enabled_dropdown,
             provider_dropdown,
             endpoint_editor,
@@ -239,15 +238,6 @@ impl LocalAISettingsPageView {
         .with_width(360.)
         .finish()
     }
-
-    fn local_only_icon(&self, key: &str, app: &AppContext) -> LocalOnlyIconState {
-        LocalOnlyIconState::for_setting(
-            key,
-            LocalAINextCommandSetting::sync_to_cloud(),
-            &mut self.local_only_icon_tooltip_states.borrow_mut(),
-            app,
-        )
-    }
 }
 
 impl Entity for LocalAISettingsPageView {
@@ -334,7 +324,6 @@ impl SettingsWidget for NextCommandEnabledWidget {
         render_body_item::<LocalAISettingsPageAction>(
             "Next Command suggestions".to_owned(),
             None,
-            view.local_only_icon("enabled", app),
             ToggleState::Enabled,
             appearance,
             ChildView::new(&view.enabled_dropdown).finish(),
@@ -364,7 +353,6 @@ impl SettingsWidget for ProviderWidget {
         render_body_item::<LocalAISettingsPageAction>(
             "Provider".to_owned(),
             None,
-            view.local_only_icon("provider", app),
             ToggleState::Enabled,
             appearance,
             ChildView::new(&view.provider_dropdown).finish(),
@@ -391,7 +379,6 @@ impl SettingsWidget for EndpointWidget {
         render_body_item::<LocalAISettingsPageAction>(
             "Endpoint".to_owned(),
             None,
-            view.local_only_icon("endpoint", app),
             ToggleState::Enabled,
             appearance,
             view.render_editor(view.endpoint_editor.clone(), appearance),
@@ -421,7 +408,6 @@ impl SettingsWidget for ModelWidget {
         render_body_item::<LocalAISettingsPageAction>(
             "Model".to_owned(),
             None,
-            view.local_only_icon("model", app),
             ToggleState::Enabled,
             appearance,
             view.render_editor(view.model_editor.clone(), appearance),
@@ -448,7 +434,6 @@ impl SettingsWidget for CredentialWidget {
         render_body_item::<LocalAISettingsPageAction>(
             "API key".to_owned(),
             None,
-            view.local_only_icon("credential", app),
             ToggleState::Enabled,
             appearance,
             view.render_editor(view.credential_editor.clone(), appearance),

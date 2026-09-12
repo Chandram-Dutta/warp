@@ -330,6 +330,19 @@ impl CompletionContext for SessionContext {
 }
 
 impl SessionContext {
+    #[cfg(test)]
+    pub(crate) fn new_for_test(session: Session, current_working_directory: TypedPathBuf) -> Self {
+        Self {
+            session: Arc::new(session),
+            command_registry: CommandRegistry::default().into(),
+            current_working_directory,
+            #[cfg(feature = "completions_v2")]
+            js_ctx: None,
+            cached_directory_entries: Arc::new(Default::default()),
+            workflow_aliases: HashMap::new(),
+        }
+    }
+
     pub fn new(
         session: impl Into<Arc<Session>>,
         command_registry: Arc<CommandRegistry>,

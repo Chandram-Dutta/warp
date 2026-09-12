@@ -11,9 +11,3 @@ pub fn decode_agent_response_event(encoded: &str) -> Result<ResponseEvent> {
     let event = ResponseEvent::decode(bytes.as_slice())?;
     Ok(event)
 }
-
-/// Encodes a ResponseEvent by protobuf-encoding it and base64-encoding the bytes.
-pub fn encode_agent_response_event(event: &ResponseEvent) -> String {
-    let bytes = event.encode_to_vec();
-    STANDARD_NO_PAD.encode(bytes)
-}

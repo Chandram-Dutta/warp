@@ -5,11 +5,10 @@ use std::fs;
 use std::path::PathBuf;
 
 use repo_metadata::repositories::DetectedRepositories;
-use repo_metadata::watcher::DirectoryWatcher;
+use warp_util::local_or_remote_path::LocalOrRemotePath;
 use warpui::{App, EntityId};
 
 use super::PaneGroupRepositoryRoots;
-use crate::code::buffer_location::LocalOrRemotePath;
 use crate::pane_group::WorkingDirectoriesModel;
 
 fn local(path: &std::path::Path) -> LocalOrRemotePath {
@@ -59,7 +58,6 @@ fn refresh_working_directories_collapses_subroots_to_nearest_repo_root() {
                         (terminal_1, LocalOrRemotePath::Local(repo_a.clone())),
                         (terminal_2, LocalOrRemotePath::Local(repo_b.clone())),
                     ],
-                    vec![],
                     Some(terminal_1),
                     ctx,
                 );
@@ -108,7 +106,6 @@ fn refresh_working_directories_preserves_non_repo_paths_and_dedupes() {
                         // Duplicate root should be deduped.
                         (terminal_3, LocalOrRemotePath::Local(dir_1.clone())),
                     ],
-                    vec![],
                     Some(terminal_1),
                     ctx,
                 );
@@ -125,100 +122,6 @@ fn refresh_working_directories_preserves_non_repo_paths_and_dedupes() {
             HashSet::from_iter([local(&canonical_1), local(&canonical_2)]),
             "should preserve non-repo roots and dedupe exact paths"
         );
-    });
-}
-
-// Regression test for GH-10598: the code review panel's manually selected
-// repository must be remembered per pane group so it survives leaving and
-// returning to an Agent session.
-#[test]
-fn selected_review_repo_is_remembered_per_pane_group() {
-    App::test((), |mut app| async move {
-        app.add_singleton_model(|_| DetectedRepositories::default());
-
-        let pane_group_a = EntityId::new();
-        let pane_group_b = EntityId::new();
-        let repo_x = PathBuf::from("/repos/x");
-        let repo_y = PathBuf::from("/repos/y");
-        let repo_p = PathBuf::from("/repos/p");
-
-        let working_directories_handle = app.add_model(|_| WorkingDirectoriesModel::new());
-
-        // Initially nothing is saved for either pane group.
-        working_directories_handle.update(&mut app, |model, _ctx| {
-            assert!(model.get_selected_review_repo(pane_group_a).is_none());
-            assert!(model.get_selected_review_repo(pane_group_b).is_none());
-        });
-
-        // User selects repo Y in pane group A.
-        working_directories_handle.update(&mut app, |model, _ctx| {
-            model.set_selected_review_repo(pane_group_a, local(&repo_y));
-        });
-
-        // The selection for A is remembered and is independent from B's.
-        working_directories_handle.update(&mut app, |model, _ctx| {
-            assert_eq!(
-                model.get_selected_review_repo(pane_group_a).cloned(),
-                Some(local(&repo_y)),
-                "pane group A should remember its manual selection"
-            );
-            assert!(
-                model.get_selected_review_repo(pane_group_b).is_none(),
-                "pane group B should be untouched by selections in A"
-            );
-        });
-
-        // User selects repo P in pane group B; A's selection must not change.
-        working_directories_handle.update(&mut app, |model, _ctx| {
-            model.set_selected_review_repo(pane_group_b, local(&repo_p));
-            assert_eq!(
-                model.get_selected_review_repo(pane_group_a).cloned(),
-                Some(local(&repo_y)),
-                "selecting in B must not clobber A's saved selection"
-            );
-            assert_eq!(
-                model.get_selected_review_repo(pane_group_b).cloned(),
-                Some(local(&repo_p)),
-            );
-        });
-
-        // Updating A's selection overwrites the previous saved value for A.
-        working_directories_handle.update(&mut app, |model, _ctx| {
-            model.set_selected_review_repo(pane_group_a, local(&repo_x));
-            assert_eq!(
-                model.get_selected_review_repo(pane_group_a).cloned(),
-                Some(local(&repo_x)),
-            );
-        });
-    });
-}
-
-// Regression test for GH-10598: closing a tab (i.e. destroying a pane group)
-// must clean up the saved code-review-panel selection so it cannot leak into
-// or be confused with a future pane group that happens to reuse an EntityId.
-#[test]
-fn selected_review_repo_is_cleared_when_pane_group_is_removed() {
-    App::test((), |mut app| async move {
-        app.add_singleton_model(|_| DetectedRepositories::default());
-
-        let pane_group_id = EntityId::new();
-        let repo = PathBuf::from("/repos/x");
-
-        let working_directories_handle = app.add_model(|_| WorkingDirectoriesModel::new());
-
-        working_directories_handle.update(&mut app, |model, ctx| {
-            model.set_selected_review_repo(pane_group_id, local(&repo));
-            assert_eq!(
-                model.get_selected_review_repo(pane_group_id).cloned(),
-                Some(local(&repo)),
-            );
-
-            model.remove_pane_group(pane_group_id, ctx);
-            assert!(
-                model.get_selected_review_repo(pane_group_id).is_none(),
-                "removing a pane group must clear its saved review-panel selection"
-            );
-        });
     });
 }
 
@@ -350,10 +253,6 @@ fn pane_group_repository_roots_remove_unknown_pane_group_is_noop() {
 
 // ── End-to-end cleanup behavior tests ────────────────────────────
 
-/// Helper for end-to-end cleanup tests: registers the singletons required by
-/// `DiffStateModel::new_local` (the `DirectoryWatcher`), prepares a temp dir,
-/// seeds it as a detected repo root, and returns the canonical repo path along
-/// with a fresh `WorkingDirectoriesModel` handle.
 fn setup_repo(
     app: &mut warpui::App,
     detected_repos: &warpui::ModelHandle<DetectedRepositories>,
@@ -363,8 +262,6 @@ fn setup_repo(
     PathBuf,
     warpui::ModelHandle<WorkingDirectoriesModel>,
 ) {
-    app.add_singleton_model(DirectoryWatcher::new_for_testing);
-
     let temp_dir = tempfile::TempDir::new().expect("temp dir");
     let repo_path = temp_dir.path().join("repo");
     fs::create_dir_all(&repo_path).expect("create repo dir");
@@ -387,12 +284,8 @@ fn setup_repo(
     )
 }
 
-/// Regression: closing pane group A while pane group B still references the
-/// same repo must NOT drop the shared `DiffStateModel`. Before the fix,
-/// `drop_unused_diff_state_models` removed the cache entry unconditionally for
-/// any repo that left A's set, even when B still relied on it.
 #[test]
-fn shared_diff_state_model_survives_when_other_pane_group_still_references_repo() {
+fn repository_survives_when_other_pane_group_leaves_it() {
     App::test((), |mut app| async move {
         let detected_repos = app.add_singleton_model(|_| DetectedRepositories::default());
 
@@ -409,58 +302,35 @@ fn shared_diff_state_model_survives_when_other_pane_group_still_references_repo(
             model.refresh_working_directories_for_pane_group(
                 pane_group_a,
                 vec![(terminal_a, LocalOrRemotePath::Local(repo_path.clone()))],
-                vec![],
                 Some(terminal_a),
                 ctx,
             );
             model.refresh_working_directories_for_pane_group(
                 pane_group_b,
                 vec![(terminal_b, LocalOrRemotePath::Local(repo_path.clone()))],
-                vec![],
                 Some(terminal_b),
                 ctx,
             );
         });
 
-        // Open the shared diff state model.
-        let initial_id = working_directories_handle.update(&mut app, |model, ctx| {
-            model
-                .get_or_create_diff_state_model(local(&canonical_repo), None, ctx)
-                .expect("local diff state model must be created")
-                .id()
-        });
-
         // Pane group A's terminals go away (close the tab path).
         working_directories_handle.update(&mut app, |model, ctx| {
-            model.refresh_working_directories_for_pane_group(
-                pane_group_a,
-                vec![],
-                vec![],
-                None,
-                ctx,
-            );
+            model.refresh_working_directories_for_pane_group(pane_group_a, vec![], None, ctx);
         });
 
-        // Re-fetching should return the SAME cached model (no re-creation).
-        let after_id = working_directories_handle.update(&mut app, |model, ctx| {
+        let repositories = working_directories_handle.read(&app, |model, _| {
             model
-                .get_or_create_diff_state_model(local(&canonical_repo), None, ctx)
-                .expect("local diff state model must still be present")
-                .id()
+                .most_recent_repositories_for_pane_group(pane_group_b)
+                .unwrap()
+                .collect::<Vec<_>>()
         });
 
-        assert_eq!(
-            initial_id, after_id,
-            "shared DiffStateModel must survive when another pane group still references the repo"
-        );
+        assert_eq!(repositories, vec![local(&canonical_repo)]);
     });
 }
 
-/// When the last pane group referencing a repo navigates away, the shared
-/// `DiffStateModel` is dropped from the cache, so a subsequent
-/// `get_or_create_diff_state_model` creates a fresh model.
 #[test]
-fn diff_state_model_is_dropped_when_no_pane_group_references_repo() {
+fn repository_is_removed_when_its_pane_group_leaves_it() {
     App::test((), |mut app| async move {
         let detected_repos = app.add_singleton_model(|_| DetectedRepositories::default());
 
@@ -474,42 +344,37 @@ fn diff_state_model_is_dropped_when_no_pane_group_references_repo() {
             model.refresh_working_directories_for_pane_group(
                 pane_group,
                 vec![(terminal, LocalOrRemotePath::Local(repo_path.clone()))],
-                vec![],
                 Some(terminal),
                 ctx,
             );
         });
 
-        let initial_id = working_directories_handle.update(&mut app, |model, ctx| {
-            model
-                .get_or_create_diff_state_model(local(&canonical_repo), None, ctx)
-                .expect("local diff state model must be created")
-                .id()
+        working_directories_handle.read(&app, |model, _| {
+            assert_eq!(
+                model
+                    .most_recent_repositories_for_pane_group(pane_group)
+                    .unwrap()
+                    .collect::<Vec<_>>(),
+                vec![local(&canonical_repo)],
+            );
         });
 
-        // Only pane group leaves the repo → model is orphaned and dropped.
         working_directories_handle.update(&mut app, |model, ctx| {
-            model.refresh_working_directories_for_pane_group(pane_group, vec![], vec![], None, ctx);
+            model.refresh_working_directories_for_pane_group(pane_group, vec![], None, ctx);
         });
 
-        let after_id = working_directories_handle.update(&mut app, |model, ctx| {
-            model
-                .get_or_create_diff_state_model(local(&canonical_repo), None, ctx)
-                .expect("local diff state model must be re-created")
-                .id()
+        working_directories_handle.read(&app, |model, _| {
+            assert!(
+                model
+                    .most_recent_repositories_for_pane_group(pane_group)
+                    .is_none()
+            );
         });
-
-        assert_ne!(
-            initial_id, after_id,
-            "DiffStateModel should be dropped and re-created when no pane group references the repo"
-        );
     });
 }
 
-/// `remove_pane_group` (explicit tab teardown) must respect the same refcount
-/// semantics: pane group B's shared `DiffStateModel` survives when A is closed.
 #[test]
-fn remove_pane_group_does_not_drop_diff_state_model_shared_with_other_pane_group() {
+fn remove_pane_group_preserves_other_groups_repository() {
     App::test((), |mut app| async move {
         let detected_repos = app.add_singleton_model(|_| DetectedRepositories::default());
 
@@ -525,24 +390,15 @@ fn remove_pane_group_does_not_drop_diff_state_model_shared_with_other_pane_group
             model.refresh_working_directories_for_pane_group(
                 pane_group_a,
                 vec![(terminal_a, LocalOrRemotePath::Local(repo_path.clone()))],
-                vec![],
                 Some(terminal_a),
                 ctx,
             );
             model.refresh_working_directories_for_pane_group(
                 pane_group_b,
                 vec![(terminal_b, LocalOrRemotePath::Local(repo_path.clone()))],
-                vec![],
                 Some(terminal_b),
                 ctx,
             );
-        });
-
-        let initial_id = working_directories_handle.update(&mut app, |model, ctx| {
-            model
-                .get_or_create_diff_state_model(local(&canonical_repo), None, ctx)
-                .expect("local diff state model must be created")
-                .id()
         });
 
         // Tear down pane group A.
@@ -550,43 +406,13 @@ fn remove_pane_group_does_not_drop_diff_state_model_shared_with_other_pane_group
             model.remove_pane_group(pane_group_a, ctx);
         });
 
-        let after_id = working_directories_handle.update(&mut app, |model, ctx| {
+        let repositories = working_directories_handle.read(&app, |model, _| {
             model
-                .get_or_create_diff_state_model(local(&canonical_repo), None, ctx)
-                .expect("local diff state model must still be present")
-                .id()
+                .most_recent_repositories_for_pane_group(pane_group_b)
+                .unwrap()
+                .collect::<Vec<_>>()
         });
 
-        assert_eq!(
-            initial_id, after_id,
-            "removing pane group A must not drop a model that pane group B still references"
-        );
-    });
-}
-
-#[test]
-fn clear_selected_review_repo_removes_only_the_targeted_pane_group_entry() {
-    App::test((), |mut app| async move {
-        app.add_singleton_model(|_| DetectedRepositories::default());
-
-        let pane_group_a = EntityId::new();
-        let pane_group_b = EntityId::new();
-        let repo_a = PathBuf::from("/repos/a");
-        let repo_b = PathBuf::from("/repos/b");
-
-        let working_directories_handle = app.add_model(|_| WorkingDirectoriesModel::new());
-
-        working_directories_handle.update(&mut app, |model, _ctx| {
-            model.set_selected_review_repo(pane_group_a, local(&repo_a));
-            model.set_selected_review_repo(pane_group_b, local(&repo_b));
-
-            model.clear_selected_review_repo(pane_group_a);
-
-            assert!(model.get_selected_review_repo(pane_group_a).is_none());
-            assert_eq!(
-                model.get_selected_review_repo(pane_group_b).cloned(),
-                Some(local(&repo_b)),
-            );
-        });
+        assert_eq!(repositories, vec![local(&canonical_repo)]);
     });
 }

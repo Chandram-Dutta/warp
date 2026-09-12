@@ -1,8 +1,6 @@
-use self::parse_url_paths::{WarpWebLink, get_item_data_from_warp_link};
 use super::*;
 use crate::ChannelState;
 use crate::launch_configs::launch_config::make_mock_single_window_launch_config;
-use crate::linear::{LinearAction, LinearIssueWork};
 
 #[test]
 fn test_find_matching_config() {
@@ -201,67 +199,6 @@ fn test_remove_extension() {
 }
 
 #[test]
-fn test_warp_web_link_notebook() {
-    assert_eq!(
-        get_item_data_from_warp_link(
-            &Url::parse(&format!(
-                "{}/drive/notebook/Performance-Analysis-LkDlnAe34vfYD2JXsAkssc?focused_folder_id=test_uid00000000000123&invitee_email=test@example.com",
-                ChannelState::server_root_url()
-            ))
-            .unwrap()
-        ),
-        Some(WarpWebLink::DriveObject(Box::new(OpenWarpDriveObjectArgs {
-            object_type: ObjectType::Notebook,
-server_id: ServerId::from_string_lossy("LkDlnAe34vfYD2JXsAkssc"),
-            settings: OpenWarpDriveObjectSettings {
-                focused_folder_id: Some(ServerId::from(123)),
-                invitee_email: Some(String::from("test@example.com")),
-            },
-        })))
-    );
-}
-
-#[test]
-fn test_warp_web_link_session() {
-    assert_eq!(
-        get_item_data_from_warp_link(
-            &Url::parse(&format!(
-                "{}/session/317d0686-7a0b-4b67-806b-aaa3e9df501b?
-                pwd=6f727249-af9f-4025-a240-59df40a4c64b",
-                ChannelState::server_root_url()
-            ))
-            .unwrap()
-        ),
-        Some(WarpWebLink::Session)
-    );
-}
-
-#[test]
-fn test_warp_web_link_workflow() {
-    assert_eq!(
-        get_item_data_from_warp_link(
-            &Url::parse(&format!(
-                "{}/drive/workflow/Remove-all-stopped-docker-container-image-and-volumes-ZCJSkai2gpwTqpBFs5HOfZ",
-                ChannelState::server_root_url()
-            ))
-            .unwrap()
-        ),
-        Some(WarpWebLink::DriveObject(Box::new(OpenWarpDriveObjectArgs {
-            object_type: ObjectType::Workflow,
-server_id: ServerId::from_string_lossy("ZCJSkai2gpwTqpBFs5HOfZ"),
-            settings: OpenWarpDriveObjectSettings::default(),
-        })))
-    );
-}
-
-#[test]
-fn test_warp_web_link_failure() {
-    assert_eq!(
-        get_item_data_from_warp_link(&Url::parse("https://google.com").unwrap()),
-        None
-    );
-}
-#[test]
 fn test_app_web_link_rewrites_to_new_cloud_agent_conversation() {
     let url = Url::parse(&format!("{}/app", ChannelState::server_root_url())).unwrap();
     let intent = web_intent_parser::maybe_rewrite_web_url_to_intent(&url).unwrap();
@@ -276,49 +213,36 @@ fn test_app_web_link_rewrites_to_new_cloud_agent_conversation() {
 }
 
 #[test]
-fn test_action_create_environment_parse() {
+fn test_action_create_environment_is_rejected() {
     let url = Url::parse(&format!(
         "{}://action/create_environment?repo=foo&repo=bar",
         ChannelState::url_scheme()
     ))
     .unwrap();
 
-    let action = Action::parse(&url).unwrap();
-    match action {
-        Action::CreateEnvironment { repos } => {
-            assert_eq!(repos, vec!["foo".to_owned(), "bar".to_owned()]);
-        }
-        _ => panic!("unexpected action: {action:?}"),
-    }
+    assert!(Action::parse(&url).is_err());
 }
 
 #[test]
-fn test_action_focus_cloud_mode_parse() {
+fn test_action_focus_cloud_mode_is_rejected() {
     let url = Url::parse(&format!(
         "{}://action/focus_cloud_mode",
         ChannelState::url_scheme()
     ))
     .unwrap();
 
-    let action = Action::parse(&url).unwrap();
-    assert!(matches!(action, Action::FocusCloudMode));
+    assert!(Action::parse(&url).is_err());
 }
 
 #[test]
-fn test_action_create_environment_parse_no_repos() {
+fn test_action_create_environment_without_repos_is_rejected() {
     let url = Url::parse(&format!(
         "{}://action/create_environment",
         ChannelState::url_scheme()
     ))
     .unwrap();
 
-    let action = Action::parse(&url).unwrap();
-    match action {
-        Action::CreateEnvironment { repos } => {
-            assert!(repos.is_empty());
-        }
-        _ => panic!("unexpected action: {action:?}"),
-    }
+    assert!(Action::parse(&url).is_err());
 }
 
 fn open_file_editor_test_path(file_name: &str) -> (String, PathBuf) {
@@ -331,125 +255,62 @@ fn open_file_editor_test_path(file_name: &str) -> (String, PathBuf) {
 }
 
 #[test]
-fn test_action_open_file_editor_parse_with_path_only() {
-    let (path_param, expected_path) = open_file_editor_test_path("test.rs");
+fn test_action_open_file_editor_with_path_is_rejected() {
+    let (path_param, _) = open_file_editor_test_path("test.rs");
     let url = Url::parse(&format!(
         "{}://action/open_file_editor?path={path_param}",
         ChannelState::url_scheme()
     ))
     .unwrap();
 
-    let action = Action::parse(&url).unwrap();
-    match action {
-        Action::OpenFileEditor { path, line_col } => {
-            assert_eq!(path, expected_path);
-            assert_eq!(line_col, None);
-        }
-        _ => panic!("unexpected action: {action:?}"),
-    }
+    assert!(Action::parse(&url).is_err());
 }
 
 #[test]
-fn test_action_open_file_editor_parse_with_line_only() {
-    let (path_param, expected_path) = open_file_editor_test_path("test.rs");
+fn test_action_open_file_editor_with_line_is_rejected() {
+    let (path_param, _) = open_file_editor_test_path("test.rs");
     let url = Url::parse(&format!(
         "{}://action/open_file_editor?path={path_param}&line=120",
         ChannelState::url_scheme()
     ))
     .unwrap();
 
-    let action = Action::parse(&url).unwrap();
-    match action {
-        Action::OpenFileEditor { path, line_col } => {
-            assert_eq!(path, expected_path);
-            assert_eq!(
-                line_col,
-                Some(LineAndColumnArg {
-                    line_num: 120,
-                    column_num: None,
-                })
-            );
-        }
-        _ => panic!("unexpected action: {action:?}"),
-    }
+    assert!(Action::parse(&url).is_err());
 }
 
 #[test]
-fn test_action_open_file_editor_parse_with_line_and_column() {
-    let (path_param, expected_path) = open_file_editor_test_path("test.rs");
+fn test_action_open_file_editor_with_line_and_column_is_rejected() {
+    let (path_param, _) = open_file_editor_test_path("test.rs");
     let url = Url::parse(&format!(
         "{}://action/open_file_editor?path={path_param}&line=120&column=8",
         ChannelState::url_scheme()
     ))
     .unwrap();
 
-    let action = Action::parse(&url).unwrap();
-    match action {
-        Action::OpenFileEditor { path, line_col } => {
-            assert_eq!(path, expected_path);
-            assert_eq!(
-                line_col,
-                Some(LineAndColumnArg {
-                    line_num: 120,
-                    column_num: Some(8),
-                })
-            );
-        }
-        _ => panic!("unexpected action: {action:?}"),
-    }
+    assert!(Action::parse(&url).is_err());
 }
 
 #[test]
-fn test_action_open_file_editor_parse_decodes_percent_encoded_path() {
+fn test_action_open_file_editor_with_encoded_path_is_rejected() {
     let (path_param, _) = open_file_editor_test_path("hello%20world.rs");
-    let (_, expected_path) = open_file_editor_test_path("hello world.rs");
     let url = Url::parse(&format!(
         "{}://action/open_file_editor?path={path_param}&line=1",
         ChannelState::url_scheme()
     ))
     .unwrap();
 
-    let action = Action::parse(&url).unwrap();
-    match action {
-        Action::OpenFileEditor { path, line_col } => {
-            assert_eq!(path, expected_path);
-            assert_eq!(
-                line_col,
-                Some(LineAndColumnArg {
-                    line_num: 1,
-                    column_num: None,
-                })
-            );
-        }
-        _ => panic!("unexpected action: {action:?}"),
-    }
+    assert!(Action::parse(&url).is_err());
 }
 
 #[test]
-fn test_action_open_file_editor_parse_expands_home_dir() {
+fn test_action_open_file_editor_with_home_dir_is_rejected() {
     let url = Url::parse(&format!(
         "{}://action/open_file_editor?path=~/tmp/test.rs&line=1",
         ChannelState::url_scheme()
     ))
     .unwrap();
 
-    let action = Action::parse(&url).unwrap();
-    match action {
-        Action::OpenFileEditor { path, line_col } => {
-            assert_eq!(
-                path,
-                PathBuf::from(shellexpand::tilde("~/tmp/test.rs").into_owned())
-            );
-            assert_eq!(
-                line_col,
-                Some(LineAndColumnArg {
-                    line_num: 1,
-                    column_num: None,
-                })
-            );
-        }
-        _ => panic!("unexpected action: {action:?}"),
-    }
+    assert!(Action::parse(&url).is_err());
 }
 
 #[test]
@@ -510,146 +371,78 @@ fn test_action_open_file_editor_parse_rejects_invalid_line_or_column() {
 }
 
 #[test]
-fn test_action_cloud_agent_setup_parse() {
+fn test_action_cloud_agent_setup_is_rejected() {
     let url = Url::parse(&format!(
         "{}://action/cloud_agent_setup",
         ChannelState::url_scheme()
     ))
     .unwrap();
 
-    let action = Action::parse(&url).unwrap();
-    assert!(matches!(action, Action::CloudAgentSetup));
+    assert!(Action::parse(&url).is_err());
 }
 #[test]
-fn test_action_auto_handoff_to_cloud_parse_default_trigger() {
+fn test_action_auto_handoff_to_cloud_is_rejected() {
     let url = Url::parse(&format!(
         "{}://action/auto_handoff_to_cloud",
         ChannelState::url_scheme()
     ))
     .unwrap();
 
-    let action = Action::parse(&url).unwrap();
-    assert!(matches!(
-        action,
-        Action::AutoHandoffToCloud {
-            trigger: AutoCloudHandoffTrigger::Uri,
-        }
-    ));
+    assert!(Action::parse(&url).is_err());
 }
 
 #[test]
-fn test_action_auto_handoff_to_cloud_parse_alias_path() {
+fn test_action_auto_handoff_to_cloud_alias_is_rejected() {
     let url = Url::parse(&format!(
         "{}://action/auto-handoff-to-cloud",
         ChannelState::url_scheme()
     ))
     .unwrap();
 
-    let action = Action::parse(&url).unwrap();
-    assert!(matches!(
-        action,
-        Action::AutoHandoffToCloud {
-            trigger: AutoCloudHandoffTrigger::Uri,
-        }
-    ));
+    assert!(Action::parse(&url).is_err());
 }
 
 #[test]
-fn test_action_auto_handoff_to_cloud_parse_sleep_trigger() {
+fn test_action_auto_handoff_to_cloud_sleep_trigger_is_rejected() {
     let url = Url::parse(&format!(
         "{}://action/auto_handoff_to_cloud?trigger=sleep",
         ChannelState::url_scheme()
     ))
     .unwrap();
 
-    let action = Action::parse(&url).unwrap();
-    assert!(matches!(
-        action,
-        Action::AutoHandoffToCloud {
-            trigger: AutoCloudHandoffTrigger::MacOsSleep,
-        }
-    ));
+    assert!(Action::parse(&url).is_err());
 }
 
 #[test]
-fn test_action_new_cloud_agent_conversation_parse() {
+fn test_action_new_cloud_agent_conversation_is_rejected() {
     let url = Url::parse(&format!(
         "{}://action/new_cloud_agent_conversation",
         ChannelState::url_scheme()
     ))
     .unwrap();
 
-    let action = Action::parse(&url).unwrap();
-    assert!(matches!(action, Action::NewCloudAgentConversation));
+    assert!(Action::parse(&url).is_err());
 }
 
 #[test]
-fn test_action_new_agent_conversation_parse() {
+fn test_action_new_agent_conversation_is_rejected() {
     let url = Url::parse(&format!(
         "{}://action/new_agent_conversation",
         ChannelState::url_scheme()
     ))
     .unwrap();
 
-    let action = Action::parse(&url).unwrap();
-    assert!(matches!(action, Action::NewAgentConversation));
+    assert!(Action::parse(&url).is_err());
 }
 
 #[test]
-fn test_validate_custom_uri_linear() {
+fn test_validate_custom_uri_linear_is_rejected() {
     let url = Url::parse(&format!(
         "{}://linear/work?prompt=hello",
         ChannelState::url_scheme()
     ))
     .unwrap();
-    let host = validate_custom_uri(&url).unwrap();
-    assert!(matches!(host, UriHost::Linear));
-}
-
-#[test]
-fn test_linear_action_parse_work() {
-    let url = Url::parse(&format!(
-        "{}://linear/work?prompt=hello",
-        ChannelState::url_scheme()
-    ))
-    .unwrap();
-    let action = LinearAction::parse(&url).unwrap();
-    assert_eq!(action, LinearAction::WorkOnIssue);
-}
-
-#[test]
-fn test_linear_action_parse_unknown_path() {
-    let url = Url::parse(&format!("{}://linear/unknown", ChannelState::url_scheme())).unwrap();
-    assert!(LinearAction::parse(&url).is_err());
-}
-
-#[test]
-fn test_linear_issue_work_with_prompt() {
-    let url = Url::parse(&format!(
-        "{}://linear/work?prompt=fix+the+bug",
-        ChannelState::url_scheme()
-    ))
-    .unwrap();
-    let args = LinearIssueWork::from_url(&url);
-    assert_eq!(args.prompt.as_deref(), Some("fix the bug"));
-}
-
-#[test]
-fn test_linear_issue_work_without_prompt() {
-    let url = Url::parse(&format!("{}://linear/work", ChannelState::url_scheme())).unwrap();
-    let args = LinearIssueWork::from_url(&url);
-    assert!(args.prompt.is_none());
-}
-
-#[test]
-fn test_linear_issue_work_empty_prompt() {
-    let url = Url::parse(&format!(
-        "{}://linear/work?prompt=",
-        ChannelState::url_scheme()
-    ))
-    .unwrap();
-    let args = LinearIssueWork::from_url(&url);
-    assert!(args.prompt.is_none());
+    assert!(validate_custom_uri(&url).is_err());
 }
 
 // -- handle_incoming_uri validation errors -----------------------------------
@@ -750,11 +543,7 @@ fn test_settings_widget_deeplink_target() {
     #[cfg(not(target_family = "wasm"))]
     assert_eq!(
         settings_widget_deeplink_target("cli_agents").map(|(section, _)| section),
-        if cfg!(feature = "local_only") {
-            None
-        } else {
-            Some(SettingsSection::ThirdPartyCLIAgents)
-        },
+        None,
     );
     // Unknown / empty slugs are not linkable (allowlist only).
     assert!(settings_widget_deeplink_target("not_a_widget").is_none());
@@ -775,14 +564,7 @@ fn test_settings_section_for_simple_subpage() {
             Some(SettingsSection::BillingAndUsage)
         },
     );
-    assert_eq!(
-        settings_section_for_simple_subpage("platform"),
-        if cfg!(feature = "local_only") {
-            None
-        } else {
-            Some(SettingsSection::OzCloudAPIKeys)
-        },
-    );
+    assert_eq!(settings_section_for_simple_subpage("platform"), None,);
     assert_eq!(
         settings_section_for_simple_subpage("warp_agent"),
         if cfg!(feature = "local_only") {
@@ -822,44 +604,6 @@ fn local_only_deep_links_reject_cloud_agent_and_account_routes() {
     );
 }
 
-// -- post-checkout desktop hand-off ------------------------------------------
-
-/// Regression coverage for REV-1952: the confirmation page reports a completed
-/// purchase by riding `checkoutSuccessful=true` on the ordinary desktop
-/// redirect, so onboarding can advance without opening a settings page.
-#[test]
-fn test_url_reports_checkout_success() {
-    let scheme = ChannelState::url_scheme();
-
-    let with_flag = Url::parse(&format!(
-        "{scheme}://auth/desktop_redirect?refresh_token=abc&checkoutSuccessful=true"
-    ))
-    .unwrap();
-    assert!(url_reports_checkout_success(&with_flag));
-
-    let plain_redirect = Url::parse(&format!(
-        "{scheme}://auth/desktop_redirect?refresh_token=abc"
-    ))
-    .unwrap();
-    assert!(!url_reports_checkout_success(&plain_redirect));
-
-    // Only an explicit `true` counts, so an abandoned checkout that reports
-    // failure never advances onboarding.
-    let failed = Url::parse(&format!(
-        "{scheme}://auth/desktop_redirect?checkoutSuccessful=false"
-    ))
-    .unwrap();
-    assert!(!url_reports_checkout_success(&failed));
-
-    // The flag is not tied to the auth host: an older confirmation page can
-    // still send it on the settings deeplink.
-    let on_settings = Url::parse(&format!(
-        "{scheme}://settings/billing_and_usage?checkoutSuccessful=true"
-    ))
-    .unwrap();
-    assert!(url_reports_checkout_success(&on_settings));
-}
-
 // Regression coverage for issue #9005: shell scripts opened via `file://` should run,
 // not open in the editor. Exercised through the pure routing helper to avoid standing
 // up a full `AppContext`.
@@ -872,7 +616,7 @@ fn test_open_file_executable_sh_routes_to_execute() {
     let p = dir.path().join("run.sh");
     std::fs::write(&p, b"#!/bin/sh\n:\n").unwrap();
     std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let action = classify_open_file_action(&p, true);
+    let action = classify_open_file_action(&p);
     assert_eq!(action, OpenFileAction::ExecuteInSession);
 }
 
@@ -884,7 +628,7 @@ fn test_open_file_non_executable_sh_routes_to_editor() {
     let p = dir.path().join("view.sh");
     std::fs::write(&p, b"#!/bin/sh\n:\n").unwrap();
     std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
-    assert_eq!(classify_open_file_action(&p, true), OpenFileAction::Editor);
+    assert_eq!(classify_open_file_action(&p), OpenFileAction::Editor);
 }
 
 #[test]
@@ -897,7 +641,7 @@ fn test_open_file_executable_bash_zsh_fish_route_to_execute() {
         std::fs::write(&p, b"#!/bin/sh\n:\n").unwrap();
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert_eq!(
-            classify_open_file_action(&p, true),
+            classify_open_file_action(&p),
             OpenFileAction::ExecuteInSession,
             "{name} should route to ExecuteInSession",
         );
@@ -905,47 +649,16 @@ fn test_open_file_executable_bash_zsh_fish_route_to_execute() {
 }
 
 #[test]
-fn test_open_file_markdown_routes_to_notebook_when_viewer_enabled() {
+fn test_open_file_documents_use_external_editor() {
     let dir = tempfile::tempdir().unwrap();
-    let p = dir.path().join("README.md");
-    std::fs::write(&p, b"# hi\n").unwrap();
-    assert_eq!(
-        classify_open_file_action(&p, true),
-        OpenFileAction::Notebook
-    );
-}
-
-#[test]
-fn test_open_file_markdown_routes_to_editor_when_viewer_disabled() {
-    let dir = tempfile::tempdir().unwrap();
-    let p = dir.path().join("README.md");
-    std::fs::write(&p, b"# hi\n").unwrap();
-    assert_eq!(classify_open_file_action(&p, false), OpenFileAction::Editor);
-}
-
-#[test]
-fn test_open_file_ipynb_routes_to_notebook_when_enabled() {
-    // A `.ipynb` opened via `file://` (e.g. "Open with Warp" from Finder) opens
-    // in the notebook viewer, not the raw-JSON code editor.
-    let _flag = crate::features::FeatureFlag::JupyterNotebookRendering.override_enabled(true);
-    let dir = tempfile::tempdir().unwrap();
-    let p = dir.path().join("analysis.ipynb");
-    std::fs::write(&p, b"{\"nbformat\": 4, \"cells\": []}\n").unwrap();
-    assert_eq!(
-        classify_open_file_action(&p, false),
-        OpenFileAction::Notebook
-    );
-}
-
-#[test]
-fn test_open_file_ipynb_opens_in_editor_when_disabled() {
-    // Without the feature flag, `.ipynb` is not rendered in the notebook viewer
-    // and falls through to the code editor.
-    let _flag = crate::features::FeatureFlag::JupyterNotebookRendering.override_enabled(false);
-    let dir = tempfile::tempdir().unwrap();
-    let p = dir.path().join("analysis.ipynb");
-    std::fs::write(&p, b"{\"nbformat\": 4, \"cells\": []}\n").unwrap();
-    assert_eq!(classify_open_file_action(&p, true), OpenFileAction::Editor);
+    for (name, content) in [
+        ("README.md", "# hi"),
+        ("analysis.ipynb", "{\"nbformat\": 4, \"cells\": []}"),
+    ] {
+        let path = dir.path().join(name);
+        std::fs::write(&path, content).unwrap();
+        assert_eq!(classify_open_file_action(&path), OpenFileAction::Editor);
+    }
 }
 
 #[test]
@@ -954,43 +667,14 @@ fn test_open_file_rust_source_still_opens_in_editor() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("main.rs");
     std::fs::write(&p, b"fn main() {}\n").unwrap();
-    assert_eq!(classify_open_file_action(&p, true), OpenFileAction::Editor);
-}
-
-#[test]
-#[cfg(unix)]
-fn test_open_file_editor_executable_sh_opens_in_editor() {
-    use std::os::unix::fs::PermissionsExt;
-    let dir = tempfile::tempdir().unwrap();
-    let p = dir.path().join("run.sh");
-    std::fs::write(&p, b"#!/bin/sh\n:\n").unwrap();
-    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
-    assert!(can_open_file_editor_path(&p));
-}
-
-#[test]
-#[cfg(feature = "local_fs")]
-fn test_open_file_editor_rust_source_opens_in_editor() {
-    let dir = tempfile::tempdir().unwrap();
-    let p = dir.path().join("main.rs");
-    std::fs::write(&p, b"fn main() {}\n").unwrap();
-    assert!(can_open_file_editor_path(&p));
-}
-
-#[test]
-#[cfg(feature = "local_fs")]
-fn test_open_file_editor_binary_file_is_rejected() {
-    let dir = tempfile::tempdir().unwrap();
-    let p = dir.path().join("image.png");
-    std::fs::write(&p, b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR").unwrap();
-    assert!(!can_open_file_editor_path(&p));
+    assert_eq!(classify_open_file_action(&p), OpenFileAction::Editor);
 }
 
 #[test]
 fn test_open_file_directory_routes_to_session() {
     let dir = tempfile::tempdir().unwrap();
     assert_eq!(
-        classify_open_file_action(dir.path(), true),
+        classify_open_file_action(dir.path()),
         OpenFileAction::ExecuteInSession
     );
 }
@@ -1006,7 +690,7 @@ fn test_open_file_non_runnable_shebang_routes_to_editor() {
     let p = dir.path().join("noext");
     std::fs::write(&p, b"#!/bin/sh\necho hi\n").unwrap();
     std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
-    assert_eq!(classify_open_file_action(&p, true), OpenFileAction::Editor);
+    assert_eq!(classify_open_file_action(&p), OpenFileAction::Editor);
 }
 
 #[test]

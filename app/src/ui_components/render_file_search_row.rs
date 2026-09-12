@@ -25,7 +25,6 @@ use warpui::{AppContext, Element, SingletonEntity};
 
 use crate::appearance::Appearance;
 use crate::search::ItemHighlightState;
-use crate::search::ai_context_menu::safe_truncate;
 
 pub const MAX_COMBINED_LENGTH: usize = 55;
 
@@ -114,7 +113,7 @@ pub fn render_file_search_row(
 
         if combined_length > max_combined_length {
             if item_name.len() >= max_combined_length {
-                safe_truncate(&mut item_name, max_combined_length - 3);
+                item_name.truncate(item_name.floor_char_boundary(max_combined_length - 3));
                 item_name.push_str("...");
                 filename_truncated = true;
                 path_display.clear();
@@ -123,7 +122,7 @@ pub fn render_file_search_row(
                 if path_display.len() > available_for_path {
                     let new_path_len = available_for_path.saturating_sub(3);
                     path_truncation_offset = path_display.len() - new_path_len;
-                    safe_truncate(&mut path_display, new_path_len);
+                    path_display.truncate(path_display.floor_char_boundary(new_path_len));
                     path_display.push_str("...");
                     path_truncated = true;
                 }

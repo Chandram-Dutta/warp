@@ -140,9 +140,6 @@ integration_tests! {
     test_open_input_context_menu,
     test_copy_all_from_input_context_menu,
     test_cut_paste_from_input_context_menu,
-    test_inline_model_selector_restores_prompt_on_dismissal,
-    test_inline_model_selector_restores_prompt_on_model_selection,
-    test_inline_model_selector_restores_prompt_on_chip_toggle_close,
     test_paste_and_type_characters_before_bootstrap,
     #[ignore = "Flaking on CI - KC looking into 3/31/26"]
     test_code_review_scroll_anchor_preserved_when_inserting_above,
@@ -184,13 +181,6 @@ integration_tests! {
     // Disabled due to flakiness on CI.
     #[ignore]
     test_create_session_with_split_pane_while_bootstrapping,
-
-    // For some reason, disabling the `AgentMode` flag does not actually disable Agent Mode in the test
-    // run. Ignore for now.
-    #[ignore]
-    test_ask_warp_ai_keybinding_for_selected_block,
-
-    test_create_folder_from_command_palette,
 
     test_tab_behavior_setting,
 
@@ -242,7 +232,6 @@ integration_tests! {
 
     test_notebook_pane_tracking,
     test_close_notebook_tab,
-    test_open_in_warp_banner,
     test_close_notebook_window,
     test_backspace_inside_raw_mermaid_block_edits_text_without_removing_block,
 
@@ -378,8 +367,4 @@ integration_tests! {
     #[ignore = "Manual test: requires real display for frame capture"]
     test_video_recording,
 
-    // Rich Input Ctrl+Enter submit toggle (issue #11588)
-    test_rich_input_toggle_on_enter_inserts_newline_and_ctrl_enter_submits,
-    // Regression: Enter must accept inline menus (not insert newline) when toggle=true
-    test_rich_input_enter_accepts_menu_item_when_toggle_is_true,
 }

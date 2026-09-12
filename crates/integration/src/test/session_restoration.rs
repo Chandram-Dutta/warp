@@ -3,6 +3,7 @@ use warp::features::FeatureFlag;
 use warp::integration_testing::notebook::{
     assert_cloud_preference_exists, assert_notebook_contents, assert_notebook_metadata_revision,
 };
+use warp::integration_testing::pane_group::assert_num_panes_in_tab;
 use warp::integration_testing::step::{
     new_step_with_default_assertions, new_step_with_default_assertions_for_pane,
 };
@@ -441,14 +442,7 @@ pub fn test_restore_snapshot_with_common_shareable_metadata_ids() -> Builder {
         ))
 }
 
-/// Tests restoring a snapshot that includes a Markdown file pane.
-///
-/// The snapshot has a single window with one tab, containing:
-/// * A terminal pane
-/// * A Markdown file pane, `test.md` (backed by [`../../tests/data/test.md`]).
-///
-/// Normally, we store absolute paths in SQLite for restoring Markdown panes. The test uses a
-/// relative path for portability, and assumes it's run from the root of the `integration` crate.
+/// Restores the terminal from a historical snapshot, skipping the unsupported Markdown pane.
 pub fn test_restore_snapshot_with_markdown_file() -> Builder {
     new_builder()
         .with_setup(|utils| {
@@ -465,8 +459,6 @@ pub fn test_restore_snapshot_with_markdown_file() -> Builder {
                 &utils.test_dir().join("docs/test.md"),
             );
         })
-        // Wait for the terminal pane to bootstrap first - we need an active session to resolve the
-        // home directory and context for the notebook pane.
         .with_step(
             new_step_with_default_assertions_for_pane("Wait for terminal pane to bootstrap", 0, 0)
                 .add_assertion(assert_pane_title(
@@ -476,21 +468,12 @@ pub fn test_restore_snapshot_with_markdown_file() -> Builder {
                 )),
         )
         .with_step(
-            // The pane title isn't set until after the Markdown file is read in, so this verifies
-            // that both pieces were successful.
-            TestStep::new("Verify that the notebook pane was restored")
-                .add_assertion(assert_pane_title(0, 1, "test.md")),
+            TestStep::new("Historical Markdown pane does not discard the terminal")
+                .add_assertion(assert_num_panes_in_tab(0, 1)),
         )
 }
 
-/// Tests restoring a snapshot that includes a code pane.
-///
-/// The snapshot has a single window with one tab, containing:
-/// * A terminal pane
-/// * A code pane, `test.rs` (backed by [`../../tests/data/test.rs`]).
-///
-/// Normally, we store absolute paths in SQLite for restoring code panes. The test uses a
-/// relative path for portability, and assumes it's run from the root of the `integration` crate.
+/// Restores the terminal from a historical snapshot, skipping the unsupported code pane.
 pub fn test_restore_snapshot_with_code_file() -> Builder {
     new_builder()
         .with_setup(|utils| {
@@ -507,8 +490,6 @@ pub fn test_restore_snapshot_with_code_file() -> Builder {
                 &utils.test_dir().join("docs/test.rs"),
             );
         })
-        // Wait for the terminal pane to bootstrap first - we need an active session to resolve the
-        // home directory and context for the notebook pane.
         .with_step(
             new_step_with_default_assertions_for_pane("Wait for terminal pane to bootstrap", 0, 0)
                 .add_assertion(assert_pane_title(
@@ -518,10 +499,8 @@ pub fn test_restore_snapshot_with_code_file() -> Builder {
                 )),
         )
         .with_step(
-            // The pane title isn't set until after the file is read in, so this verifies
-            // that both pieces were successful.
-            TestStep::new("Verify that the code pane was restored")
-                .add_assertion(assert_pane_title(0, 1, "./docs/test.rs")),
+            TestStep::new("Historical code pane does not discard the terminal")
+                .add_assertion(assert_num_panes_in_tab(0, 1)),
         )
 }
 
@@ -546,7 +525,7 @@ pub fn test_restore_snapshot_with_settings_page() -> Builder {
             TestStep::new("Verify settings pane restoration")
                 .add_assertion(assert_pane_title(0, 1, "Settings"))
                 .add_assertion(move |app, window_id| {
-                    // Verify the settings view exists and is on the Referrals page.
+                    // A removed page falls back to the default settings page.
                     let settings_views: Vec<ViewHandle<SettingsView>> = app
                         .views_of_type(window_id)
                         .expect("Settings view must exist");
@@ -556,7 +535,7 @@ pub fn test_restore_snapshot_with_settings_page() -> Builder {
                     settings_view.read(app, |view, _| {
                         async_assert_eq!(
                             view.current_settings_section(),
-                            SettingsSection::Referrals
+                            SettingsSection::default()
                         )
                     })
                 }),

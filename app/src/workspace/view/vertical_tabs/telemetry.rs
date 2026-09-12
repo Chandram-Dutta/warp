@@ -90,10 +90,6 @@ impl VerticalTabsChipEntrypoint {
 pub enum VerticalTabsTelemetryEvent {
     /// The user updated a display option in the vertical tabs settings popup.
     DisplayOptionChanged(VerticalTabsDisplayOption),
-    /// The user clicked the diff stats chip on a vertical tabs row or the detail sidecar.
-    DiffStatsChipClicked {
-        entrypoint: VerticalTabsChipEntrypoint,
-    },
     /// The user clicked the GitHub PR chip on a vertical tabs row or the detail sidecar.
     PrChipClicked {
         entrypoint: VerticalTabsChipEntrypoint,
@@ -110,9 +106,6 @@ impl TelemetryEvent for VerticalTabsTelemetryEvent {
             Self::DisplayOptionChanged(option) => Some(json!({
                 "option": option.option_name(),
                 "value": option.serialized_value(),
-            })),
-            Self::DiffStatsChipClicked { entrypoint } => Some(json!({
-                "entrypoint": entrypoint.serialized(),
             })),
             Self::PrChipClicked { entrypoint } => Some(json!({
                 "entrypoint": entrypoint.serialized(),
@@ -141,7 +134,6 @@ impl TelemetryEventDesc for VerticalTabsTelemetryEventDiscriminants {
     fn name(&self) -> &'static str {
         match self {
             Self::DisplayOptionChanged => "VerticalTabs.DisplayOptionChanged",
-            Self::DiffStatsChipClicked => "VerticalTabs.DiffStatsChipClicked",
             Self::PrChipClicked => "VerticalTabs.PrChipClicked",
         }
     }
@@ -150,9 +142,6 @@ impl TelemetryEventDesc for VerticalTabsTelemetryEventDiscriminants {
         match self {
             Self::DisplayOptionChanged => {
                 "User updated a display option in the vertical tabs settings popup"
-            }
-            Self::DiffStatsChipClicked => {
-                "User clicked a diff stats chip in the vertical tabs panel or detail sidecar"
             }
             Self::PrChipClicked => {
                 "User clicked a GitHub PR chip in the vertical tabs panel or detail sidecar"
